@@ -25,7 +25,9 @@ class RoleCardTests(unittest.TestCase):
         board = Path(temp.name)/'board.json'
         board.write_text(json.dumps({'tables': {'repo': {'path': str(self.project)}},
                                      'runs': {'t1': {'table': 'repo', 'scope': 'customer-api', 'session': 'local_w',
-                                                     'issue': 'IRO-9', 'tree': '/w/iro-9'}},
+                                                     'issue': 'IRO-9', 'tree': '/w/iro-9'},
+                                              't2': {'table': 'repo', 'scope': 'customer-api', 'session': 'local_sub',
+                                                     'issue': 'IRO-10', 'parent': 'IRO-9'}},
                                      'related': {'t1': [{'session': 'local_old', 'note': 'obsolete'}]}}))
         p = patch.object(roles, 'BOARD_STATE', board); p.start(); self.addCleanup(p.stop)
         for session, role, scope in (('local_top', 'orchestrator', None), ('local_api', 'sub-orchestrator', 'customer-api')):
@@ -77,6 +79,27 @@ class RoleCardTests(unittest.TestCase):
         self.assertEqual(data['permissions'], {'allow': ['Bash(ls)']})
         self.assertEqual(len(data['hooks']['UserPromptSubmit']), 1)
 
+
+    def test_worker_may_start_helpers_and_helpers_report_only_to_it(self):
+        worker = roles.card(self.project, 'local_w')
+        self.assertIn('You may start **helper** side sessions', worker)
+        self.assertIn('--project %s --session <helper id> --role helper --task IRO-9 --worker local_w' % self.project, worker)
+        argv = ['set', '--project', str(self.project), '--session', 'local_h', '--role', 'helper']
+        with patch('sys.stdout', io.StringIO()), patch('sys.stderr', io.StringIO()):
+            self.assertEqual(roles.main(argv + ['--task', 'IRO-9', '--worker', 'local_api']), 1)   # not a worker
+            self.assertEqual(roles.main(argv + ['--task', 'IRO-9', '--worker', 'local_w']), 0)
+            self.assertEqual(roles.main(['set', '--project', str(self.project), '--session', 'local_h2', '--role',
+                                         'helper', '--task', 'IRO-9', '--worker', 'local_w']), 0)
+        helper = roles.card(self.project, 'local_h')
+        self.assertIn('**helper** for IRO-9', helper)
+        self.assertIn('Your worker is `local_w`', helper)
+        self.assertIn('Never write to the issue or board', helper)
+        self.assertIn('Your helpers: `local_h`, `local_h2`', roles.card(self.project, 'local_w'))
+
+    def test_sub_issue_worker_is_linked_both_ways(self):
+        self.assertIn('Your sub-issue workers (nested under you, they own their records): IRO-10 `local_sub`',
+                      roles.card(self.project, 'local_w'))
+        self.assertIn('This is a sub-issue of IRO-9 (worker `local_w`)', roles.card(self.project, 'local_sub'))
 
 if __name__ == '__main__':
     unittest.main()

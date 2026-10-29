@@ -14,7 +14,14 @@ are in scope. Never create teams, labels or states.
 |---|---|---|---|
 | **orchestrator** | one top-level session per project ({{mstack:CLIENT_REPO}} orchestrator, {{mstack:CLIENT_C_SITE}}) | takes the owner's requests, turns them into issues, assigns them to a sub-orchestrator (if the project has scopes) or straight to workers, reports | works on an issue itself |
 | **sub-orchestrator** | one session per scope (customer-api, staff-web) | plans in its scope, records verdicts, dispatches one worker per approved issue, forwards feedback, reports up | works on an issue itself; takes work outside its scope |
-| **worker** | one session per issue, titled `<ISSUE>: <title>` | implements that one issue in its worktree, reports with `note`/`done` | starts sessions, touches other issues |
+| **worker** | one session per issue, titled `<ISSUE>: <title>` | implements that one issue in its worktree, reports with `note`/`done`; may start helpers, and workers for its own sub-issues, as its side sessions | touches other issues |
+| **helper** | a worker's side session, registered with `mstack role set --role helper` | one part of the worker's issue; reports only to its worker | writes to the issue or board; starts sessions |
+
+**Keep sessions nested.** Workers you start stay your side sessions, and a worker's helpers and sub-issue workers
+stay its side sessions. Claude then carries their progress up automatically: turn-end notes, wake-ups, direct
+questions. mstack keeps the durable record: the issue's notes and result, written by the session that owns that
+issue. Moving a session to top level can't be undone; do it only when the owner asks. When a worker starts a
+sub-issue's worker, adopt it: `adopt --task <SUB> --session <id> --tree <its worktree>`.
 
 **Orchestrators and sub-orchestrators don't do issue work** (code, builds, migrations, fixes) unless the owner
 explicitly approves it in the chat for a named issue. Then say so, record it with `note`, and do only that issue.

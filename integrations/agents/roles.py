@@ -85,7 +85,17 @@ RULES = {
                         'gets the owner\'s verdict, dispatches one worker per approved issue, forwards feedback '
                         'and reports up.',
     'worker': 'A **worker** implements exactly one issue in its own worktree and reports with note/done.',
+    'helper': 'A **helper** does one part of a worker\'s issue, started by that worker as its side session. It '
+              'reports only to its worker; the worker alone writes the issue\'s record.',
 }
+HELPERS = ('You may start **helper** side sessions for parts of *this* issue: start them yourself (side sessions, '
+           'nested under you, never moved to top level), then register each with `%s/mstack role set --project %s '
+           '--session <helper id> --role helper --task %s --worker %s`. One level only: helpers never start helpers. '
+           'Their turn-end notes reach you; merge what they bring back and report it yourself with note/done. '
+           'A **sub-issue** of this issue gets its own worker instead: you may start it as your side session too, then '
+           'ask your orchestrator to adopt it (`adopt --task <SUB> --session <id>`). It owns its sub-issue\'s record '
+           'and stays nested under you, so its progress reaches you. New sub-issues are planned by your '
+           'orchestrator (`plan --parent`).')
 NO_WORK = ('**You never work on an issue yourself:** no code changes, builds, migrations or fixes in this chat. '
            'You assign, track and report. The only exception is the owner explicitly approving it in this chat '
            'for a named issue ("do YEL-12 here yourself"). Then say so, record it with `note`, and do only that issue.')
@@ -111,7 +121,8 @@ def card(project, session):
     def board_duty(scope):
         lines = ['Your board: `%s --scope %s`. Load the `mstack-orchestrator` skill. Plan → owner verdict → '
                  '`dispatch` (one worker session per approved issue, titled `<ISSUE>: <title>`) → forward feedback '
-                 '→ `done` reviews.' % (run('<cmd>'), scope)]
+                 '→ `done` reviews. Workers you start stay nested under you: don\'t move them to top level unless the owner '
+                 'asks.' % (run('<cmd>'), scope)]
         if private:
             lines.append(verdicts % scope)
         workers = [r for r in board_state().get('runs', {}).values()
@@ -144,13 +155,32 @@ def card(project, session):
         run = next(((t, r) for t, r in board_state().get('runs', {}).items() if r.get('session') == session), None)
         related = next((t for t, rs in board_state().get('related', {}).items()
                         if any(r.get('session') == session for r in rs)), None)
-        if run:
+        if me and me.get('role') == 'helper':
+            lines = ['## Your mstack role: **helper** for %s (%s)' % (me.get('task'), name), RULES['helper'],
+                     'Your worker is `%s`. Report your result and any question to it, through your turn-end reply or '
+                     'SendMessage. Never write to the issue or board (no note/done), never start sessions, and stay '
+                     'inside the part your worker gave you.' % me.get('worker')]
+        elif run:
             task, r = run
             lines = ['## Your mstack role: **worker** for %s (%s, %s)' % (r.get('issue') or task, name, r.get('scope') or name),
                      RULES['worker'] + (' Your worktree: `%s`.' % r['tree'] if r.get('tree') else ''),
                      'Load the `mstack-worker` skill. Report with `%s/mstack board note --task %s "…"` and finish with '
-                     '`%s/mstack board done --task %s --summary "…"`. Never start sessions or work on other issues; '
-                     'ask your orchestrator.' % (STACK_ROOT, task, STACK_ROOT, task)]
+                     '`%s/mstack board done --task %s --summary "…"`. Never work on other issues; ask your orchestrator.'
+                     % (STACK_ROOT, task, STACK_ROOT, task),
+                     HELPERS % (STACK_ROOT, project, r.get('issue') or task, session)]
+            runs = board_state().get('runs', {}).values()
+            if r.get('parent'):
+                above = next((x for x in runs if x.get('issue') == r['parent'] and x.get('session')), None)
+                lines.append('This is a sub-issue of %s%s. Tell that worker anything that affects the parent issue; '
+                             'your own issue\'s record stays yours (note/done).'
+                             % (r['parent'], ' (worker `%s`)' % above['session'] if above else ''))
+            subs_here = [x for x in runs if x.get('parent') and x.get('parent') == r.get('issue') and x.get('session')]
+            if subs_here:
+                lines.append('Your sub-issue workers (nested under you, they own their records): ' + '; '.join(
+                    '%s `%s`' % (x.get('issue'), x['session']) for x in subs_here))
+            mine = [s for s, h in roles.items() if h.get('role') == 'helper' and h.get('worker') == session]
+            if mine:
+                lines.append('Your helpers: ' + ', '.join('`%s`' % s for s in mine))
         elif related:
             lines = ['## Your mstack role: history',
                      'This chat is kept as history for an issue (marked obsolete). Don\'t act on its old plan; point the '
@@ -202,8 +232,9 @@ def main(argv):
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest='command', required=True)
     s = sub.add_parser('set'); s.add_argument('--project', type=Path, required=True)
-    s.add_argument('--session', required=True); s.add_argument('--role', choices=['orchestrator', 'sub-orchestrator'], required=True)
+    s.add_argument('--session', required=True); s.add_argument('--role', choices=['orchestrator', 'sub-orchestrator', 'helper'], required=True)
     s.add_argument('--scope')
+    s.add_argument('--task', help='helper: the issue it helps with'); s.add_argument('--worker', help='helper: its worker session')
     s = sub.add_parser('unset'); s.add_argument('--project', type=Path, required=True); s.add_argument('--session', required=True)
     s = sub.add_parser('list'); s.add_argument('--project', type=Path, required=True)
     s = sub.add_parser('install'); s.add_argument('--project', type=Path, required=True)
@@ -215,16 +246,29 @@ def main(argv):
     project = args.project.resolve()
     if args.command == 'set':
         scopes = (config(project).get('taskboard') or {}).get('orchestrators') or {}
+        if args.role == 'helper' and not (args.task and args.worker):
+            print('mstack role: a helper needs --task and --worker', file=sys.stderr)
+            return 1
+        workers = {r.get('session') for r in board_state().get('runs', {}).values()}
+        if args.role == 'helper' and args.worker not in workers:
+            print('mstack role: %s is not a worker on the board' % args.worker, file=sys.stderr)
+            return 1
+        if args.role == 'helper' and args.session in workers:
+            print('mstack role: a worker cannot also be a helper', file=sys.stderr)
+            return 1
         if args.role == 'sub-orchestrator' and args.scope not in scopes or args.scope and args.scope not in scopes:
             print('mstack role: --scope must be one of %s' % ', '.join(sorted(scopes)), file=sys.stderr)
             return 1
         with project_state.edit(project) as state:
             roles = state['runtime'].setdefault('roles', {})
-            for other, r in list(roles.items()):         # one session per orchestrator scope
+            for other, r in list(roles.items()):         # one session per orchestrator scope (helpers are many)
+                if args.role == 'helper':
+                    break
                 same_scope = args.scope and r.get('scope') == args.scope
                 if other != args.session and (same_scope or args.role == 'orchestrator' == r.get('role')):
                     roles.pop(other)
-            roles[args.session] = {'role': args.role, **({'scope': args.scope} if args.scope else {})}
+            roles[args.session] = {'role': args.role, **({'scope': args.scope} if args.scope else {}),
+                                   **({'task': args.task, 'worker': args.worker} if args.role == 'helper' else {})}
         result = {'session': args.session, 'role': args.role, 'scope': args.scope}
     elif args.command == 'unset':
         with project_state.edit(project) as state:

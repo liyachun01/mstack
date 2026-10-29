@@ -38,3 +38,19 @@ restarts, or a new session is started; until then it was sent its card once by m
 to the owner. It records the source project and session. The owner triages it; `/plan` starts work. Every role card
 and the worker skill mention it, so ideas from project work reach mstack without anyone editing mstack from inside
 a project.
+
+## Helpers and nested sub-issue workers (2026-10-29)
+
+The IRO-104 worker started workers for its sub-issues (IRO-111, IRO-112 and IRO-113) as its own side sessions. Their
+progress reached it automatically through Claude Desktop's side-session link: turn-end notes, wake-ups and
+direct questions. The owner liked that, so mstack now supports it:
+- **Two layers:** Claude carries live coordination along the nesting; mstack keeps the durable record. Each issue's
+  record is written only by the session that owns that issue.
+- **Helper** (`mstack role set --role helper --task <ISSUE> --worker <id>`): the worker's side session for one part
+  of the same issue. It reports only to its worker and never writes to the board. It starts no sessions; one
+  level only.
+- **Sub-issue worker:** may be started by the parent issue's worker as a side session, and is then adopted by the
+  orchestrator. It owns its sub-issue's record. Runs now store `parent`, so cards show the link both ways: the
+  parent worker lists its sub-issue workers, and a sub-issue worker names its parent's worker.
+- **Nesting is kept:** orchestrators don't move workers to top level, because that can't be undone and drops the
+  automatic notes. Sidebar groups and the board still track chats that were already moved.
