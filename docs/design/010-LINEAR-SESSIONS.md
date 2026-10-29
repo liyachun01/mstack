@@ -194,3 +194,15 @@ tables. `doctor` reports pending updates as `mstack_updates`.
 A running watcher checks mstack's code fingerprint before each tick. When it changes, the watcher syncs its
 project and re-executes itself in place: same PID and command line, with the lock released and taken again.
 `sync --hook` would install post-commit/post-merge hooks in mstack that run `sync --all`. It isn't installed yet.
+
+## Multi-repo workspaces (2026-10-29)
+
+A project can be a folder of git repos with `.mstack/` at its root, outside every repo, so it stays private.
+`taskboard.repos` maps each repo name to its path and base branch.
+- The root needs no git: dispatch creates `.mstack/worktrees/<issue>/` and, inside it, one worktree per repo the
+  task touches, all on the issue's Linear branch.
+- Repos are named at `propose --repos`; workers add more with `board worktree`.
+- `done` reports commits per repo.
+
+First user: {{mstack:CLIENT_C_SITE}}, a folder on the Mac that the dev VM sees at the same path. Its single orchestrator scope is
+`{{mstack:CLIENT_C_SITE}}`, linked to {{mstack:CLIENT_ORG_A_SHORT}}/YEL in private mode. Sessions run on the VM; Xcode runs on the Mac through `macctl`.

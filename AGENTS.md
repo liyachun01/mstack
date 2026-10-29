@@ -12,6 +12,9 @@ Scopes live in {{mstack:CLIENT_REPO}} `.mstack/stack.json` `taskboard.orchestrat
 worker. Don't archive an orchestrator while it has live workers. {{mstack:CLIENT_REPO}} runs in **private mode** (`taskboard.private: true`):
 the board never writes to Linear, the orchestrator's messages go to {{mstack:CLIENT_REPO}} `.mstack/journal.json`, and the owner
 gives verdicts in the orchestrator chat (`mstack board owner`). Keep the three earlier "Tracked by" comments.
+{{mstack:CLIENT_C_SITE}} (2026-10-29): `~/Developer/{{mstack:CLIENT_C_FOLDER}}` on the Mac (the same path on the VM) is a multi-repo workspace with root
+`.mstack/` (taskboard.repos, private board on {{mstack:CLIENT_ORG_A_SHORT}}/YEL, key entry 2), one "{{mstack:CLIENT_C_SITE}}" orchestrator session (VM),
+Xcode via macctl. Its work is tracked on YEL, not MST. mstack never edits its repo checkouts or their own skills.
 
 ## Task board, orchestrator and plugins — 2026-10-28
 

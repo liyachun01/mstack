@@ -58,6 +58,13 @@ result with `done`; the owner's 👍 makes it Done, and a reply sends the notes 
   <path>` on `propose`, `note` or `done` (resolved against `taskboard.docs_url`).
 - **Report briefly:** what waits on the owner, and what is running.
 
+## Multi-repo workspaces (`taskboard.repos`)
+When the project root is a folder of repos (e.g. {{mstack:CLIENT_C_SITE}}), one issue can change several of them.
+- `propose --task <ISSUE> --repos <name> … --plan -` names the repos up front.
+- On dispatch the worker gets `.mstack/worktrees/<issue>/`, with one worktree per named repo on the issue's Linear
+  branch. More repos: `worktree --task <ISSUE> --repo <name>`.
+- `done` reports commits per repo. Never touch the repo checkouts at the root; they hold the owner's work.
+
 ## Private boards (`taskboard.private: true`)
 Linear is read-only and your teammates see nothing. Use `--scope <name>` as usual.
 - **Nothing is written to Linear:** no comments, no status changes, no new issues. `propose`, `ask`, `note`,

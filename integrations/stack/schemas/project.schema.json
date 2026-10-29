@@ -2265,6 +2265,19 @@
             }
           }
         },
+        "repos": {
+          "type": "object",
+          "description": "Multi-repo workspace: the project root is a folder of git repos. Each task gets a folder under .mstack/worktrees/<issue>/ with one worktree per repo it changes.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "path": {"type": "string", "description": "repo folder relative to the project root"},
+              "base": {"type": "string", "description": "branch new task branches start from (default: origin/HEAD)"},
+              "role": {"type": "string", "description": "what the repo is, for briefs"}
+            }
+          }
+        },
         "docs_url": {
           "type": "string",
           "pattern": "^https://",

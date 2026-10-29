@@ -245,7 +245,32 @@ def cmd_propose(args, b):
     b.say(task['id'], 'Plan ready for **%s** (agent: %s).\n\n## Plan\n\n%s\n\nReact 👍 to approve, 👎 to drop, '
           'or reply with changes.' % (task['name'], args.agent, plan.strip() + doc_links(name, args.doc)), ask=True)
     remember(task['id'], name, task.get('linear_identifier'))
-    return {'task': task['id'], 'issue': task.get('linear_identifier'), 'status': 'Awaiting Approval'}
+    if args.repos:
+        known = workspace_repos(project_settings(table_of(args.project)[1]))
+        wrong = [r for r in args.repos if r not in known]
+        if wrong:
+            raise ValueError('Unknown repos %s (taskboard.repos: %s)' % (', '.join(wrong), ', '.join(sorted(known))))
+        with state() as s:
+            s.setdefault('task_repos', {})[task['id']] = list(args.repos)
+    return {'task': task['id'], 'issue': task.get('linear_identifier'), 'status': 'Awaiting Approval',
+            'repos': args.repos or []}
+
+
+def cmd_worktree(args, b):
+    """A workspace task needs another repo: add its worktree inside the task folder, on the issue's branch."""
+    lb = board_of_task(args.task, b)
+    task = lb.get(args.task)
+    name = table_of_task(task['id']) or table_of_task(args.task)
+    entry = read_state()['tables'][name]
+    run = read_state().get('runs', {}).get(task['id']) or {}
+    short = (task.get('linear_identifier') or task['id'][-8:]).lower()
+    tree = Path(run.get('tree') or Path(entry['path'])/'.mstack/worktrees'/short)
+    target = add_repo(entry['path'], tree, args.repo, task.get('branch') or 'task/' + short, project_settings(entry))
+    with state() as s:
+        repos = s.setdefault('task_repos', {}).setdefault(task['id'], [])
+        if args.repo not in repos:
+            repos.append(args.repo)
+    return {'task': task['id'], 'repo': args.repo, 'worktree': str(target)}
 
 
 def cmd_ask(args, b):
@@ -365,13 +390,41 @@ def as_list(value):
     return value if isinstance(value, list) else [value] if value else []
 
 
+def workspace_repos(settings):
+    """Multi-repo workspace: taskboard.repos maps a name to {path, base}; the project root is not a repo."""
+    return settings.get('repos') or {}
+
+
+def add_repo(project, tree, name, branch, settings):
+    """Give a workspace task its own worktree of one repo (<task folder>/<name>) on the issue's branch."""
+    conf = workspace_repos(settings).get(name)
+    if not conf:
+        raise ValueError('No repo %r in taskboard.repos (known: %s)' % (name, ', '.join(sorted(workspace_repos(settings)))))
+    source, target = Path(project)/conf.get('path', name), tree/name
+    if not target.exists():
+        base = conf.get('base') or (git(source, 'symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD',
+                                        check=False) or 'HEAD')
+        exists = git(source, 'rev-parse', '--verify', '--quiet', 'refs/heads/' + branch, check=False)
+        git(source, 'worktree', 'add', '-q', *([str(target), branch] if exists else ['-b', branch, str(target), base]))
+        (tree/'.mstack/cache').mkdir(parents=True, exist_ok=True)
+        (tree/'.mstack/cache'/('base.' + name)).write_text(git(target, 'rev-parse', 'HEAD'))
+    return target
+
+
 def prepare(b, repo, task, table, runner=None):
     """Worktree + branch + task binding + MCP wiring + brief file: everything any host needs to start.
-    A new worktree starts with its finished blockers' task branches merged in (that branch only)."""
+    A new worktree starts with its finished blockers' task branches merged in (that branch only).
+    In a multi-repo workspace the task gets a plain folder; each repo it touches becomes a worktree
+    inside it (the repos chosen at propose time, more with `board worktree`)."""
     short = (task.get('linear_identifier') or task['id'][-8:]).lower()
     branch_name = task.get('branch') or 'task/' + short
     tree = repo/'.mstack/worktrees'/short
-    if not tree.exists():
+    settings = project_settings(read_state()['tables'][table])
+    if workspace_repos(settings):
+        (tree/'.mstack/cache').mkdir(parents=True, exist_ok=True)
+        for name in read_state().get('task_repos', {}).get(task['id'], []):
+            add_repo(repo, tree, name, branch_name, settings)
+    elif not tree.exists():
         git(repo, 'worktree', 'add', '-q', '-b', branch_name, str(tree))
         for blocker in as_list(task.get('task_blocked_by')):
             branch = b.get(blocker).get('branch') or 'task/' + blocker[-8:]
@@ -388,7 +441,7 @@ def prepare(b, repo, task, table, runner=None):
     cache = tree/'.mstack/cache'
     cache.mkdir(parents=True, exist_ok=True)
     (cache/'current-task').write_text(task['id'])
-    if not (cache/'base').exists():
+    if not (cache/'base').exists() and not workspace_repos(settings):
         (cache/'base').write_text(git(tree, 'rev-parse', 'HEAD'))
     local = repo/'.claude/settings.local.json'
     if local.is_file():
@@ -397,6 +450,12 @@ def prepare(b, repo, task, table, runner=None):
     servers, skipped = registry.worker_servers(repo)
     tools, refused = wire_mcp(repo, tree, runner, servers) if runner else ([], [])
     brief = brief_for(b, task['id'], table, tree, [s for s in servers if s['name'] in tools])
+    if workspace_repos(settings):
+        brief += ('\n\n## Workspace\nThis project is several repos. Your task folder is `%s`; each repo you change gets '
+                  'its own worktree inside it on branch `%s`. Have: %s. Add one with `%s/mstack board worktree --task %s '
+                  '--repo <name>` (repos: %s). Never edit the repos under the project root directly.'
+                  % (tree, branch_name, ', '.join(sorted(p.name for p in tree.iterdir() if (p/'.git').exists())) or 'none yet',
+                     STACK_ROOT, task.get('linear_identifier') or task['id'], ', '.join(sorted(workspace_repos(settings)))))
     (cache/'brief.md').write_text(brief + '\n')
     return tree, short, brief, {'tools': tools, 'servers': [s for s in servers if s['name'] in tools],
                                 'skipped': skipped + refused}
@@ -404,14 +463,25 @@ def prepare(b, repo, task, table, runner=None):
 
 def finish(b, task_id, tree, who, summary, exit_code=None):
     """Shared end of every run: commits since base, review ask, In Review."""
-    base = (tree/'.mstack/cache/base').read_text().strip()
-    commits = git(tree, 'log', '--oneline', base + '..HEAD', check=False).splitlines()
-    stat = git(tree, 'diff', '--shortstat', base, 'HEAD', check=False) or 'no committed changes'
+    bases = {p.name[5:]: p.read_text().strip() for p in (tree/'.mstack/cache').glob('base.*')}
+    if bases:                                       # multi-repo workspace: one worktree per touched repo
+        count, parts = 0, []
+        for name, base in sorted(bases.items()):
+            found = git(tree/name, 'log', '--oneline', base + '..HEAD', check=False).splitlines()
+            count += len(found)
+            parts.append('%s %d commit(s)' % (name, len(found)))
+        commits, stat = ['x'] * count, '; '.join(parts)
+        branch = git(tree/sorted(bases)[0], 'branch', '--show-current')
+    else:
+        base = (tree/'.mstack/cache/base').read_text().strip()
+        commits = git(tree, 'log', '--oneline', base + '..HEAD', check=False).splitlines()
+        stat = git(tree, 'diff', '--shortstat', base, 'HEAD', check=False) or 'no committed changes'
+        branch = git(tree, 'branch', '--show-current')
     current = b.get(task_id)
     b.set(task_id, task_status='In Review', agent_run_count=(current.get('agent_run_count') or 0) + 1)
     ended = 'finished' if exit_code is None else 'finished (exit %s)' % exit_code
     b.say(task_id, '**%s** %s on branch `%s`: %d commit(s), %s.\n\n%s\n\nReact 👍 to accept, or reply with changes.'
-          % (who, ended, git(tree, 'branch', '--show-current'), len(commits), stat,
+          % (who, ended, branch, len(commits), stat,
              SECRET.sub('[redacted]', summary)[-1200:] or '(no summary)'), ask=True)
     return len(commits)
 
@@ -420,9 +490,11 @@ def cmd_dispatch(args, b):
     name, entry = table_of(args.project)
     settings = project_settings(entry)
     repo = Path(entry['path'])
-    if not git(repo, 'rev-parse', '--verify', 'HEAD', check=False):
+    if workspace_repos(settings):
+        pass                              # a folder of repos: each task gets worktrees of the repos it touches
+    elif not git(repo, 'rev-parse', '--verify', 'HEAD', check=False):
         raise ValueError('Project needs at least one commit before worktrees can be created')
-    if Path(git(repo, 'rev-parse', '--show-toplevel')).resolve() != repo.resolve():
+    elif Path(git(repo, 'rev-parse', '--show-toplevel')).resolve() != repo.resolve():
         raise ValueError('Dispatch needs the project at its repository root')
     runs = read_state().get('runs', {})
     b = board_for(name, b)
@@ -974,6 +1046,9 @@ def parser():
     s.add_argument('--project', required=True); s.add_argument('--task', required=True, help='issue id or IRO-123')
     s.add_argument('--plan', required=True, help='file or - for stdin'); s.add_argument('--agent', default='claude-desktop')
     s.add_argument('--doc', action='append', default=[], help='repo doc path to link (taskboard.docs_url)')
+    s.add_argument('--repos', nargs='*', default=[], help='multi-repo workspace: repos the task will change')
+    s = sub.add_parser('worktree', help='multi-repo workspace: add a repo worktree to a task folder')
+    s.add_argument('--task', required=True, help='issue id or IRO-123'); s.add_argument('--repo', required=True)
     s = sub.add_parser('ask'); s.add_argument('--task', required=True); s.add_argument('text')
     s.add_argument('--status', default='Awaiting Approval', choices=list(PENDING))
     s = sub.add_parser('poll'); s.add_argument('--project')

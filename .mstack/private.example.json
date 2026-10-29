@@ -17,7 +17,10 @@
     "CLIENT_ORG_A_SHORT": "",
     "CLIENT_ORG_B": "",
     "CLIENT_ORG_B_TITLE": "",
-    "CLIENT_ORG_B_UPPER": ""
+    "CLIENT_ORG_B_UPPER": "",
+    "CLIENT_C_FOLDER": "",
+    "CLIENT_C_APP": "",
+    "CLIENT_C_SITE": ""
   },
   "meaning": {
     "MAC_USER": "macOS account name (home folder /Users/<name>)",
@@ -36,6 +39,9 @@
     "CLIENT_ORG_A_SHORT": "its short slug",
     "CLIENT_ORG_B": "second client Linear workspace",
     "CLIENT_ORG_B_TITLE": "same, Titlecase",
-    "CLIENT_ORG_B_UPPER": "same, UPPERCASE"
+    "CLIENT_ORG_B_UPPER": "same, UPPERCASE",
+    "CLIENT_C_FOLDER": "third project workspace folder",
+    "CLIENT_C_APP": "its iOS app repo",
+    "CLIENT_C_SITE": "its site and project name"
   }
 }

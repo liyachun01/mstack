@@ -7,6 +7,8 @@ description: Behave as a worker session dispatched by the mstack orchestrator fo
 
 - **Your brief:** `.mstack/cache/brief.md` in this worktree. It holds the issue, the approved plan,
   the owner's notes, and any tools wired for you.
+- **Multi-repo workspace:** your folder holds one worktree per repo (brief section "Workspace"). Need another repo?
+  Run `mstack board worktree --task <ISSUE> --repo <name>`. Never edit the repos at the project root.
 - **Your worktree:** you are on its own branch, named after the Linear issue. Work and commit only here.
   Never touch the main checkout or other worktrees. Never merge, push, or change global settings or team files.
 - **Conventions:** follow the repo's AGENTS.md / CLAUDE.md, and use its own tools (e.g. Serena, Graphify)

@@ -355,5 +355,61 @@ class LinearBoardFlow(unittest.TestCase):
         self.assertIn('[docs/design/011-HUB.md](https://github.com/o/r/blob/main/docs/design/011-HUB.md)',
                       self.fake.issues[old]['comments'][-1]['body'])
 
+
+class WorkspaceFlow(unittest.TestCase):
+    """A project that is a folder of repos (no git at the root)."""
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name) / '{{mstack:CLIENT_C_FOLDER}}'
+        (self.root / '.mstack/secrets').mkdir(parents=True)
+        key = self.root / '.mstack/secrets/linear-api-key'
+        key.write_text('k'); key.chmod(0o600)
+        for name in ('app', 'api'):
+            repo = self.root / name
+            repo.mkdir()
+            git = lambda *a: subprocess.run(['git', '-C', str(repo), *a], check=True, capture_output=True)
+            git('init', '-q', '-b', 'main'); (repo / 'README').write_text(name); git('add', 'README')
+            git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'base')
+        (self.root / '.mstack/stack.json').write_text(json.dumps({'project': '{{mstack:CLIENT_C_FOLDER}}', 'preset': 'solo',
+            'taskboard': {'table': '{{mstack:CLIENT_C_FOLDER}}', 'backend': 'linear', 'workers': ['claude-desktop'],
+                          'repos': {'app': {'path': 'app', 'base': 'main'}, 'api': {'path': 'api', 'base': 'main'}},
+                          'link': {'provider': 'linear', 'mode': 'full', 'workspace': 'y', 'team': 'MST',
+                                   'credential_file': '.mstack/secrets/linear-api-key'}}}))
+        self.fake = FakeLinear()
+        p = patch.object(cli, 'STATE', Path(temp.name) / 'state.json'); p.start(); self.addCleanup(p.stop)
+        p = patch.object(cli, 'psql', lambda sql: None); p.start(); self.addCleanup(p.stop)
+        p = patch.object(cli, 'LINEAR_BOARD', lambda path, settings, **kw:
+                         linear_board.LinearBoard(path, settings, http=lambda key: self.fake.post, **kw))
+        p.start(); self.addCleanup(p.stop)
+        self.cli('table', '--project', str(self.root))
+
+    cli = LinearBoardFlow.cli
+    old_issue = LinearBoardFlow.old_issue
+
+    def test_task_gets_a_worktree_per_repo_it_touches(self):
+        old = self.old_issue(n=60)
+        self.cli('propose', '--project', '{{mstack:CLIENT_C_FOLDER}}', '--task', 'MST-60', '--repos', 'app', '--plan', '-', stdin='p')
+        self.fake.comment(old, '👍')
+        self.cli('poll')
+        spec = self.cli('dispatch', '--project', '{{mstack:CLIENT_C_FOLDER}}')['started'][0]['handoff']
+        tree = Path(spec['cwd'])
+        self.assertEqual(tree, self.root / '.mstack/worktrees/mst-60')
+        branch = lambda d: subprocess.run(['git', '-C', str(d), 'branch', '--show-current'], capture_output=True,
+                                          text=True).stdout.strip()
+        self.assertEqual(branch(tree / 'app'), 'me/mst-60')
+        self.assertFalse((tree / 'api').exists())
+        self.assertIn('## Workspace', spec['prompt'])
+        self.cli('worktree', '--task', 'MST-60', '--repo', 'api')       # the worker finds it needs the API too
+        self.assertEqual(branch(tree / 'api'), 'me/mst-60')
+        for name in ('app', 'api'):
+            (tree / name / 'x').write_text('x')
+            subprocess.run(['git', '-C', str(tree / name), 'add', 'x'], check=True)
+            subprocess.run(['git', '-C', str(tree / name), '-c', 'user.name=t', '-c', 'user.email=t@t',
+                            'commit', '-q', '-m', 'x'], check=True)
+        self.cli('done', '--task', old, '--summary', 'both')
+        self.assertIn('api 1 commit(s); app 1 commit(s)', self.fake.issues[old]['comments'][-1]['body'])
+        self.assertEqual(branch(self.root / 'app'), 'main')               # the owner's checkout is untouched
+
 if __name__ == '__main__':
     unittest.main()
