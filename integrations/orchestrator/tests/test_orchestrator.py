@@ -483,11 +483,17 @@ class OrchestratorTests(unittest.TestCase):
         def execv(exe, argv):
             raise Reloaded(argv)
         with patch.object(cli, 'code_fingerprint', side_effect=['old', 'new']), \
-                patch.object(cli.os, 'execv', execv), patch.object(cli.subprocess, 'run') as run:
+                patch.object(cli.os, 'execv', execv), patch.object(cli.subprocess, 'run') as run, \
+                patch.object(cli, 'ARGV', ['watch', '--interval', '0']):
             with self.assertRaises(Reloaded) as raised:
                 cli.main(['watch', '--interval', '0'], self.b)
         self.assertEqual(raised.exception.args[0][2:], ['watch', '--interval', '0'])
         run.assert_not_called()                        # no --project: nothing to sync first
+
+    def test_watch_called_in_process_never_reexecs(self):
+        with patch.object(cli, 'code_fingerprint', side_effect=['old', 'new', 'newer']), \
+                patch.object(cli.os, 'execv', side_effect=AssertionError('re-exec from a test')):
+            self.assertEqual(cli.main(['watch', '--interval', '0', '--max-ticks', '1'], self.b), 0)
 
     def test_watch_exits_only_with_work(self):
         self.configure(auto=True, workers=['claude-desktop'])

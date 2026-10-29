@@ -400,6 +400,7 @@ class WorkspaceFlow(unittest.TestCase):
         self.assertEqual(branch(tree / 'app'), 'me/mst-60')
         self.assertFalse((tree / 'api').exists())
         self.assertIn('## Workspace', spec['prompt'])
+        self.assertEqual(spec['title'], 'MST-60: Old 60')
         self.cli('worktree', '--task', 'MST-60', '--repo', 'api')       # the worker finds it needs the API too
         self.assertEqual(branch(tree / 'api'), 'me/mst-60')
         for name in ('app', 'api'):

@@ -36,7 +36,7 @@ of the owner's (also refreshed every 5 minutes). It's an overview only and never
   - For multi-part work, propose sub-issues with `plan --parent <IRO-123> --title … --plan -`.
 - **`replan`:** the owner replied to a plan with changes. Revise it with `ask --task <id> "<revised plan>"`.
 - **`handoff`:** an approved issue needs a worker.
-  - Start a Claude Desktop session from the spec (`start_session`: initiation user_asked, context fresh, `cwd` = spec.cwd, `use_worktree: false`, title `<IRO-123> <title>`, prompt = spec.prompt, `wake_when_done: true`).
+  - Start a Claude Desktop session from the spec (`start_session`: initiation user_asked, context fresh, `cwd` = spec.cwd, `use_worktree: false`, title `<ISSUE>: <title>` (spec.title already has it, e.g. `IRO-104: Preview → Production migration`), prompt = spec.prompt, `wake_when_done: true`).
   - Then `ack --task <id> --session <session id>`.
   - Every worker is started by you, one level deep. Workers never start workers.
 - **`forward`:** the owner commented on work in progress. Send the text to that worker session (SendMessage to its session id), saying it came from Linear.

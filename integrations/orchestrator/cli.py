@@ -390,6 +390,12 @@ def as_list(value):
     return value if isinstance(value, list) else [value] if value else []
 
 
+def session_title(task):
+    """Worker session title: '<ISSUE>: <title>' (e.g. 'IRO-104: Preview → Production migration')."""
+    ident, name = task.get('linear_identifier'), task.get('name', '')
+    return '%s: %s' % (ident, name) if ident and not name.startswith(ident) else name
+
+
 def workspace_repos(settings):
     """Multi-repo workspace: taskboard.repos maps a name to {path, base}; the project root is not a repo."""
     return settings.get('repos') or {}
@@ -530,7 +536,7 @@ def cmd_dispatch(args, b):
             run['log'] = str(log)
             where = 'Dispatched to **%s**' % runner
         else:
-            row['handoff'] = run['handoff'] = runners.handoff(runner, task.get('name', ''), work_dir, brief, repo)
+            row['handoff'] = run['handoff'] = runners.handoff(runner, session_title(task), work_dir, brief, repo)
             where = 'Handed to **%s**' % runner
         b.set(task['id'], task_status='In Progress', task_agent=runner, agent_session=runner + ' · ' + str(tree))
         b.say(task['id'], '%s in worktree `%s` (branch task/%s).' % (where, tree, short))
@@ -1092,7 +1098,7 @@ def parser():
     return p
 
 
-ARGV = None                               # this process's command line, for reloading a watcher in place
+ARGV = None                               # real command line (never set when main() is called from tests)
 
 
 def main(argv=None, b=None):
@@ -1102,7 +1108,8 @@ def main(argv=None, b=None):
         sp.add_argument('--scope', help='orchestrator scope from taskboard.orchestrators')
     args = p.parse_args(argv)
     SCOPE = getattr(args, 'scope', None)
-    ARGV = list(sys.argv[1:] if argv is None else argv)
+    if argv is None:
+        ARGV = list(sys.argv[1:])          # a real command line: only then may a watcher re-exec itself
     try:
         result = globals()['cmd_' + args.command](args, b or anyboard.Board())
     except (ValueError, RuntimeError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
