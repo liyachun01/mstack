@@ -101,5 +101,15 @@ class RoleCardTests(unittest.TestCase):
                       roles.card(self.project, 'local_w'))
         self.assertIn('This is a sub-issue of IRO-9 (worker `local_w`)', roles.card(self.project, 'local_sub'))
 
+    def test_tree_shows_the_hierarchy(self):                                                    # MST-34
+        text = roles.tree(self.project)
+        self.assertIn('repo orchestrator `local_top`', text)
+        self.assertIn('  - customer-api sub-orchestrator `local_api`', text)
+        self.assertIn('    - IRO-9 worker `local_w`', text)
+        self.assertIn('      - IRO-10 worker `local_sub`', text)
+
+    def test_orchestrator_with_scopes_never_dispatches(self):                                   # MST-33
+        self.assertIn('You never start worker sessions or run `dispatch`', roles.card(self.project, 'local_top'))
+
 if __name__ == '__main__':
     unittest.main()

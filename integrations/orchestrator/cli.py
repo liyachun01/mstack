@@ -469,8 +469,11 @@ def prepare(b, repo, task, table, runner=None):
 
 def finish(b, task_id, tree, who, summary, exit_code=None):
     """Shared end of every run: commits since base, review ask, In Review."""
-    bases = {p.name[5:]: p.read_text().strip() for p in (tree/'.mstack/cache').glob('base.*')}
-    if bases:                                       # multi-repo workspace: one worktree per touched repo
+    bases = {p.name[5:]: p.read_text().strip() for p in (tree/'.mstack/cache').glob('base.*')} if tree else {}
+    if tree is None or not (tree/'.mstack/cache/base').exists() and not bases:
+        commits, stat, branch = [], 'commits not counted (no mstack worktree recorded)', \
+            (git(tree, 'branch', '--show-current', check=False) if tree and tree.exists() else 'unknown')
+    elif bases:                                       # multi-repo workspace: one worktree per touched repo
         count, parts = 0, []
         for name, base in sorted(bases.items()):
             found = git(tree/name, 'log', '--oneline', base + '..HEAD', check=False).splitlines()
@@ -496,6 +499,9 @@ def cmd_dispatch(args, b):
     name, entry = table_of(args.project)
     settings = project_settings(entry)
     repo = Path(entry['path'])
+    if settings.get('orchestrators') and not SCOPE:
+        raise ValueError('This project has sub-orchestrators: only a scope dispatches (--scope one of %s). The '
+                         'top orchestrator assigns work to them instead.' % ', '.join(sorted(settings['orchestrators'])))
     if workspace_repos(settings):
         pass                              # a folder of repos: each task gets worktrees of the repos it touches
     elif not git(repo, 'rev-parse', '--verify', 'HEAD', check=False):
@@ -516,7 +522,17 @@ def cmd_dispatch(args, b):
         if task.get('task_status') != 'Todo' or task.get('task_agent') == 'human':
             continue
         if (runs.get(task['id']) or {}).get('adopted'):
-            continue                      # an existing session already works on it
+            # Approved work for a session that already exists: resume it there instead of starting a second worker.
+            run = runs[task['id']]
+            prompt = 'Approved: continue %s with the plan below.\n\n%s' % (
+                task.get('linear_identifier') or task['id'], brief_for(b, task['id'], name, Path(run.get('tree') or repo)))
+            b.set(task['id'], task_status='In Progress')
+            b.say(task['id'], 'Handed back to the existing session `%s` (status → In Progress).' % run.get('session'))
+            with state() as s:
+                s['runs'][task['id']].update({'resume': {'session': run.get('session'), 'prompt': prompt}, 'resumed': False})
+            started.append({'task': task['id'], 'name': task.get('name'), 'resume': run.get('session')})
+            room -= 1
+            continue
         waiting = [x for x in as_list(task.get('task_blocked_by')) if b.get(x).get('task_status') != 'Done']
         if waiting:
             continue      # blockers first; their branches are merged in when this task starts
@@ -549,14 +565,26 @@ def cmd_dispatch(args, b):
     return {'table': name, 'started': started, 'already_running': len(busy)}
 
 
+def run_key(task):
+    """The runs key for a task given by id or by its Linear name (IRO-123)."""
+    runs = read_state().get('runs', {})
+    if task in runs:
+        return task
+    return next((k for k, r in runs.items() if r.get('issue') == task), task)
+
+
 def cmd_ack(args, b):
-    """The orchestrator started the host session for a handoff: stop offering it."""
+    """The orchestrator started the host session for a handoff, or resumed an adopted worker: stop offering it."""
+    key = run_key(args.task)
     with state() as s:
-        run = s.get('runs', {}).get(args.task)
-        if not run or not run.get('handoff'):
-            raise ValueError('Task %s has no handoff to acknowledge' % args.task)
+        run = s.get('runs', {}).get(key)
+        if not run or not (run.get('handoff') or run.get('adopted')):
+            raise ValueError('Task %s has no handoff or adopted worker to acknowledge' % args.task)
+        if run.get('adopted') and run.get('session') not in (None, args.session):
+            raise ValueError('Task %s is worked by adopted session %s' % (args.task, run['session']))
         run['session'] = args.session
-    return {'task': args.task, 'session': args.session}
+        run['resumed'] = True
+    return {'task': key, 'session': args.session}
 
 
 def auto_tables(skipped=None):
@@ -748,6 +776,9 @@ def cmd_tick(args, b):
     for task, run in read_state().get('runs', {}).items():
         if run['table'] in names and run.get('handoff') and not run.get('session'):
             out['needs_orchestrator'].append({'kind': 'handoff', 'task': task, **run['handoff']})
+        if run['table'] in names and run.get('resume') and not run.get('resumed'):
+            # Send the prompt to the existing session (SendMessage), then `ack --task … --session …`.
+            out['needs_orchestrator'].append({'kind': 'resume', 'task': task, 'issue': run.get('issue'), **run['resume']})
     with state() as s:
         s['attention_seen'] = sorted(set(s.get('attention_seen', [])) | set(fresh))
         s['last_tick'] = {'at': time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'tables': names,
@@ -838,13 +869,15 @@ def cmd_work(args, b):
 
 def cmd_done(args, b):
     """A worker in any host (desktop session, manual) reports its task ready for review."""
-    b = board_of_task(args.task, b)
-    run = read_state().get('runs', {}).get(args.task)
+    key = run_key(args.task)
+    b = board_of_task(key, b)
+    run = read_state().get('runs', {}).get(key)
     if not run:
-        raise ValueError('Task %s was not dispatched' % args.task)
-    summary = (sys.stdin.read() if args.summary == '-' else args.summary) + doc_links(table_of_task(args.task), args.doc)
-    commits = finish(b, args.task, Path(run['tree']), run['runner'], summary)
-    return {'task': args.task, 'status': 'In Review', 'commits': commits}
+        raise ValueError('Task %s has no worker on the board (dispatch or adopt it first)' % args.task)
+    summary = (sys.stdin.read() if args.summary == '-' else args.summary) + doc_links(table_of_task(key), args.doc)
+    tree = Path(run['tree']) if run.get('tree') else None      # adopted sessions may have no recorded worktree
+    commits = finish(b, key, tree, run.get('runner') or 'worker', summary)
+    return {'task': key, 'status': 'In Review', 'commits': commits}
 
 
 def cmd_note(args, b):
@@ -867,6 +900,44 @@ def cmd_owner(args, b):
     task = lb.get(args.task)
     lb.owner_says(task['id'], text)
     return {'task': task['id'], 'issue': task.get('linear_identifier'), 'recorded': text[:200]}
+
+
+def cmd_inhand(args, b):
+    """The orchestrator is already handling an issue's latest owner messages (a plan request, a reply):
+    mark them seen so the watcher doesn't stop again for the same thing."""
+    name, entry = table_of(args.project)
+    lb = board_for(name, b)
+    task = lb.get(args.task)
+    messages = lb.messages(task['id'])
+    keys = ['trigger:' + m['id'] for m in messages] + ['fwd:' + m['id'] for m in messages]
+    verdict, text, _ = anyboard.decide(messages)
+    if verdict == 'feedback':
+        keys.append('%s:%s' % (task['id'], hashlib.sha256(text.encode()).hexdigest()[:12]))
+    with state() as s:
+        s['attention_seen'] = sorted(set(s.get('attention_seen', [])) | set(keys))
+    return {'task': task['id'], 'issue': task.get('linear_identifier'), 'marked': len(keys)}
+
+
+def cmd_tree(args, b):
+    """An issue's sub-issue tree, as far as the owner's issues show it. Read it before creating sub-issues."""
+    name, entry = table_of(args.project)
+    lb = board_for(name, b)
+    root = lb.get(args.task)
+    rows = lb.tasks(entry.get('collection'))
+    kids = {}
+    for t in rows:
+        if t.get('parent'):
+            kids.setdefault(t['parent'], []).append(t)
+    runs = read_state().get('runs', {})
+    def node(t, depth=0):
+        run = runs.get(t['id']) or {}
+        out = [{'issue': t.get('linear_identifier'), 'title': t.get('name'), 'status': t.get('task_status'),
+                'depth': depth, **({'worker': run['session']} if run.get('session') else {})}]
+        for child in sorted(kids.get(t.get('linear_identifier'), []), key=lambda c: c.get('linear_identifier') or ''):
+            out += node(child, depth + 1)
+        return out
+    return {'root': root.get('linear_identifier'), 'parent': root.get('parent'), 'tree': node(root),
+            'note': 'Only issues assigned to or created by the owner are visible.'}
 
 
 def cmd_thread(args, b):
@@ -1086,6 +1157,10 @@ def parser():
     s = sub.add_parser('handover', help='brief for a fresh orchestrator session taking over this board or scope')
     s.add_argument('--project', required=True)
     s.add_argument('--messages', type=int, default=2, help='latest messages to include per open issue')
+    s = sub.add_parser('inhand', help="mark an issue's latest owner messages as being handled (watcher won't stop again)")
+    s.add_argument('--project', required=True); s.add_argument('--task', required=True)
+    s = sub.add_parser('tree', help="an issue's sub-issue tree (read before creating sub-issues)")
+    s.add_argument('--project', required=True); s.add_argument('--task', required=True)
     s = sub.add_parser('thread', help="an issue's conversation as the board sees it")
     s.add_argument('--project', required=True); s.add_argument('--task', required=True, help='issue id or IRO-123')
     s = sub.add_parser('mirror', help='refresh the local Postgres issue table for a Linear board')

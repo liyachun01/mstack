@@ -123,7 +123,11 @@ def card(project, session):
         lines = ['Your board: `%s --scope %s`. Load the `mstack-orchestrator` skill. Plan → owner verdict → '
                  '`dispatch` (one worker session per approved issue, titled `<ISSUE>: <title>`) → forward feedback '
                  '→ `done` reviews. Workers you start stay nested under you: don\'t move them to top level unless the owner '
-                 'asks.' % (run('<cmd>'), scope)]
+                 'asks.' % (run('<cmd>'), scope),
+                 'Before creating sub-issues, read the existing tree (`%s --scope %s --task <PARENT>`). If the owner '
+                 'names sub-issues that don\'t exist yet, or says "create them" without saying issues or sessions, ask '
+                 'first. Already handling a request the watcher raised? `%s --scope %s --task <ISSUE>` stops it '
+                 'raising the same thing again.' % (run('tree'), scope, run('inhand'), scope)]
         if private:
             lines.append(verdicts % scope)
         workers = [r for r in board_state().get('runs', {}).values()
@@ -137,7 +141,9 @@ def card(project, session):
         lines = ['## Your mstack role: %s **orchestrator** (top level)' % name, RULES['orchestrator'], NO_WORK]
         others = {s: c for s, c in scopes.items() if s != me.get('scope')}
         if others:
-            lines += ['Assign by area to a sub-orchestrator: SendMessage to its session with the request word for '
+            lines += ['You never start worker sessions or run `dispatch`; that is your sub-orchestrators\' job '
+                      '(mstack refuses `dispatch` without their scope).',
+                      'Assign by area to a sub-orchestrator: SendMessage to its session with the request word for '
                       'word plus the issue ids, then tell the owner where it went. Several areas: split it. Unclear: '
                       'ask the owner.', *[scope_line(s, c, board, subs) for s, c in sorted(others.items())]]
         if me.get('scope'):
@@ -148,7 +154,10 @@ def card(project, session):
     elif me and me.get('role') == 'sub-orchestrator':
         scope = me.get('scope')
         lines = ['## Your mstack role: **%s** sub-orchestrator (%s)' % (scope, name), RULES['sub-orchestrator'], NO_WORK,
-                 scope_line(scope, scopes.get(scope, {}), board, subs), *board_duty(scope)]
+                 scope_line(scope, scopes.get(scope, {}), board, subs), *board_duty(scope),
+                 'If the app refuses `start_session` because your turn began with another session\'s message, offer '
+                 'the worker as a proposal card (initiation `own_initiative`) for the owner to start, and tell your '
+                 'orchestrator.']
         if top:
             lines.append('Your orchestrator is `%s`. Work it assigns you is the owner\'s request; anything outside '
                          'your scope goes back to it.' % top)
@@ -189,6 +198,37 @@ def card(project, session):
         else:
             return None
     lines.append(spark)
+    return '\n'.join(lines)
+
+
+def tree(project):
+    """The session hierarchy mstack knows: orchestrator → sub-orchestrators → workers → sub-issue workers / helpers."""
+    project = Path(project)
+    roles, name = registered(project), table_name(project)
+    runs = [r for r in board_state().get('runs', {}).values() if r.get('table') == name and r.get('session')]
+    lines = []
+    def worker_lines(r, indent):
+        out = ['%s- %s worker `%s`%s' % (indent, r.get('issue') or '?', r['session'], ' (adopted)' if r.get('adopted') else '')]
+        out += ['%s  - helper `%s`' % (indent, s) for s, h in roles.items()
+                if h.get('role') == 'helper' and h.get('worker') == r['session']]
+        for sub in runs:
+            if sub.get('parent') and sub.get('parent') == r.get('issue'):
+                out += worker_lines(sub, indent + '  ')
+        return out
+    tops = [s for s, r in roles.items() if r.get('role') == 'orchestrator']
+    lines.append('%s orchestrator `%s`' % (name, tops[0] if tops else 'not registered'))
+    scopes = sorted({r.get('scope') for r in roles.values() if r.get('role') == 'sub-orchestrator'} |
+                    {r.get('scope') for r in runs if r.get('scope')} - {None})
+    own = next((roles[s].get('scope') for s in tops if roles[s].get('scope')), None)
+    for scope in scopes:
+        sub = next((s for s, r in roles.items() if r.get('role') == 'sub-orchestrator' and r.get('scope') == scope), None)
+        indent = '  '
+        if scope != own:
+            lines.append('  - %s sub-orchestrator `%s`' % (scope, sub or 'not registered'))
+            indent = '    '
+        for r in runs:
+            if r.get('scope') == scope and not (r.get('parent') and any(x.get('issue') == r['parent'] for x in runs)):
+                lines += worker_lines(r, indent)
     return '\n'.join(lines)
 
 
@@ -240,6 +280,7 @@ def main(argv):
     s = sub.add_parser('list'); s.add_argument('--project', type=Path, required=True)
     s = sub.add_parser('install'); s.add_argument('--project', type=Path, required=True)
     s = sub.add_parser('card'); s.add_argument('--project', type=Path, required=True); s.add_argument('--session', required=True)
+    s = sub.add_parser('tree'); s.add_argument('--project', type=Path, required=True)
     sub.add_parser('hook')
     args = p.parse_args(argv)
     if args.command == 'hook':
@@ -276,6 +317,9 @@ def main(argv):
             result = {'removed': state['runtime'].setdefault('roles', {}).pop(args.session, None)}
     elif args.command == 'list':
         result = registered(project)
+    elif args.command == 'tree':
+        print(tree(project))
+        return 0
     elif args.command == 'install':
         result = {'hooks_added': install(project)}
     else:

@@ -18,7 +18,9 @@ MARK = '🤖'          # every orchestrator/agent line
 ASK = MARK + '❓'      # a line that waits for the owner's reaction or reply
 APPROVE = {'👍', '✅', '🚀', '👌', '❤️'}
 REJECT = {'👎', '❌'}
-APPROVE_WORDS = ('approve', 'approved', 'lgtm', 'go ahead', 'ship it', 'yes', 'ok')
+APPROVE_WORDS = ('approve', 'approved', 'lgtm', 'go ahead', 'ship it', 'yes', 'ok', 'go', 'approve it', 'do it')
+# "Approve, and also …" is an approval with notes, but "ok but …" or a question is feedback.
+HEDGES = ('?', ' but ', 'except', "don't", 'do not', 'wait', 'instead', 'hold', ' actually ', ' change ')
 # Anytype comments can store emoji as shortcodes (a typed 👍 arrives as ":+1:").
 SHORTCODES = {':+1:': '👍', ':thumbsup:': '👍', ':white_check_mark:': '✅', ':rocket:': '🚀',
               ':ok_hand:': '👌', ':heart:': '❤️', ':-1:': '👎', ':thumbsdown:': '👎', ':x:': '❌'}
@@ -180,6 +182,11 @@ def verdict_of(text):
     if tokens and all(t in APPROVE_WORDS or t in APPROVE or (t and all(c in ''.join(APPROVE) for c in t))
                       for t in tokens):
         return 'approved'
+    # Leading approval followed by instructions: "Approve. Use the CN region first." → approved, notes kept.
+    first = tokens[0] if tokens else ''
+    if (first in APPROVE_WORDS or first in APPROVE or text[:1] in APPROVE) and \
+            not any(h in ' %s ' % plain for h in HEDGES):
+        return 'approved'
     return 'feedback'
 
 
@@ -204,8 +211,9 @@ def decide(messages):
         verdicts = {verdict_of(t) for t in texts if t}
         if 'rejected' in verdicts and verdicts <= {'rejected', 'approved'}:
             return 'rejected', text, ask['id']
-        if verdicts == {'approved'}:
-            return 'approved', text, ask['id']
+        hedged = any(h in ' %s ' % x.lower().strip(' .!') for x in texts if verdict_of(x) != 'approved' for h in HEDGES)
+        if 'approved' in verdicts and 'rejected' not in verdicts and verdict_of(texts[0]) == 'approved' and not hedged:
+            return 'approved', text, ask['id']      # 👍 then instructions: approved, the text travels as notes
         return 'feedback', text, ask['id']
     if reactions & APPROVE:
         return 'approved', '', ask['id']

@@ -74,6 +74,25 @@ of the owner's (also refreshed every 5 minutes). It's an overview only and never
 When a worker's turn ends you are woken: run `poll`. A finished worker has already posted its
 result with `done`; the owner's 👍 makes it Done, and a reply sends the notes back to the same worker.
 
+## Board tools added from sparks (2026-10-29)
+- **Verdicts:**
+  - "Approve", "go" or "do it", optionally followed by instructions, approve the plan, and the instructions travel
+    to the worker as notes.
+  - 👍 followed by more text also approves, unless the text hedges ("but", "actually", "instead", "wait", a
+    question). Then it's feedback.
+- **Adopted workers:** an approved plan for an issue that already has an adopted session produces a `resume` item.
+  Send the prompt to that session with SendMessage, then `ack --task <ISSUE> --session <id>`.
+- **`done` and `ack`** accept the Linear name (IRO-123). `done` works for adopted sessions with no recorded worktree.
+- **`inhand --task <ISSUE>`:** use it when you're already handling the request the watcher raised, so it doesn't stop
+  again for the same thing.
+- **`tree --task <PARENT>`:** read the existing sub-issues before creating any. If the owner names sub-issues that
+  don't exist, or says "create them" without saying issues or sessions, ask first.
+- **Dispatch:** only a scope dispatches when the project has sub-orchestrators. The top orchestrator assigns work.
+- **Relayed turns:** if the app refuses `start_session` because the turn began with another session's message,
+  offer the worker as a proposal card (`own_initiative`) for the owner to start.
+- **`mstack role tree --project P`:** shows the whole hierarchy mstack knows (orchestrator → sub-orchestrators →
+  workers → sub-issue workers and helpers).
+
 ## Rules
 - **Verdicts are the owner's:** 👍 ✅ / `lgtm` / `ok` (also `:+1:`) approve, 👎 drops, any other reply is feedback.
   Don't act on unapproved plans. Untouched history (no 🤖 comments) is never dispatched.

@@ -635,7 +635,7 @@ class OrchestratorTests(unittest.TestCase):
         out = io.StringIO()
         with contextlib.redirect_stderr(out), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(cli.main(['done', '--task', a], self.b), 1)
-        self.assertIn('not dispatched', out.getvalue())
+        self.assertIn('has no worker on the board', out.getvalue())
 
 class BridgeRetryTests(unittest.TestCase):
     def test_429_is_retried_other_errors_are_not(self):
