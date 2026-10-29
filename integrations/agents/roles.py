@@ -73,7 +73,8 @@ def scope_line(scope, conf, board, sessions):
             links.append('%s/%s' % (link.get('workspace'), link.get('team')))
     who = sessions.get(scope)
     return '- **%s**: apps %s (%s)%s%s' % (scope, apps, ', '.join(links) or 'table link',
-                                       ', focus ' + ', '.join(conf['focus']) if conf.get('focus') else '',
+                                       (', focus ' + ', '.join(conf['focus']) if conf.get('focus') else '')
+                                       + (', except ' + ', '.join(conf['exclude']) if conf.get('exclude') else ''),
                                        ', session `%s`' % who if who else ', no session registered')
 
 

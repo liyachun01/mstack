@@ -2316,6 +2316,14 @@
                   "type": "string",
                   "pattern": "^[A-Z][A-Z0-9]*-[0-9]+$"
                 }
+              },
+              "exclude": {
+                "type": "array",
+                "description": "Root issues (with their sub-issues) this scope leaves to another scope, e.g. a sub-orchestrator focused on them.",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Z0-9]*-[0-9]+$"
+                }
               }
             }
           }

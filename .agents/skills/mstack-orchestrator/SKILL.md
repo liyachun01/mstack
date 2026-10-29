@@ -44,6 +44,8 @@ Add `--scope <name>` to every board command. Your watcher is `watch --project P 
 with one lock per scope. Scopes must not claim the same issues; `mstack doctor` reports overlaps.
 `mirror --project P` refreshes the local Postgres table `orchestrator.issues`, which covers every issue
 of the owner's (also refreshed every 5 minutes). It's an overview only and never starts sessions.
+- **Carving a tree out of a scope:** give the new scope `focus: [ROOT]` and add `ROOT` to the old scope's `exclude`.
+  Never replace a scope with a fixed list of roots; new issues would then belong to no scope.
 
 ## Start of session
 1. Read the repo's AGENTS.md / CLAUDE.md and `.mstack/stack.json`.

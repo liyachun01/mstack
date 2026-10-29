@@ -82,8 +82,12 @@ def doctor(project,report=False):
         for other in names[i + 1:]:
             sa, sb = scopes[a], scopes[other]
             shared = set(sa.get('apps') or ['*']) & set(sb.get('apps') or ['*'])
-            if shared and not (sa.get('focus') and sb.get('focus') and not set(sa['focus']) & set(sb['focus'])):
-                blockers.append('orchestrators %s and %s both claim %s; give them disjoint apps or disjoint focus roots'
+            fa, fb = set(sa.get('focus') or []), set(sb.get('focus') or [])
+            xa, xb = set(sa.get('exclude') or []), set(sb.get('exclude') or [])
+            disjoint = (fa and fb and not fa & fb) or (fa and fa <= xb) or (fb and fb <= xa)
+            if shared and not disjoint:
+                blockers.append('orchestrators %s and %s both claim %s; give them disjoint apps, disjoint focus roots, '
+                                'or exclude one\'s focus from the other'
                                 % (a, other, ', '.join(sorted(shared))))
     if resolved['visibility'] == 'local':
         leak = visibility.status(project)

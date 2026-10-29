@@ -156,6 +156,7 @@ class LinearBoard:
         if not self.links:
             raise ValueError('Linear board needs taskboard.link or apps.<CODE>.link (in this scope)')
         self.focus = set((scope or {}).get('focus') or [])
+        self.exclude = set((scope or {}).get('exclude') or [])      # root issues another scope owns
         self.all_issues = all_issues
         self.cache, self.owner_of, self.parents = {}, {}, {}
         self.journal = Journal(project) if settings.get('private') else None
@@ -188,12 +189,16 @@ class LinearBoard:
                 'branch': issue['branchName'], 'linear_state': issue['state'].get('name')}
 
     def in_focus(self, ident, link=None):
-        """True if the issue is a focus root or below one (parents are looked up as needed)."""
-        if not self.focus:
-            return True
+        """True if the issue is in this scope: under a focus root (when there are any) and under no excluded root."""
+        if self.exclude and self.under(ident, self.exclude, link):
+            return False
+        return not self.focus or self.under(ident, self.focus, link)
+
+    def under(self, ident, roots, link=None):
+        """True if the issue is one of roots or below one (parents are looked up as needed)."""
         seen = 0
         while ident and seen < 8:
-            if ident in self.focus:
+            if ident in roots:
                 return True
             if ident not in self.parents and link:
                 try:
@@ -206,7 +211,7 @@ class LinearBoard:
 
     def tasks(self, table=None, kind=None):
         rows = self._all()
-        if self.all_issues or not self.focus:
+        if self.all_issues or not (self.focus or self.exclude):
             return rows
         return [t for t in rows if self.in_focus(t['linear_identifier'], self.owner_of[t['id']])]
 

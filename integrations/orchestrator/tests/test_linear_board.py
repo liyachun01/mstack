@@ -259,6 +259,15 @@ class LinearBoardFlow(unittest.TestCase):
         self.cli('note', '--task', 'MST-600', 'ARM runner fixed')
         self.assertIn('ARM runner fixed', self.fake.issues[old]['comments'][-1]['body'])
 
+    def test_exclude_leaves_another_scopes_tree_out(self):
+        root = self.cli('plan', '--project', 'repo', '--title', 'Portal', '--plan', '-', stdin='p')['task']
+        child = self.cli('plan', '--project', 'repo', '--title', 'Portal part', '--parent', 'MST-1', '--plan', '-', stdin='p')['task']
+        other = self.cli('plan', '--project', 'repo', '--title', 'API', '--plan', '-', stdin='p')['task']
+        self.scoped(**{'api': {'apps': ['*'], 'exclude': ['MST-1']}, 'portal': {'apps': ['*'], 'focus': ['MST-1']}})
+        seen = lambda scope: {t['task'] for t in self.cli('status', '--project', 'repo', '--scope', scope)['tasks']}
+        self.assertEqual(seen('api'), {other})                  # and any new issue lands here, not nowhere
+        self.assertEqual(seen('portal'), {root, child})
+
     def test_mirror_writes_every_issue_with_focus_flags(self):
         self.cli('plan', '--project', 'repo', '--title', 'Root', '--plan', '-', stdin='p')
         self.cli('plan', '--project', 'repo', '--title', 'Child', '--parent', 'MST-1', '--plan', '-', stdin='p')

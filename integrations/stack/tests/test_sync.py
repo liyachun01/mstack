@@ -99,5 +99,16 @@ class SyncTests(unittest.TestCase):
         self.assertIn('roles.py', (tree/'.claude/settings.local.json').read_text())
         self.assertEqual(self.sync()['changes'], [])
 
+    def test_doctor_accepts_a_scope_that_excludes_anothers_focus(self):
+        config = json.loads((self.repo/'.mstack/stack.json').read_text())
+        config['taskboard'] = {'table': 'team', 'orchestrators': {'api': {'apps': ['API']},
+                                                                 'portal': {'apps': ['API'], 'focus': ['IRO-91']}}}
+        (self.repo/'.mstack/stack.json').write_text(json.dumps(config))
+        overlap = lambda: [b for b in cli.doctor(self.repo, report=True)['blockers'] if 'both claim' in b]
+        self.assertTrue(overlap())
+        config['taskboard']['orchestrators']['api']['exclude'] = ['IRO-91']
+        (self.repo/'.mstack/stack.json').write_text(json.dumps(config))
+        self.assertEqual(overlap(), [])
+
 if __name__ == '__main__':
     unittest.main()

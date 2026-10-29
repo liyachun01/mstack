@@ -623,7 +623,7 @@ def mirror(name, run_sql=None):
     for t in rows:
         issue = board.cache.get(t['id']) or {}
         in_scopes = sorted(s for s, b in scopes.items()
-                           if b.focus and any(l.app == board.owner_of[t['id']].app for l in b.links)
+                           if (b.focus or b.exclude) and any(l.app == board.owner_of[t['id']].app for l in b.links)
                            and b.in_focus(t['linear_identifier'], board.owner_of[t['id']]))
         out.append({'identifier': t['linear_identifier'], 'linear_id': t['id'],
                     'team': board.owner_of[t['id']].conf['team'], 'app': t.get('task_app'), 'title': t['name'],
