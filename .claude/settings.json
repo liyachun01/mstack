@@ -1,0 +1,8 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "timeout": 5,
+      "command": "python3 \"$CLAUDE_PROJECT_DIR\"/integrations/agents/capture_hook.py"}]}],
+    "Stop": [{"hooks": [{"type": "command", "timeout": 5,
+      "command": "python3 \"$CLAUDE_PROJECT_DIR\"/integrations/agents/capture_hook.py"}]}]
+  }
+}

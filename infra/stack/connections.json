@@ -1,0 +1,72 @@
+{
+  "$schema": "../../integrations/stack/schemas/connections.schema.json",
+  "version": 1,
+  "connections": {
+    "slack-shared": {
+      "tool": "slack",
+      "mcp_url": "https://mcp.slack.com/mcp",
+      "input": {
+        "workspace_id": "",
+        "credential_file": "",
+        "auth_type": "oauth",
+        "oauth_client_id": "",
+        "oauth_client_secret_file": "",
+        "oauth_scopes": []
+      },
+      "space": {
+        "channel_ids": []
+      },
+      "label": "slack-shared"
+    },
+    "linear-shared": {
+      "tool": "linear",
+      "mcp_url": "https://mcp.linear.app/mcp/readonly",
+      "input": {
+        "workspace_id": "",
+        "credential_file": "",
+        "auth_type": "oauth",
+        "oauth_client_id": "",
+        "oauth_client_secret_file": "",
+        "oauth_scopes": []
+      },
+      "space": {
+        "team_ids": [],
+        "project_ids": []
+      },
+      "label": "linear-shared"
+    },
+    "figma-shared": {
+      "tool": "figma",
+      "mcp_url": "https://mcp.figma.com/mcp",
+      "input": {
+        "account": "",
+        "credential_file": "",
+        "auth_type": "oauth",
+        "oauth_client_id": "",
+        "oauth_client_secret_file": "",
+        "oauth_scopes": []
+      },
+      "space": {
+        "file_keys": []
+      },
+      "label": "figma-shared"
+    },
+    "notion-shared": {
+      "tool": "notion",
+      "mcp_url": "https://mcp.notion.com/mcp",
+      "input": {
+        "workspace_id": "",
+        "credential_file": "",
+        "auth_type": "oauth",
+        "oauth_client_id": "",
+        "oauth_client_secret_file": "",
+        "oauth_scopes": []
+      },
+      "space": {
+        "page_ids": [],
+        "data_source_ids": []
+      },
+      "label": "notion-shared"
+    }
+  }
+}

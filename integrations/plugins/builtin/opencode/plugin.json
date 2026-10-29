@@ -1,0 +1,20 @@
+{
+  "$schema": "../../schemas/plugin.schema.json",
+  "name": "opencode",
+  "version": "0.1.0",
+  "joint": "agent",
+  "status": "implemented",
+  "transport": "argv",
+  "summary": "OpenCode CLI one-shot run",
+  "command": [
+    "opencode",
+    "run",
+    "{brief}"
+  ],
+  "requires": {
+    "binaries": [
+      "opencode"
+    ]
+  },
+  "mcp_style": "none"
+}

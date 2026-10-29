@@ -1,0 +1,9 @@
+{
+  "t3_app_absent": true,
+  "t3_state_absent": true,
+  "removed_paths_absent": true,
+  "t3_processes": [],
+  "dedicated_residue": [],
+  "paseo_installed": true,
+  "superset_still_absent": true
+}

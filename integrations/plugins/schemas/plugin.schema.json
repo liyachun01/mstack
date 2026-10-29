@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mstack plugin manifest",
+  "description": "One plugin fills one joint. The joint's contract (integrations/plugins/contracts.md) says what it must do; the manifest says how mstack reaches it. Discovery never installs anything.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "version",
+    "joint",
+    "status",
+    "transport"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,40}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "summary": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "joint": {
+      "enum": [
+        "agent",
+        "board",
+        "link",
+        "memory.instant",
+        "memory.long",
+        "compress",
+        "gateway",
+        "docs"
+      ],
+      "description": "Which joint this plugin fills."
+    },
+    "status": {
+      "enum": [
+        "implemented",
+        "adapter-pending"
+      ],
+      "description": "adapter-pending: the backend exists in mstack but its contract adapter is not written yet; never selected at runtime."
+    },
+    "transport": {
+      "enum": [
+        "argv",
+        "handoff",
+        "python",
+        "jsonrpc-stdio",
+        "mcp",
+        "http"
+      ],
+      "description": "argv: run a command from a template. handoff: a host the orchestrator agent or owner starts. python: module with the contract functions. jsonrpc-stdio: any-language process answering one JSON request per line. mcp/http: a server endpoint."
+    },
+    "command": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      },
+      "description": "argv template. Placeholders: {python} {brief} {cwd} {notify} {plugin_dir}; an argument that is exactly {mcp} expands to the host's per-run MCP arguments."
+    },
+    "entry": {
+      "type": "string",
+      "description": "python: module path relative to plugin_dir; jsonrpc-stdio: argv[0] relative to plugin_dir or on PATH; mcp/http: URL."
+    },
+    "via": {
+      "enum": [
+        "start_session",
+        "owner"
+      ],
+      "description": "handoff only: who starts the host."
+    },
+    "requires": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "binaries": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "services": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "mstack services (infra/services) that must be running"
+        },
+        "credentials": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Project credential files (.mstack/secrets/...) that must exist, or setting names whose values are such paths"
+        },
+        "tenant": {
+          "type": "string",
+          "description": "mstack shared-service tool the project must be registered with (mstack tenant add --tool <name>)"
+        }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      },
+      "description": "Optional contract features, e.g. agent: notify, resume; board: reactions; memory.long: hybrid-search."
+    },
+    "expose": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "orchestrator",
+          "worker-mcp"
+        ]
+      },
+      "description": "orchestrator: used by mstack itself. worker-mcp: offered to worker sessions as project-scoped MCP tools."
+    },
+    "settings": {
+      "type": "object",
+      "description": "JSON Schema for this plugin's per-project settings (validated before use)."
+    },
+    "mcp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "command"
+      ],
+      "description": "worker-mcp: the stdio MCP server a worker session gets. Placeholders: {stack} {project} {python}.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,40}$"
+        },
+        "command": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "hint": {
+          "type": "string",
+          "maxLength": 300,
+          "description": "One line telling a worker when to use these tools; added to its brief."
+        }
+      }
+    },
+    "mcp_style": {
+      "enum": [
+        "codex-config",
+        "mcp-json",
+        "none"
+      ],
+      "description": "agent only: how this host accepts per-run MCP servers. codex-config: -c mcp_servers.* via the {mcp} argv placeholder. mcp-json: an untracked .mcp.json in the worktree, enabled in its local settings. none: not supported."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "transport": {
+            "const": "argv"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "command"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "transport": {
+            "const": "handoff"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "via"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "transport": {
+            "enum": [
+              "python",
+              "jsonrpc-stdio",
+              "mcp",
+              "http"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "entry"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "expose": {
+            "contains": {
+              "const": "worker-mcp"
+            }
+          }
+        },
+        "required": [
+          "expose"
+        ]
+      },
+      "then": {
+        "required": [
+          "mcp"
+        ]
+      }
+    }
+  ]
+}

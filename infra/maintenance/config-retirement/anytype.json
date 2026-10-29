@@ -1,0 +1,6 @@
+{
+  "channel": "mstack-example",
+  "channel_deleted_in_native_ui": true,
+  "credential_revoked_http_status": 401,
+  "other_channels_and_keys_unchanged": true
+}

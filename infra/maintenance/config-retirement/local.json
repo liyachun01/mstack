@@ -1,0 +1,30 @@
+{
+  "removed_paths": [
+    "infra/services/state/graphify/tenants/mstack-example",
+    "infra/services/state/anytype/tenants/mstack-example",
+    "infra/services/state/headroom/tenants/mstack-example",
+    "examples/project-a",
+    "examples/project-b",
+    "integrations/examples/portfolio-demo",
+    "integrations/example",
+    "infra/projects/mstack-example",
+    "infra/services/state/migration-20261016/project",
+    "infra/services/state/headroom-20261016/project",
+    "infra/services/state/namespace-mstack-20261016/example-before",
+    "infra/services/state/namespace-mstack-20261016/config-backup/infra/projects/mstack-example",
+    ".secrets/agentgateway/projects/project-a",
+    ".secrets/agentgateway/projects/project-b"
+  ],
+  "shared_tenants_removed": [
+    "graphify",
+    "anytype",
+    "headroom"
+  ],
+  "gateway_placeholder_routes_and_keys_revoked": [
+    "project-a",
+    "project-b"
+  ],
+  "stale_clock_index_entry_removed": true,
+  "other_anytype_grants_preserved": true,
+  "shared_services_restarted": false
+}

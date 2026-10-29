@@ -1,0 +1,54 @@
+# Approved source-only test overlay; not a harness/gateway registration.
+services:
+  codegraph:
+    image: mcp-stack-codegraph:1.6.1
+    platform: linux/arm64
+    build:
+      context: ./infra/codegraph
+      dockerfile: Dockerfile
+    user: "501:501"
+    read_only: true
+    network_mode: none
+    mem_limit: 2g
+    cpus: 2
+    stdin_open: true
+    tty: false
+    environment:
+      CODEGRAPH_TELEMETRY: "0"
+      DO_NOT_TRACK: "1"
+      CODEGRAPH_NO_UPDATE_CHECK: "1"
+      CODEGRAPH_NO_DAEMON: "1"
+      CODEGRAPH_NO_WATCH: "1"
+      CODEGRAPH_MCP_TOOLS: explore,status
+      NODE_COMPILE_CACHE: /state/node-compile-cache
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=67108864,mode=1777
+    volumes:
+      - type: bind
+        source: ./scripts
+        target: /home/developer/workspace/mcp-stack/scripts
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./infra/codegraph/fixtures
+        target: /home/developer/workspace/mcp-stack/infra/codegraph/fixtures
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./infra/codegraph/project.json
+        target: /home/developer/workspace/mcp-stack/codegraph.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./infra/codegraph/state/mcp-stack
+        target: /home/developer/workspace/mcp-stack/.codegraph
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./infra/codegraph/state/runtime
+        target: /state
+        bind:
+          create_host_path: false

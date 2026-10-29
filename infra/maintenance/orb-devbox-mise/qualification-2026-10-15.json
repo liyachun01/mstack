@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-15",
+  "execution_domain": "OrbStack Ubuntu development machine",
+  "status": "mise cutover and safe duplicate retirement completed; required legacy consumers preserved",
+  "mise_version": "2026.9.6",
+  "tool_versions": {
+    "conda:git": "2.54.0",
+    "aqua:git-lfs/git-lfs": "3.7.1",
+    "aqua:cli/cli": "2.97.0",
+    "aqua:astral-sh/uv": "0.12.3",
+    "bun": "1.3.14",
+    "aqua:direnv/direnv": "2.37.1",
+    "aqua:sharkdp/fd": "10.3.0",
+    "aqua:junegunn/fzf": "0.67.0",
+    "aqua:jqlang/jq": "1.8.1",
+    "aqua:BurntSushi/ripgrep": "15.1.0",
+    "aqua:koalaman/shellcheck": "0.11.0",
+    "aqua:mvdan/sh": "3.12.0",
+    "aqua:tmux/tmux-builds": "3.6a",
+    "node": "24.19.0",
+    "npm:pnpm": "10.33.0",
+    "npm:@volcengine/cli": "1.1.8",
+    "npm:@volcengine/vefaas-cli": "0.3.1",
+    "npm:ve-tos-cli": "1.0.2",
+    "python": "3.13.15",
+    "npm:@deepseek-ai/dsh": "0.2.0-rc.2"
+  },
+  "config_paths": [
+    "infra/mise.toml",
+    "infra/toolchains/orb-devbox/mise.toml",
+    "infra/toolchains/node-cli/mise.toml",
+    "infra/toolchains/python/mise.toml",
+    "infra/harnesses/deepseek/mise.toml"
+  ],
+  "config_sha256": {
+    "infra/mise.toml": "0feeffb377ae2c5d35910e88822d2170c9de224c03f813753949e684e985408b",
+    "infra/toolchains/orb-devbox/mise.toml": "c447b1b9990ebdb974d40030bf6412363937fa93f3171c42b604bf29fb85dfbf",
+    "infra/toolchains/node-cli/mise.toml": "a848461abfbc7d0049ea6f30ad20ad249bd5905c5164562df4ab2f84d737d058",
+    "infra/toolchains/python/mise.toml": "0f6c75af8f8ef47bd65afc661c1a7973df959ff6d2603e219628a854508d5a48",
+    "infra/harnesses/deepseek/mise.toml": "a598f158a067aa55817077ae3ec54979ec192cae3a4851cce20073186c0d46aa"
+  },
+  "root_discovery": {
+    "path": ".mise.toml",
+    "symlink_target": "infra/mise.toml",
+    "trusted": true
+  },
+  "shell_cutover": {
+    "startup_file": "~/.zshrc",
+    "repo_bootstrap": "infra/toolchains/orb-devbox/activate.zsh",
+    "compatibility_links": 25,
+    "missing_tool_auto_install": false,
+    "global_node_python_pin": false
+  },
+  "checks": {
+    "replacement_tools_passed": 20,
+    "toolchain_tests_passed": 38,
+    "deepseek_launcher_tests_passed": 7,
+    "offline_git_lfs_worktree_steps_passed": 12,
+    "consumer_checks_passed": 30,
+    "root_node": "24.19.0",
+    "{{mstack:CLIENT_REPO}}_node": "24.21.0",
+    "literal_arguments_and_cwd_preserved": true,
+    "actual_uv_python": "3.13.15",
+    "gstack_package_load": "Bun1.3.14 loads installed gstack1.61.0.0 metadata; no browser/agent startup",
+    "email_mcp_synthetic_tests_passed": 3,
+    "deepseek_python_tests_passed": 23,
+    "deepseek_forwarder_tests_passed": 10,
+    "deepseek_offline_sdk_regressions_passed": 2,
+    "deepseek_native_composition": "passed against canonical new mise tree"
+  },
+  "retirement": {
+    "apt_packages": [
+      "git-lfs",
+      "jq",
+      "ripgrep",
+      "shfmt",
+      "tmux",
+      "shellcheck",
+      "git",
+      "git-man",
+      "direnv",
+      "fd-find",
+      "fzf",
+      "gh"
+    ],
+    "exact_rollback_debs_verified": 12,
+    "standalone_bun_paths": [
+      "~/.bun/bin/bun",
+      "~/.bun/bin/bunx",
+      "~/.bun/_bun"
+    ],
+    "autoremove_or_purge": false
+  },
+  "retained": {
+    "fnm_store": "active editor language servers and unchanged DeepSeek profile dependency links; not safe to delete after processes exit alone",
+    "uv_python_tools_cache": "live MCP/application interpreter and environment dependencies",
+    "os_python": true,
+    "postgresql_client": "18.6",
+    "other_dependencies_caches_worktrees": true
+  },
+  "preservation": {
+    "docker_containers": {
+      "baseline_count": 30,
+      "current_count": 30,
+      "exact_names_ids_startedat_unchanged": true,
+      "missing_or_changed": [],
+      "new_or_changed": []
+    },
+    "protected_homeconfigs_unchanged": true,
+    "macos_tools_settings_changed": false,
+    "native_codex_auth_settings_changed": false,
+    "service_lifecycle_actions": 0,
+    "provider_model_mailbox_calls": 0,
+    "global_mcp_registrations": 0
+  },
+  "limitations": [
+    "Retained DeepSeek profile startup/provider/tool execution remains untested; no Web/forwarder was started.",
+    "npm top-level versions verified; transitive artifact URLs are not fully locked by mise.lock.",
+    "Existing processes retain their environments and backing runtimes; no forced restart.",
+    "Non-TTY zsh checks show existing uv completion zle warnings; real interactive-terminal check passed.",
+    "Process exits across sessions are not attributed to this migration.",
+    "Rollback archives and exact .debs were validated; a full reinstall rollback was not executed."
+  ],
+  "private_evidence_pointer": "infra/maintenance/orb-devbox-mise/current-path.txt",
+  "handover": "docs/HANDOVER.md",
+  "migration_record": "docs/ORB-DEVBOX-MISE-MIGRATION-2026-10-15.md",
+  "historical_phase": "Initial cutover before separately authorized helper drain",
+  "superseded_for_current_status_by": "infra/maintenance/orb-devbox-mise/qualification-2026-10-15-drain.json"
+}

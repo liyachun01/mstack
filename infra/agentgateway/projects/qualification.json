@@ -1,0 +1,91 @@
+{
+  "date": "2026-10-08",
+  "gateway": {
+    "version": "1.5.0",
+    "commit": "fe6732474a96a0363dfb9822859af4e9bab360fa",
+    "image_digest": "sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896",
+    "compose_project": "mcp-stack",
+    "container": "mcp-stack-agentgateway-1",
+    "endpoint": "http://127.0.0.1:58080"
+  },
+  "production_pending": {
+    "passed": true,
+    "missing_or_wrong_key_status": 401,
+    "caller_keys": 4,
+    "authenticated_health_status": 200,
+    "foreign_project_initialize_discovery_call_status": 403,
+    "own_unbound_route_status": 503,
+    "live_provider_bindings": 0
+  },
+  "synthetic": {
+    "passed": true,
+    "allowed_reads": {
+      "project-a": 5,
+      "project-b": 5
+    },
+    "simultaneous_sessions": true,
+    "blocked_tool_dispatches": 0,
+    "foreign_channel_data_read_denied": true,
+    "tool_resource_prompt_discovery_filtered": true,
+    "cross_key_session_denied": true,
+    "cross_route_session_replay_status": 404,
+    "real_service_calls": 0,
+    "test_namespace": "mcp-stack-gateway-scope-test",
+    "final_test_port": 58083,
+    "initial_failed_publication_port": 58081,
+    "containers_network_config_removed": true,
+    "fixture_runtime": "existing pinned OpenCodex image, Bun-only entrypoint; no proxy secrets/state"
+  },
+  "live_resource_isolation": "pending per-provider authentication, tool contracts and allowed/denied read tests",
+  "harness_registration": "not performed",
+  "unrelated_services": "not restarted or removed",
+  "web_ui": {
+    "passed": true,
+    "url": "http://127.0.0.1:58084/ui",
+    "auth": "strict Basic; owner login; existing password unchanged; bcrypt file reference",
+    "read_only": false,
+    "raw_admin_listener": "off",
+    "missing_or_wrong_login_status": 401,
+    "html_and_two_assets_status": 200,
+    "runtime_config_resources_api_status": 200,
+    "config_write_status": 200,
+    "raw_admin_paths_status": 404,
+    "database_created": false,
+    "new_packages_or_images": 0,
+    "unrelated_containers_unchanged": 14,
+    "initial_inline_bcrypt_env_expansion_failure": "corrected with read-only hash file reference",
+    "browser_render": {
+      "passed": true,
+      "title": "agentgateway",
+      "heading": "Gateway Overview",
+      "banner": "No read-only banner",
+      "gateways": 2,
+      "routes": 6,
+      "MCP": "Not enabled; blank bindings",
+      "LLM": "Not enabled; no model routing",
+      "method": "existing isolated headless Chromium; private Basic auth; temporary profile removed",
+      "enabled_edit_control": "Set up gateways",
+      "read_only": false
+    },
+    "config_store_mode": "file",
+    "save_and_runtime_readback": true,
+    "saved_change_survived_targeted_recreation": true,
+    "original_configuration_restored": true,
+    "runtime_path": "infra/agentgateway/state/projects/runtime/config.yaml",
+    "render_preserves_owner_edits": true,
+    "browser_open": "macOS open invoked for exact native URL",
+    "blank_page_cause": "User observed Codex Command-click rewriting native Mac 58084 to forwarded localhost 62966"
+  },
+  "configuration": {
+    "schema": "JSON Schema 2020-12",
+    "schemas": [
+      "projects.schema.json",
+      "bindings.schema.json",
+      "ui.schema.json"
+    ],
+    "validation": "before validate/plan/render/apply; ten tests passed",
+    "provider_bindings": "all pending",
+    "project_access_fields": "enabled, access, purpose, typed space overrides",
+    "keys_preserved": true
+  }
+}

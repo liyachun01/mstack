@@ -1,0 +1,17 @@
+{
+  "version": "0.1.1206",
+  "source_commit": "8f2a314cf9779151b9caa5d60183e594239d0621",
+  "binary": "/Applications/magpie.app/Contents/MacOS/magpie",
+  "binary_sha256": "059420f7baa4158568ae8333068adb97e5e914007ae0b8d1002432724f17f38d",
+  "gateway": "http://127.0.0.1:3425",
+  "management": "http://127.0.0.1:3430",
+  "provider": "deepseek",
+  "upstream": "https://api.deepseek.com/v1",
+  "model": "deepseek-flash",
+  "claude_surface": "desktop",
+  "codex": "pending-explicit-user-request",
+  "account_discovery": false,
+  "automatic_fallback": false,
+  "automatic_updates": false,
+  "launch": "background-process-via-macctl;native-app-can-serve-the-same-gateway"
+}

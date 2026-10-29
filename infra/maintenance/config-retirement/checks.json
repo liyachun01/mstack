@@ -1,0 +1,20 @@
+{
+  "python_tests": {
+    "stack": 46,
+    "tenants": 11,
+    "gateway": 10,
+    "windmill": 16
+  },
+  "node_anytype_adapter_tests": 5,
+  "all_passed": true,
+  "root_doctor_ready": true,
+  "root_run_inspect": {
+    "global_config_changed": false,
+    "inference_calls": 0
+  },
+  "legacy_runtime_readers_remaining": 0,
+  "gateway_runtime_drift": false,
+  "windmill_cleanup": "complete; see windmill.json",
+  "layout_verification": "layout.json",
+  "node_tests_scope": "preceding retirement step; adapter source unchanged"
+}

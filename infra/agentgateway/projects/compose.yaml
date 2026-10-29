@@ -1,0 +1,25 @@
+services:
+  agentgateway:
+    command: ["-f", "/config/runtime/config.yaml"]
+    group_add: ["501"]
+    ports:
+      - "127.0.0.1:58084:4001"
+    volumes:
+      - type: bind
+        source: ./infra/agentgateway/state/projects/runtime
+        target: /config/runtime
+        read_only: false
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./infra/agentgateway/state/projects/config.json
+        target: /config/config.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./infra/agentgateway/state/projects/ui-htpasswd
+        target: /config/ui.htpasswd
+        read_only: true
+        bind:
+          create_host_path: false

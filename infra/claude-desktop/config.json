@@ -1,0 +1,21 @@
+{
+  "application": "/Applications/Claude.app",
+  "version": "3.1623.0",
+  "surface": "desktop-gateway",
+  "gateway": "http://127.0.0.1:3425",
+  "gateway_manager": "magpie",
+  "gateway_caller_marker": "magpie-claude-desktop",
+  "provider": "deepseek",
+  "upstream": "https://api.deepseek.com/v1",
+  "model": "deepseek-flash",
+  "desktop_model_alias": "mythos-magpie-9614455465",
+  "model_discovery": "magpie-catalog;one-selected-model",
+  "profile_id": "00000000-0000-4000-8000-6d6167706965",
+  "native_profile_library": "~/Library/Application Support/Claude-3p/configLibrary",
+  "profile_library": "native-generated-adapter;repo-state-copy-is-historical",
+  "automatic_fallback": false,
+  "mcp_registration": "none;qualify-selected-project-separately",
+  "status": "desktop-app-removed-2026-10-27;historical-magpie-profile-preserved;subscription-cli-in-agent-clis",
+  "qualification": "../magpie/qualification.json",
+  "codex": "codex-desktop;cli-removed-2026-10-27;no-magpie-binding"
+}

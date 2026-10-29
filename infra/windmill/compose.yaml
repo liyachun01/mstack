@@ -1,0 +1,68 @@
+# Windmill services in the existing mcp-stack Compose project.
+# Use explicit service names; never --remove-orphans or project-wide down.
+name: mstack
+
+x-logging: &logging
+  driver: json-file
+  options: {max-size: "5m", max-file: "2"}
+
+x-windmill: &windmill
+  # Original qualified 1.823.1 ARM64 manifest; same layers as the former index pin.
+  image: ghcr.io/windmill-labs/windmill:1.823.1@sha256:a0c7f7ea7db229cabd05d06615b961d1700e6755ad9489b62aff27739735b362
+  platform: linux/arm64
+  pull_policy: never
+  restart: unless-stopped
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 256
+  logging: *logging
+  volumes:
+    - worker_logs:/tmp/windmill/logs
+
+services:
+  windmill-server:
+    shm_size: 8409579520 # Retained OrbStack runtime limit.
+    <<: *windmill
+    container_name: mcp-stack-windmill-server
+    cpus: 0.5
+    mem_limit: 768m
+    environment:
+      MODE: server
+      DATABASE_URL: ${WM_DATABASE_URL:?Use the approved shared-PG env file}
+      BASE_URL: http://127.0.0.1:58090
+    ports: ["127.0.0.1:58090:8000"]
+    healthcheck:
+      test: [CMD-SHELL, "curl --fail --silent --max-time 5 http://127.0.0.1:8000/api/version >/dev/null"]
+      interval: 15s
+      timeout: 6s
+      retries: 20
+      start_period: 90s
+
+  windmill-worker:
+    shm_size: 8409579520 # Retained OrbStack runtime limit.
+    <<: *windmill
+    container_name: mcp-stack-windmill-worker
+    cpus: 1.0
+    mem_limit: 2g
+    pids_limit: 512
+    privileged: false
+    environment:
+      MODE: worker
+      WORKER_GROUP: default
+      NUM_WORKERS: "1"
+      DATABASE_URL: ${WM_DATABASE_URL:?Use the approved shared-PG env file}
+      DISABLE_NSJAIL: "true"
+      ENABLE_UNSHARE_PID: "false"
+      FAVOR_UNSHARE_PID: "false"
+    volumes:
+      - worker_cache:/tmp/windmill/cache
+      - worker_logs:/tmp/windmill/logs
+
+volumes:
+  worker_cache: {external: true, name: mcp-stack-windmill-worker-cache}
+  worker_logs: {external: true, name: mcp-stack-windmill-worker-logs}
+
+networks:
+  default:
+    external: true
+    name: mcp-stack-memory

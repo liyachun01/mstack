@@ -1,0 +1,51 @@
+{
+  "date": "2026-10-19",
+  "source_relation": "old path is symlink to the same directory; no separate source copy exists",
+  "canonical_root": "/home/developer/workspace/mstack",
+  "original_inventory": {
+    "regular_files": 75247,
+    "symlinks": 1086,
+    "bytes": 4234174486
+  },
+  "preexisting_entries_missing": 0,
+  "private_runtime_data_changed": false,
+  "deepseek_links_retargeted": 430,
+  "deepseek_preexisting_missing_targets_preserved": 96,
+  "codex_user_chats_verified": 9,
+  "codex_original_history_bytes_preserved": true,
+  "codex_archived_status_preserved": true,
+  "tests": {
+    "n8n": 25,
+    "launcher": 14,
+    "mstack_plan": "pass",
+    "mstack_doctor": "pass",
+    "desktop_merge": "pass",
+    "compose_dry_run_groups": 4
+  },
+  "pending": [],
+  "container_mutations": 6,
+  "old_symlink_removed": true,
+  "containers_verified_unchanged": 24,
+  "desktop_project_merge_verified": true,
+  "desktop_chat_assignments_moved": 8,
+  "all_30_containers_stopped": true,
+  "persistent_volume_definitions_unchanged": true,
+  "retired_mise_trust_links": 6,
+  "completed": true,
+  "all_original_codex_history_records_preserved": 96,
+  "historical_agent_contexts_preserved": 7,
+  "historical_child_paths_updated": 3,
+  "post_removal_tests": {
+    "n8n": 25,
+    "launcher": 14,
+    "mstack_doctor": "pass"
+  },
+  "final_filesystem_check": {
+    "project_or_private_data_missing": 0,
+    "private_runtime_and_dependency_files_changed": 0,
+    "preexisting_git_objects_changed": 0,
+    "native_codex_temporary_checkpoint_entries_pruned": 8,
+    "preexisting_repository_symlinks_changed": 0,
+    "old_alias_absent": true
+  }
+}

@@ -1,0 +1,114 @@
+{
+  "name": "mcp-stack · task-start-router · DRY RUN v1",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "8f19e370-d3c8-4a60-925f-b76b604f0895",
+      "name": "Manual start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"tasks\": [\n    {\n      \"project_id\": \"mcp-stack\",\n      \"repository\": \"/home/developer/workspace/mstack\",\n      \"execution_domain\": \"ubuntu-devbox\",\n      \"session_id\": \"demo-session-001\",\n      \"harness\": \"codex-ide\",\n      \"task_id\": \"demo-coding-001\",\n      \"task\": \"Inspect a synthetic task-routing example; do not execute tools.\",\n      \"task_profile\": \"coding\",\n      \"index_scope\": \"approved-three-file-projection\",\n      \"memory_writes\": \"explicit-confirmation\",\n      \"pkm_sync\": \"off\",\n      \"dry_run\": true,\n      \"implementation_question\": true,\n      \"broader_relationships\": true,\n      \"durable_decisions\": false\n    },\n    {\n      \"project_id\": \"mcp-stack\",\n      \"repository\": \"/home/developer/workspace/mstack\",\n      \"execution_domain\": \"ubuntu-devbox\",\n      \"session_id\": \"demo-session-001\",\n      \"harness\": \"codex-ide\",\n      \"task_id\": \"demo-docs-001\",\n      \"task\": \"Inspect a synthetic task-routing example; do not execute tools.\",\n      \"task_profile\": \"documentation-research\",\n      \"index_scope\": \"approved-three-file-projection\",\n      \"memory_writes\": \"explicit-confirmation\",\n      \"pkm_sync\": \"off\",\n      \"dry_run\": true,\n      \"implementation_question\": false,\n      \"broader_relationships\": true,\n      \"durable_decisions\": false\n    },\n    {\n      \"project_id\": \"mcp-stack\",\n      \"repository\": \"/home/developer/workspace/mstack\",\n      \"execution_domain\": \"ubuntu-devbox\",\n      \"session_id\": \"demo-session-001\",\n      \"harness\": \"codex-ide\",\n      \"task_id\": \"demo-pkm-001\",\n      \"task\": \"Inspect a synthetic task-routing example; do not execute tools.\",\n      \"task_profile\": \"pkm-personal\",\n      \"index_scope\": \"approved-three-file-projection\",\n      \"memory_writes\": \"explicit-confirmation\",\n      \"pkm_sync\": \"off\",\n      \"dry_run\": true,\n      \"implementation_question\": false,\n      \"broader_relationships\": true,\n      \"durable_decisions\": false\n    },\n    {\n      \"project_id\": \"mcp-stack\",\n      \"repository\": \"/home/developer/workspace/mstack\",\n      \"execution_domain\": \"ubuntu-devbox\",\n      \"session_id\": \"demo-session-001\",\n      \"harness\": \"codex-ide\",\n      \"task_id\": \"demo-reject-001\",\n      \"task\": \"Inspect a synthetic task-routing example; do not execute tools.\",\n      \"task_profile\": \"coding\",\n      \"index_scope\": \"approved-three-file-projection\",\n      \"memory_writes\": \"explicit-confirmation\",\n      \"pkm_sync\": \"off\",\n      \"dry_run\": false,\n      \"implementation_question\": true,\n      \"broader_relationships\": false,\n      \"durable_decisions\": false\n    }\n  ]\n}",
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "5ac2f4f1-c2f3-4b42-9739-34068d3e1054",
+      "name": "Task input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        240,
+        0
+      ],
+      "notes": "Four synthetic tests in one run. For normal previews, keep tasks as an array containing only your one explicit task. Fixed JSON only; never enter credentials."
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "tasks",
+        "include": "noOtherFields",
+        "options": {
+          "includeBinary": false
+        }
+      },
+      "id": "8b6c4b93-1344-4081-85eb-7fc80b9d7c03",
+      "name": "Split tasks",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        500,
+        0
+      ],
+      "notes": "Built-in node: four synthetic input objects become four independent task previews. No requests or integrations."
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ (() => {\n  const input = $json;\n  const errors = [];\n  const fixed = {\n    project_id: 'mcp-stack',\n    repository: '/home/developer/workspace/mstack',\n    execution_domain: 'ubuntu-devbox',\n    index_scope: 'approved-three-file-projection',\n    memory_writes: 'explicit-confirmation',\n    pkm_sync: 'off'\n  };\n  const profiles = ['coding', 'documentation-research', 'pkm-personal'];\n  const harnesses = ['codex-ide', 'deepseek-harness'];\n  for (const name of Object.keys(fixed)) {\n    if (input[name] !== fixed[name]) errors.push(name + ': unsupported or missing');\n  }\n  for (const name of ['session_id', 'task_id']) {\n    if (typeof input[name] !== 'string' ||\n        !/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(input[name])) {\n      errors.push(name + ': use 1-80 safe identifier characters');\n    }\n  }\n  if (typeof input.task !== 'string' || input.task.trim().length === 0 ||\n      input.task.length > 2000) errors.push('task: expected 1-2000 characters');\n  if (!profiles.includes(input.task_profile)) errors.push('task_profile: unsupported or missing');\n  if (!harnesses.includes(input.harness)) errors.push('harness: unsupported or missing');\n  if (input.dry_run !== true) errors.push('dry_run: must be boolean true');\n  for (const name of ['implementation_question', 'broader_relationships', 'durable_decisions']) {\n    if (typeof input[name] !== 'boolean') errors.push(name + ': must be boolean');\n  }\n  const common = {\n    contract_version: 1,\n    dry_run: true,\n    actions_executed: [],\n    memory_writes: 'disabled',\n    pkm_sync: 'off',\n    automatic_indexing: false,\n    model_calls: false,\n    approval_granted: false,\n    policy_is_authorization: false\n  };\n  if (errors.length) return {\n    ...common, status: 'rejected', errors,\n    context_candidates: [], deferred: [], next_actions: ['Correct input; rerun the manual preview.']\n  };\n  const candidates = [];\n  const deferred = [];\n  const sourceTask = input.task_profile === 'coding' ||\n    (input.task_profile === 'documentation-research' && input.implementation_question);\n  if (sourceTask) candidates.push({\n    component: 'codegraph',\n    route: '/mcp/codegraph',\n    purpose: 'Scoped source structure, symbols and dependencies',\n    scope: fixed.index_scope,\n    next_step: 'context-read connection qualification',\n    execution_requires_separate_approval: true\n  });\n  if (input.broader_relationships) {\n    if (input.task_profile === 'pkm-personal') deferred.push({\n      component: 'graphify', reason: 'No personal-document corpus has been approved or indexed.'\n    });\n    else candidates.push({\n      component: 'graphify',\n      route: '/mcp/graphify',\n      purpose: 'Broader relationships only if the existing source corpus is relevant',\n      scope: fixed.index_scope,\n      relevance_check_required: true,\n      next_step: 'context-read connection qualification',\n      execution_requires_separate_approval: true\n    });\n  }\n  if (input.durable_decisions || input.task_profile !== 'coding') deferred.push({\n    component: 'basic-memory',\n    reason: 'Connection and scoped text-search usage remain separately gated; no model is needed.'\n  });\n  return {\n    ...common,\n    status: 'preview',\n    errors: [],\n    project_id: input.project_id,\n    session_id: input.session_id,\n    task_id: input.task_id,\n    task_profile: input.task_profile,\n    harness: input.harness,\n    scope: fixed.index_scope,\n    context_candidates: candidates,\n    deferred,\n    limitations: [\n      'Planning only; not harness or gateway access control.',\n      'Both graph indexes are partial three-file source projections, not the whole repository.',\n      'Index absence cannot prove source absence; verify relevance and freshness before future calls.',\n      'No task text or unknown input fields are copied into this plan; upstream input may still be visible in n8n.'\n    ],\n    next_actions: [\n      'Review profile and existing index relevance; use normal repository inspection now.',\n      'Request separate qualification of a read-only context connection when useful.',\n      'Do not interpret this preview, session ID or successful node execution as permission to call tools.'\n    ]\n  };\n})() }}",
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "fb448f42-68c5-4d46-b6e7-53ca5274b033",
+      "name": "Route preview",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        740,
+        0
+      ],
+      "notes": "Preview only. status=rejected is a policy rejection even if the node shows green. No tools, HTTP, Code runner, models or external writes. This expression is maintained with router.expression.js."
+    }
+  ],
+  "connections": {
+    "Manual start": {
+      "main": [
+        [
+          {
+            "node": "Task input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Task input": {
+      "main": [
+        [
+          {
+            "node": "Split tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split tasks": {
+      "main": [
+        [
+          {
+            "node": "Route preview",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Shanghai",
+    "executionTimeout": 60,
+    "saveManualExecutions": false,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveExecutionProgress": false
+  },
+  "pinData": {}
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "MCP Stack Setup Guard"
+  short_description: "Safely gate host and VM setup operations"
+  default_prompt: "Use $mcp-stack-setup-guard to plan and execute this mcp-stack setup safely."

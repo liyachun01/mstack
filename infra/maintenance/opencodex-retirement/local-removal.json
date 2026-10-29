@@ -1,0 +1,23 @@
+{
+  "date": "2026-10-21",
+  "removed_paths": [
+    "infra/opencodex",
+    ".secrets/opencodex",
+    "infra/claude-desktop/state/configLibrary",
+    "infra/services/state/namespace-mstack-20261016/config-backup/infra/opencodex",
+    "integrations/models/opencodex_deepseek.py",
+    "integrations/models/claude_desktop.py",
+    "integrations/models/claude_deepseek_probe.py",
+    "integrations/models/magpie_migrate.py",
+    "infra/magpie/.state/migration-20261021/file-2",
+    "infra/magpie/.state/migration-20261021/file-3",
+    "infra/services/state/namespace-mstack-20261016/comparison-opencodex.json",
+    "infra/services/state/namespace-mstack-20261016/before-shm-compose-opencodex.json",
+    "infra/services/state/namespace-mstack-20261016/compose-opencodex.json",
+    "infra/agentgateway/projects/test.compose.yaml",
+    "integrations/models/__pycache__/claude_desktop.cpython-314.pyc",
+    "integrations/models/__pycache__/claude_deepseek_probe.cpython-314.pyc",
+    "integrations/models/__pycache__/magpie_migrate.cpython-314.pyc"
+  ],
+  "removed_live_fixture": "retired A/B fixture used OpenCodex image; no replacement provisioned"
+}

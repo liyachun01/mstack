@@ -1,0 +1,18 @@
+# Installed configuration; evidence is in docs/GARAGE-INSTALL-RECORD.md.
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+db_engine = "sqlite"
+metadata_fsync = true
+data_fsync = true
+replication_factor = 1
+block_ram_buffer_max = "64MiB"
+
+# Single local node: no exposed cluster RPC or administration service.
+rpc_bind_addr = "127.0.0.1:3901"
+rpc_public_addr = "127.0.0.1:3901"
+# RPC secret supplied through the private Compose env file.
+
+[s3_api]
+api_bind_addr = "0.0.0.0:3900"
+s3_region = "garage"
+# Path-style addressing only; no wildcard DNS or public bucket websites.

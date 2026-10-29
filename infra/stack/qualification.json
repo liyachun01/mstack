@@ -1,0 +1,53 @@
+{
+  "date": "2026-10-08",
+  "timezone": "Asia/Shanghai",
+  "status": "implemented; provider provisioning remains separate",
+  "config_version": 3,
+  "sources": [
+    "project infra/stack.json",
+    "infra/stack/connections.json",
+    "infra/stack/models.json"
+  ],
+  "generated_gateway_registry": "infra/agentgateway/projects.json",
+  "backward_compatible_version": 2,
+  "unit_tests": {
+    "stack": 21,
+    "gateway": 10,
+    "passed": 31,
+    "lifecycle_tests": "temporary files and mocked targeted recreation"
+  },
+  "production": {
+    "projects_applied": [
+      "mcp-stack",
+      "clock",
+      "project-a",
+      "project-b"
+    ],
+    "repeat_apply_noop": true,
+    "gateway_recreations": 0,
+    "containers_unchanged": 15,
+    "project_keys_owner_password_unchanged": true,
+    "native_owner_api_matches_runtime": true,
+    "ubuntu_gateway_health_status": 200,
+    "ubuntu_unbound_project_status": 503,
+    "gateway_project_auth_checks": "passed: four caller keys, foreign-project 403, own pending 503",
+    "clock_inspect_enabled_mcp": [
+      "project_anytype"
+    ],
+    "clock_local_preflight_ready": true,
+    "root_anytype": "unbound",
+    "A_B_provider_scopes": "all pending",
+    "provider_calls": 0,
+    "model_qualification_calls": 0,
+    "global_harness_config_changed": false
+  },
+  "boundaries": [
+    "No idle reconciliation watcher",
+    "Named connectors currently limited to Slack/Linear/Figma/Notion/Anytype",
+    "No automatic provider OAuth/service installs/indexing",
+    "Claude manifest is not Desktop registration",
+    "Adopt supports logging and separate non-project gateways/routes, not inferred provider scopes",
+    "CLI lock does not coordinate concurrent native UI writes"
+  ],
+  "skill_validation": "stack-use and setup-guard passed"
+}

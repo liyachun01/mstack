@@ -1,0 +1,13 @@
+# Prepared project overlay, not loaded into the current Web host.
+# Existing provider/credentials packages only; no installation or global change.
+# Key comes from the launch environment, privately resolved from agents.csv.
+- id: llm-deepseek
+  config:
+    apiKeyEnv: MCP_STACK_HARNESSBOT_DEEPSEEK_KEY
+    baseURL: https://api.deepseek.com/anthropic
+    maxTokens: 4096
+
+- id: agent-default-model
+  config:
+    provider: deepseek-official
+    model: deepseek-flash

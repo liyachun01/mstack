@@ -1,0 +1,1 @@
+# Scoped agent CLI operations must not inherit other global tool declarations.

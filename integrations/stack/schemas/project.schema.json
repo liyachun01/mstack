@@ -1,0 +1,2338 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mstack project intent (compact v3)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "const": 3,
+      "default": 3
+    },
+    "project": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,62}$"
+    },
+    "preset": {
+      "enum": [
+        "daily",
+        "build",
+        "notes",
+        "automate",
+        "proof",
+        "solo",
+        "project",
+        "knowledge",
+        "research",
+        "jobs",
+        "events"
+      ],
+      "default": "daily"
+    },
+    "visibility": {
+      "enum": [
+        "shared",
+        "local"
+      ],
+      "default": "shared",
+      "description": "local: mstack files are excluded through this clone's .git/info/exclude and never touch team files (AGENTS.md, .gitignore, .claude/settings.json)."
+    },
+    "model": {
+      "enum": [
+        "codex",
+        "local",
+        "deepseek"
+      ]
+    },
+    "context": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "graphify",
+          "codegraph",
+          "ai-memory",
+          "basic-memory"
+        ]
+      }
+    },
+    "jobs": {
+      "enum": [
+        "manual",
+        "windmill"
+      ]
+    },
+    "harnesses": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "codex",
+          "claude"
+        ]
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repo": {
+          "type": "string",
+          "description": "Repository path; blank until known. Does not authenticate a caller."
+        },
+        "display_name": {
+          "type": "string",
+          "description": "Project name shown in docs."
+        },
+        "description": {
+          "type": "string",
+          "description": "Project goal and tool-use context."
+        }
+      },
+      "required": [
+        "repo"
+      ]
+    },
+    "tools": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "codex": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "connection": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}$"
+            },
+            "access": {
+              "enum": [
+                "read-only",
+                "read-write"
+              ],
+              "default": "read-only"
+            },
+            "transport": {
+              "enum": [
+                "direct",
+                "agentgateway"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "description": "Desired MCP endpoint. An ordinary app UI/API URL is not automatically an MCP endpoint. No embedded credentials/query parameters."
+            },
+            "credential_file": {
+              "type": "string",
+              "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$",
+              "description": "Private file reference relative to the mcp-stack repository; never a literal key."
+            },
+            "auth_type": {
+              "enum": [
+                "oauth",
+                "api-key",
+                "local-api-key"
+              ]
+            },
+            "input": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                }
+              }
+            },
+            "space": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "database": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "index_scope": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "source": {
+              "enum": [
+                "mstack",
+                "project"
+              ],
+              "default": "mstack",
+              "description": "project: the repository already provides this tool as a team convention; mstack keeps that MCP server enabled and adds no binding of its own."
+            },
+            "server": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "description": "Name of the project-provided MCP server (defaults to the tool name). Only with source: project."
+            }
+          }
+        },
+        "agentgateway": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "connection": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}$"
+            },
+            "access": {
+              "enum": [
+                "read-only",
+                "read-write"
+              ],
+              "default": "read-only"
+            },
+            "transport": {
+              "enum": [
+                "direct",
+                "agentgateway"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "description": "Desired MCP endpoint. An ordinary app UI/API URL is not automatically an MCP endpoint. No embedded credentials/query parameters."
+            },
+            "credential_file": {
+              "type": "string",
+              "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$",
+              "description": "Private file reference relative to the mcp-stack repository; never a literal key."
+            },
+            "auth_type": {
+              "enum": [
+                "oauth",
+                "api-key",
+                "local-api-key"
+              ]
+            },
+            "input": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                }
+              }
+            },
+            "space": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "database": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "index_scope": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "source": {
+              "enum": [
+                "mstack",
+                "project"
+              ],
+              "default": "mstack",
+              "description": "project: the repository already provides this tool as a team convention; mstack keeps that MCP server enabled and adds no binding of its own."
+            },
+            "server": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "description": "Name of the project-provided MCP server (defaults to the tool name). Only with source: project."
+            }
+          }
+        },
+        "windmill": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "connection": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}$"
+            },
+            "access": {
+              "enum": [
+                "read-only",
+                "read-write"
+              ],
+              "default": "read-only"
+            },
+            "transport": {
+              "enum": [
+                "direct",
+                "agentgateway"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "description": "Desired MCP endpoint. An ordinary app UI/API URL is not automatically an MCP endpoint. No embedded credentials/query parameters."
+            },
+            "credential_file": {
+              "type": "string",
+              "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$",
+              "description": "Private file reference relative to the mcp-stack repository; never a literal key."
+            },
+            "auth_type": {
+              "enum": [
+                "oauth",
+                "api-key",
+                "local-api-key"
+              ]
+            },
+            "input": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                }
+              }
+            },
+            "space": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "database": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "index_scope": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "source": {
+              "enum": [
+                "mstack",
+                "project"
+              ],
+              "default": "mstack",
+              "description": "project: the repository already provides this tool as a team convention; mstack keeps that MCP server enabled and adds no binding of its own."
+            },
+            "server": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "description": "Name of the project-provided MCP server (defaults to the tool name). Only with source: project."
+            }
+          }
+        },
+        "garage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "connection": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}$"
+            },
+            "access": {
+              "enum": [
+                "read-only",
+                "read-write"
+              ],
+              "default": "read-only"
+            },
+            "transport": {
+              "enum": [
+                "direct",
+                "agentgateway"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "description": "Desired MCP endpoint. An ordinary app UI/API URL is not automatically an MCP endpoint. No embedded credentials/query parameters."
+            },
+            "credential_file": {
+              "type": "string",
+              "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$",
+              "description": "Private file reference relative to the mcp-stack repository; never a literal key."
+            },
+            "auth_type": {
+              "enum": [
+                "oauth",
+                "api-key",
+                "local-api-key"
+              ]
+            },
+            "input": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                }
+              }
+            },
+            "space": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "database": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "index_scope": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "source": {
+              "enum": [
+                "mstack",
+                "project"
+              ],
+              "default": "mstack",
+              "description": "project: the repository already provides this tool as a team convention; mstack keeps that MCP server enabled and adds no binding of its own."
+            },
+            "server": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "description": "Name of the project-provided MCP server (defaults to the tool name). Only with source: project."
+            }
+          }
+        },
+        "n8n": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "connection": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}$"
+            },
+            "access": {
+              "enum": [
+                "read-only",
+                "read-write"
+              ],
+              "default": "read-only"
+            },
+            "transport": {
+              "enum": [
+                "direct",
+                "agentgateway"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "description": "Desired MCP endpoint. An ordinary app UI/API URL is not automatically an MCP endpoint. No embedded credentials/query parameters."
+            },
+            "credential_file": {
+              "type": "string",
+              "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$",
+              "description": "Private file reference relative to the mcp-stack repository; never a literal key."
+            },
+            "auth_type": {
+              "enum": [
+                "oauth",
+                "api-key",
+                "local-api-key"
+              ]
+            },
+            "input": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                }
+              }
+            },
+            "space": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "database": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "index_scope": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "source": {
+              "enum": [
+                "mstack",
+                "project"
+              ],
+              "default": "mstack",
+              "description": "project: the repository already provides this tool as a team convention; mstack keeps that MCP server enabled and adds no binding of its own."
+            },
+            "server": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "description": "Name of the project-provided MCP server (defaults to the tool name). Only with source: project."
+            }
+          }
+        },
+        "graphify": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "connection": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}$"
+            },
+            "access": {
+              "enum": [
+                "read-only",
+                "read-write"
+              ],
+              "default": "read-only"
+            },
+            "transport": {
+              "enum": [
+                "direct",
+                "agentgateway"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "description": "Desired MCP endpoint. An ordinary app UI/API URL is not automatically an MCP endpoint. No embedded credentials/query parameters."
+            },
+            "credential_file": {
+              "type": "string",
+              "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$",
+              "description": "Private file reference relative to the mcp-stack repository; never a literal key."
+            },
+            "auth_type": {
+              "enum": [
+                "oauth",
+                "api-key",
+                "local-api-key"
+              ]
+            },
+            "input": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                }
+              }
+            },
+            "space": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "database": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "index_scope": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "source": {
+              "enum": [
+                "mstack",
+                "project"
+              ],
+              "default": "mstack",
+              "description": "project: the repository already provides this tool as a team convention; mstack keeps that MCP server enabled and adds no binding of its own."
+            },
+            "server": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "description": "Name of the project-provided MCP server (defaults to the tool name). Only with source: project."
+            }
+          }
+        },
+        "codegraph": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "connection": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}$"
+            },
+            "access": {
+              "enum": [
+                "read-only",
+                "read-write"
+              ],
+              "default": "read-only"
+            },
+            "transport": {
+              "enum": [
+                "direct",
+                "agentgateway"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "description": "Desired MCP endpoint. An ordinary app UI/API URL is not automatically an MCP endpoint. No embedded credentials/query parameters."
+            },
+            "credential_file": {
+              "type": "string",
+              "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$",
+              "description": "Private file reference relative to the mcp-stack repository; never a literal key."
+            },
+            "auth_type": {
+              "enum": [
+                "oauth",
+                "api-key",
+                "local-api-key"
+              ]
+            },
+            "input": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                }
+              }
+            },
+            "space": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "database": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "index_scope": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "source": {
+              "enum": [
+                "mstack",
+                "project"
+              ],
+              "default": "mstack",
+              "description": "project: the repository already provides this tool as a team convention; mstack keeps that MCP server enabled and adds no binding of its own."
+            },
+            "server": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "description": "Name of the project-provided MCP server (defaults to the tool name). Only with source: project."
+            }
+          }
+        },
+        "ai-memory": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "connection": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}$"
+            },
+            "access": {
+              "enum": [
+                "read-only",
+                "read-write"
+              ],
+              "default": "read-only"
+            },
+            "transport": {
+              "enum": [
+                "direct",
+                "agentgateway"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "description": "Desired MCP endpoint. An ordinary app UI/API URL is not automatically an MCP endpoint. No embedded credentials/query parameters."
+            },
+            "credential_file": {
+              "type": "string",
+              "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$",
+              "description": "Private file reference relative to the mcp-stack repository; never a literal key."
+            },
+            "auth_type": {
+              "enum": [
+                "oauth",
+                "api-key",
+                "local-api-key"
+              ]
+            },
+            "input": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                }
+              }
+            },
+            "space": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "database": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "index_scope": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "source": {
+              "enum": [
+                "mstack",
+                "project"
+              ],
+              "default": "mstack",
+              "description": "project: the repository already provides this tool as a team convention; mstack keeps that MCP server enabled and adds no binding of its own."
+            },
+            "server": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "description": "Name of the project-provided MCP server (defaults to the tool name). Only with source: project."
+            }
+          }
+        },
+        "basic-memory": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "connection": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}$"
+            },
+            "access": {
+              "enum": [
+                "read-only",
+                "read-write"
+              ],
+              "default": "read-only"
+            },
+            "transport": {
+              "enum": [
+                "direct",
+                "agentgateway"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "description": "Desired MCP endpoint. An ordinary app UI/API URL is not automatically an MCP endpoint. No embedded credentials/query parameters."
+            },
+            "credential_file": {
+              "type": "string",
+              "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$",
+              "description": "Private file reference relative to the mcp-stack repository; never a literal key."
+            },
+            "auth_type": {
+              "enum": [
+                "oauth",
+                "api-key",
+                "local-api-key"
+              ]
+            },
+            "input": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                }
+              }
+            },
+            "space": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "database": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "index_scope": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "source": {
+              "enum": [
+                "mstack",
+                "project"
+              ],
+              "default": "mstack",
+              "description": "project: the repository already provides this tool as a team convention; mstack keeps that MCP server enabled and adds no binding of its own."
+            },
+            "server": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "description": "Name of the project-provided MCP server (defaults to the tool name). Only with source: project."
+            }
+          }
+        },
+        "llama.cpp": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "connection": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}$"
+            },
+            "access": {
+              "enum": [
+                "read-only",
+                "read-write"
+              ],
+              "default": "read-only"
+            },
+            "transport": {
+              "enum": [
+                "direct",
+                "agentgateway"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "description": "Desired MCP endpoint. An ordinary app UI/API URL is not automatically an MCP endpoint. No embedded credentials/query parameters."
+            },
+            "credential_file": {
+              "type": "string",
+              "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$",
+              "description": "Private file reference relative to the mcp-stack repository; never a literal key."
+            },
+            "auth_type": {
+              "enum": [
+                "oauth",
+                "api-key",
+                "local-api-key"
+              ]
+            },
+            "input": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                }
+              }
+            },
+            "space": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "database": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "index_scope": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "source": {
+              "enum": [
+                "mstack",
+                "project"
+              ],
+              "default": "mstack",
+              "description": "project: the repository already provides this tool as a team convention; mstack keeps that MCP server enabled and adds no binding of its own."
+            },
+            "server": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "description": "Name of the project-provided MCP server (defaults to the tool name). Only with source: project."
+            }
+          }
+        },
+        "slack": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "connection": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}$"
+            },
+            "access": {
+              "enum": [
+                "read-only",
+                "read-write"
+              ],
+              "default": "read-only"
+            },
+            "transport": {
+              "enum": [
+                "direct",
+                "agentgateway"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "description": "Desired MCP endpoint. An ordinary app UI/API URL is not automatically an MCP endpoint. No embedded credentials/query parameters."
+            },
+            "credential_file": {
+              "type": "string",
+              "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$",
+              "description": "Private file reference relative to the mcp-stack repository; never a literal key."
+            },
+            "auth_type": {
+              "enum": [
+                "oauth",
+                "api-key",
+                "local-api-key"
+              ]
+            },
+            "input": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "credential_file": {
+                  "type": "string",
+                  "description": "Ignored repository-relative private credential file; a reference, never a token.",
+                  "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+                },
+                "auth_type": {
+                  "type": "string",
+                  "enum": [
+                    "oauth",
+                    "api-key",
+                    "local-api-key"
+                  ],
+                  "description": "Selected authentication method. Does not perform login."
+                },
+                "workspace_id": {
+                  "type": "string",
+                  "description": "Provider workspace/account ID; blank until selected."
+                },
+                "oauth_client_id": {
+                  "type": "string",
+                  "description": "Optional registered OAuth app ID; no app registration is performed."
+                },
+                "oauth_client_secret_file": {
+                  "type": "string",
+                  "description": "Ignored repository-relative private credential file; a reference, never a token.",
+                  "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+                },
+                "oauth_scopes": {
+                  "type": "array",
+                  "description": "Requested OAuth permissions, not proof of granted project access.",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\s*]+$"
+                  },
+                  "uniqueItems": true,
+                  "default": []
+                }
+              },
+              "required": []
+            },
+            "space": {
+              "description": "Empty object inherits connection scope; otherwise replaces the complete scope. Empty inherited destinations stay closed.",
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {},
+                  "required": []
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "channel_ids": {
+                      "type": "array",
+                      "description": "Slack channel IDs allowed for this project. No workspace-wide search implied.",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[^\\s*]+$"
+                      },
+                      "uniqueItems": true,
+                      "default": []
+                    }
+                  },
+                  "required": [
+                    "channel_ids"
+                  ]
+                }
+              ]
+            },
+            "source": {
+              "enum": [
+                "mstack",
+                "project"
+              ],
+              "default": "mstack",
+              "description": "project: the repository already provides this tool as a team convention; mstack keeps that MCP server enabled and adds no binding of its own."
+            },
+            "server": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "description": "Name of the project-provided MCP server (defaults to the tool name). Only with source: project."
+            }
+          }
+        },
+        "linear": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "connection": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}$"
+            },
+            "access": {
+              "enum": [
+                "read-only",
+                "read-write"
+              ],
+              "default": "read-only"
+            },
+            "transport": {
+              "enum": [
+                "direct",
+                "agentgateway"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "description": "Desired MCP endpoint. An ordinary app UI/API URL is not automatically an MCP endpoint. No embedded credentials/query parameters."
+            },
+            "credential_file": {
+              "type": "string",
+              "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$",
+              "description": "Private file reference relative to the mcp-stack repository; never a literal key."
+            },
+            "auth_type": {
+              "enum": [
+                "oauth",
+                "api-key",
+                "local-api-key"
+              ]
+            },
+            "input": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "credential_file": {
+                  "type": "string",
+                  "description": "Ignored repository-relative private credential file; a reference, never a token.",
+                  "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+                },
+                "auth_type": {
+                  "type": "string",
+                  "enum": [
+                    "oauth",
+                    "api-key",
+                    "local-api-key"
+                  ],
+                  "description": "Selected authentication method. Does not perform login."
+                },
+                "workspace_id": {
+                  "type": "string",
+                  "description": "Provider workspace/account ID; blank until selected."
+                },
+                "oauth_client_id": {
+                  "type": "string",
+                  "description": "Optional registered OAuth app ID; no app registration is performed."
+                },
+                "oauth_client_secret_file": {
+                  "type": "string",
+                  "description": "Ignored repository-relative private credential file; a reference, never a token.",
+                  "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+                },
+                "oauth_scopes": {
+                  "type": "array",
+                  "description": "Requested OAuth permissions, not proof of granted project access.",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\s*]+$"
+                  },
+                  "uniqueItems": true,
+                  "default": []
+                }
+              },
+              "required": []
+            },
+            "space": {
+              "description": "Empty object inherits connection scope; otherwise replaces the complete scope. Empty inherited destinations stay closed.",
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {},
+                  "required": []
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "team_ids": {
+                      "type": "array",
+                      "description": "Linear team IDs; account permissions still apply.",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[^\\s*]+$"
+                      },
+                      "uniqueItems": true,
+                      "default": []
+                    },
+                    "project_ids": {
+                      "type": "array",
+                      "description": "Allowed Linear projects; issue ownership must be checked before access.",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[^\\s*]+$"
+                      },
+                      "uniqueItems": true,
+                      "default": []
+                    }
+                  },
+                  "required": [
+                    "team_ids",
+                    "project_ids"
+                  ]
+                }
+              ]
+            },
+            "source": {
+              "enum": [
+                "mstack",
+                "project"
+              ],
+              "default": "mstack",
+              "description": "project: the repository already provides this tool as a team convention; mstack keeps that MCP server enabled and adds no binding of its own."
+            },
+            "server": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "description": "Name of the project-provided MCP server (defaults to the tool name). Only with source: project."
+            }
+          }
+        },
+        "figma": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "connection": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}$"
+            },
+            "access": {
+              "enum": [
+                "read-only",
+                "read-write"
+              ],
+              "default": "read-only"
+            },
+            "transport": {
+              "enum": [
+                "direct",
+                "agentgateway"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "description": "Desired MCP endpoint. An ordinary app UI/API URL is not automatically an MCP endpoint. No embedded credentials/query parameters."
+            },
+            "credential_file": {
+              "type": "string",
+              "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$",
+              "description": "Private file reference relative to the mcp-stack repository; never a literal key."
+            },
+            "auth_type": {
+              "enum": [
+                "oauth",
+                "api-key",
+                "local-api-key"
+              ]
+            },
+            "input": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "credential_file": {
+                  "type": "string",
+                  "description": "Ignored repository-relative private credential file; a reference, never a token.",
+                  "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+                },
+                "auth_type": {
+                  "type": "string",
+                  "enum": [
+                    "oauth",
+                    "api-key",
+                    "local-api-key"
+                  ],
+                  "description": "Selected authentication method. Does not perform login."
+                },
+                "account": {
+                  "type": "string",
+                  "description": "Account label for the intended Figma identity."
+                },
+                "oauth_client_id": {
+                  "type": "string",
+                  "description": "Optional registered OAuth app ID; no app registration is performed."
+                },
+                "oauth_client_secret_file": {
+                  "type": "string",
+                  "description": "Ignored repository-relative private credential file; a reference, never a token.",
+                  "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+                },
+                "oauth_scopes": {
+                  "type": "array",
+                  "description": "Requested OAuth permissions, not proof of granted project access.",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\s*]+$"
+                  },
+                  "uniqueItems": true,
+                  "default": []
+                }
+              },
+              "required": []
+            },
+            "space": {
+              "description": "Empty object inherits connection scope; otherwise replaces the complete scope. Empty inherited destinations stay closed.",
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {},
+                  "required": []
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "file_keys": {
+                      "type": "array",
+                      "description": "Allowed Figma file keys; arbitrary URLs or other file keys are denied.",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[^\\s*]+$"
+                      },
+                      "uniqueItems": true,
+                      "default": []
+                    }
+                  },
+                  "required": [
+                    "file_keys"
+                  ]
+                }
+              ]
+            },
+            "source": {
+              "enum": [
+                "mstack",
+                "project"
+              ],
+              "default": "mstack",
+              "description": "project: the repository already provides this tool as a team convention; mstack keeps that MCP server enabled and adds no binding of its own."
+            },
+            "server": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "description": "Name of the project-provided MCP server (defaults to the tool name). Only with source: project."
+            }
+          }
+        },
+        "notion": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "connection": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}$"
+            },
+            "access": {
+              "enum": [
+                "read-only",
+                "read-write"
+              ],
+              "default": "read-only"
+            },
+            "transport": {
+              "enum": [
+                "direct",
+                "agentgateway"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "description": "Desired MCP endpoint. An ordinary app UI/API URL is not automatically an MCP endpoint. No embedded credentials/query parameters."
+            },
+            "credential_file": {
+              "type": "string",
+              "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$",
+              "description": "Private file reference relative to the mcp-stack repository; never a literal key."
+            },
+            "auth_type": {
+              "enum": [
+                "oauth",
+                "api-key",
+                "local-api-key"
+              ]
+            },
+            "input": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "credential_file": {
+                  "type": "string",
+                  "description": "Ignored repository-relative private credential file; a reference, never a token.",
+                  "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+                },
+                "auth_type": {
+                  "type": "string",
+                  "enum": [
+                    "oauth",
+                    "api-key",
+                    "local-api-key"
+                  ],
+                  "description": "Selected authentication method. Does not perform login."
+                },
+                "workspace_id": {
+                  "type": "string",
+                  "description": "Provider workspace/account ID; blank until selected."
+                },
+                "oauth_client_id": {
+                  "type": "string",
+                  "description": "Optional registered OAuth app ID; no app registration is performed."
+                },
+                "oauth_client_secret_file": {
+                  "type": "string",
+                  "description": "Ignored repository-relative private credential file; a reference, never a token.",
+                  "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+                },
+                "oauth_scopes": {
+                  "type": "array",
+                  "description": "Requested OAuth permissions, not proof of granted project access.",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\s*]+$"
+                  },
+                  "uniqueItems": true,
+                  "default": []
+                }
+              },
+              "required": []
+            },
+            "space": {
+              "description": "Empty object inherits connection scope; otherwise replaces the complete scope. Empty inherited destinations stay closed.",
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {},
+                  "required": []
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "page_ids": {
+                      "type": "array",
+                      "description": "Allowed Notion root pages; descendants require qualified ownership checking.",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[^\\s*]+$"
+                      },
+                      "uniqueItems": true,
+                      "default": []
+                    },
+                    "data_source_ids": {
+                      "type": "array",
+                      "description": "Allowed Notion data sources; not every accessible workspace page.",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[^\\s*]+$"
+                      },
+                      "uniqueItems": true,
+                      "default": []
+                    }
+                  },
+                  "required": [
+                    "page_ids",
+                    "data_source_ids"
+                  ]
+                }
+              ]
+            },
+            "source": {
+              "enum": [
+                "mstack",
+                "project"
+              ],
+              "default": "mstack",
+              "description": "project: the repository already provides this tool as a team convention; mstack keeps that MCP server enabled and adds no binding of its own."
+            },
+            "server": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "description": "Name of the project-provided MCP server (defaults to the tool name). Only with source: project."
+            }
+          }
+        },
+        "anytype": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "connection": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}$"
+            },
+            "access": {
+              "enum": [
+                "read-only",
+                "read-write"
+              ],
+              "default": "read-only"
+            },
+            "transport": {
+              "enum": [
+                "direct",
+                "agentgateway"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "description": "Desired MCP endpoint. An ordinary app UI/API URL is not automatically an MCP endpoint. No embedded credentials/query parameters."
+            },
+            "credential_file": {
+              "type": "string",
+              "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$",
+              "description": "Private file reference relative to the mcp-stack repository; never a literal key."
+            },
+            "auth_type": {
+              "enum": [
+                "oauth",
+                "api-key",
+                "local-api-key"
+              ]
+            },
+            "input": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "credential_file": {
+                  "type": "string",
+                  "description": "Ignored repository-relative private credential file; a reference, never a token.",
+                  "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+                },
+                "auth_type": {
+                  "type": "string",
+                  "enum": [
+                    "oauth",
+                    "api-key",
+                    "local-api-key"
+                  ],
+                  "description": "Selected authentication method. Does not perform login."
+                },
+                "api_url": {
+                  "type": "string",
+                  "description": "Endpoint template; blank is allowed during onboarding. Not an authenticated/qualified binding.",
+                  "pattern": "^$|^https?://[^\\s]+$"
+                }
+              },
+              "required": []
+            },
+            "space": {
+              "description": "Empty object inherits connection scope; otherwise replaces the complete scope. Empty inherited destinations stay closed.",
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {},
+                  "required": []
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "space_id": {
+                      "type": "string",
+                      "description": "Full project-only Anytype Space ID; use a separate credential."
+                    },
+                    "docs_collection_id": {
+                      "type": "string",
+                      "description": "Docs collection within this Space; a collection is not an access grant."
+                    },
+                    "tasks_collection_id": {
+                      "type": "string",
+                      "description": "Tasks collection within this Space."
+                    }
+                  },
+                  "required": [
+                    "space_id",
+                    "docs_collection_id",
+                    "tasks_collection_id"
+                  ]
+                }
+              ]
+            },
+            "space_id": {
+              "type": "string"
+            },
+            "docs_collection_id": {
+              "type": "string"
+            },
+            "tasks_collection_id": {
+              "type": "string"
+            },
+            "source": {
+              "enum": [
+                "mstack",
+                "project"
+              ],
+              "default": "mstack",
+              "description": "project: the repository already provides this tool as a team convention; mstack keeps that MCP server enabled and adds no binding of its own."
+            },
+            "server": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "description": "Name of the project-provided MCP server (defaults to the tool name). Only with source: project."
+            }
+          }
+        },
+        "headroom": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "connection": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}$"
+            },
+            "access": {
+              "enum": [
+                "read-only",
+                "read-write"
+              ],
+              "default": "read-only"
+            },
+            "transport": {
+              "enum": [
+                "direct",
+                "agentgateway"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "description": "Desired MCP endpoint. An ordinary app UI/API URL is not automatically an MCP endpoint. No embedded credentials/query parameters."
+            },
+            "credential_file": {
+              "type": "string",
+              "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$",
+              "description": "Private file reference relative to the mcp-stack repository; never a literal key."
+            },
+            "auth_type": {
+              "enum": [
+                "oauth",
+                "api-key",
+                "local-api-key"
+              ]
+            },
+            "input": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                }
+              }
+            },
+            "space": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "namespace": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "database": {
+                  "type": "string"
+                },
+                "bucket": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "index_scope": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "source": {
+              "enum": [
+                "mstack",
+                "project"
+              ],
+              "default": "mstack",
+              "description": "project: the repository already provides this tool as a team convention; mstack keeps that MCP server enabled and adds no binding of its own."
+            },
+            "server": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "description": "Name of the project-provided MCP server (defaults to the tool name). Only with source: project."
+            }
+          }
+        }
+      }
+    },
+    "workflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gstack": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "browse",
+              "review",
+              "qa",
+              "qa-only",
+              "investigate",
+              "ship"
+            ]
+          }
+        },
+        "capabilities": {
+          "enum": [
+            "harness-first-container-fallback"
+          ]
+        }
+      }
+    },
+    "anytype": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "space_id",
+        "api_url",
+        "credential_file"
+      ],
+      "properties": {
+        "space_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "api_url": {
+          "type": "string"
+        },
+        "credential_file": {
+          "type": "string",
+          "pattern": "^\\.mstack/secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+        },
+        "documents": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "local_draft"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "local_draft": {
+                "type": "string",
+                "pattern": "^docs/"
+              }
+            }
+          }
+        }
+      }
+    },
+    "windmill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_url",
+        "workspace",
+        "script",
+        "credential_file",
+        "mcp_credential_file"
+      ],
+      "properties": {
+        "api_url": {
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "script": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?:u|f)/[A-Za-z0-9_-]+/[A-Za-z0-9_/-]+$"
+        },
+        "credential_file": {
+          "type": "string",
+          "pattern": "^\\.mstack/secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+        },
+        "mcp_credential_file": {
+          "type": "string",
+          "pattern": "^\\.mstack/secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+        }
+      }
+    },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Opt-in session capture onto the bound task's discussion in the shared board. The hook does nothing unless enabled here, registered only at project scope, and a task is bound.",
+      "required": [
+        "enabled",
+        "sink"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "sink": {
+          "enum": [
+            "anytype-taskboard"
+          ]
+        },
+        "harnesses": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "claude",
+              "codex"
+            ]
+          },
+          "default": [
+            "claude"
+          ]
+        },
+        "events": {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 1,
+          "items": {
+            "enum": [
+              "UserPromptSubmit",
+              "Stop"
+            ]
+          },
+          "default": [
+            "UserPromptSubmit",
+            "Stop"
+          ]
+        },
+        "max_chars": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 1800,
+          "default": 1800
+        }
+      }
+    },
+    "taskboard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "table"
+      ],
+      "description": "This project's table in the shared Anytype task board channel. Without link the table is private to Anytype.",
+      "properties": {
+        "table": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,62}$"
+        },
+        "workers": {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,40}$"
+          },
+          "default": [
+            "codex"
+          ],
+          "description": "Allowed agent plugins, in preference order: built-in (integrations/plugins/builtin) or the project's own (.mstack/plugins). argv hosts are spawned; handoff hosts get a launch spec."
+        },
+        "max_parallel": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8,
+          "default": 3
+        },
+        "link": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "provider",
+            "mode",
+            "workspace",
+            "team",
+            "credential_file"
+          ],
+          "description": "External issue tracker. mode pull/push is a partial link; scope label limits it to labelled issues/tasks.",
+          "properties": {
+            "provider": {
+              "enum": [
+                "linear"
+              ]
+            },
+            "mode": {
+              "enum": [
+                "pull",
+                "push",
+                "full"
+              ]
+            },
+            "scope": {
+              "enum": [
+                "mine",
+                "label"
+              ],
+              "default": "mine"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "team": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Linear team key this project's issues live in (pull filter and push target)."
+            },
+            "credential_file": {
+              "type": "string",
+              "pattern": "^\\.mstack/secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+            },
+            "workspace": {
+              "type": "string",
+              "pattern": "^[a-z0-9-]{1,64}$",
+              "description": "Linear workspace URL key (linear.app/<key>); the key must belong to it or sync refuses."
+            },
+            "key_entry": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Which row of the owner's .secrets/linear.csv the project key came from (traceability only)."
+            }
+          }
+        },
+        "auto": {
+          "type": "boolean",
+          "default": false,
+          "description": "Let `mstack board tick/watch` act on this table unattended: apply verdicts and dispatch approved tasks."
+        },
+        "apps": {
+          "type": "object",
+          "description": "Apps in this repo, by short code (title prefix [CODE]). A worker for an app's task starts in its folder; the worktree is still the whole repo.",
+          "propertyNames": {
+            "pattern": "^[A-Z][A-Z0-9]{1,9}$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^(?!/)(?!.*\\.\\.)[A-Za-z0-9._/-]+$"
+              },
+              "name": {
+                "type": "string"
+              },
+              "link": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "provider",
+                  "mode",
+                  "workspace",
+                  "team",
+                  "credential_file"
+                ],
+                "description": "This app's own Linear link; its issues are filed as [CODE] tasks and only its tasks are pushed.",
+                "properties": {
+                  "provider": {
+                    "enum": [
+                      "linear"
+                    ]
+                  },
+                  "mode": {
+                    "enum": [
+                      "pull",
+                      "push",
+                      "full"
+                    ]
+                  },
+                  "scope": {
+                    "enum": [
+                      "mine",
+                      "label"
+                    ],
+                    "default": "mine"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "team": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Linear team key this project's issues live in (pull filter and push target)."
+                  },
+                  "credential_file": {
+                    "type": "string",
+                    "pattern": "^\\.mstack/secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+                  },
+                  "workspace": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9-]{1,64}$",
+                    "description": "Linear workspace URL key (linear.app/<key>); the key must belong to it or sync refuses."
+                  },
+                  "key_entry": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Which row of the owner's .secrets/linear.csv the project key came from (traceability only)."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "private": {
+          "type": "boolean",
+          "default": false,
+          "description": "Linear boards: never write to Linear (no comments, status changes or new issues). The orchestrator's messages go to .mstack/journal.json and the owner's verdicts come through `mstack board owner`."
+        },
+        "backend": {
+          "enum": [
+            "anytype",
+            "linear"
+          ],
+          "default": "anytype",
+          "description": "linear: the board is the owner's own Linear issues (assigned to or created by them) in the configured link teams; no mirror."
+        },
+        "orchestrators": {
+          "type": "object",
+          "description": "Named orchestrator scopes within one repo: which links (apps; \"*\" = the table-wide link) and which root issues (focus, sub-issues included) each orchestrator works on.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "apps": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^(\\*|[A-Z][A-Z0-9]{1,9})$"
+                }
+              },
+              "focus": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Z0-9]*-[0-9]+$"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "joints": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Plugins for the non-agent joints (see integrations/plugins). Agents come from taskboard.workers, the link from taskboard.link.",
+      "properties": {
+        "memory.instant": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,40}$"
+        },
+        "memory.long": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,40}$"
+        },
+        "compress": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,40}$"
+        },
+        "gateway": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,40}$"
+        },
+        "docs": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,40}$"
+        }
+      }
+    }
+  },
+  "required": [
+    "project"
+  ]
+}

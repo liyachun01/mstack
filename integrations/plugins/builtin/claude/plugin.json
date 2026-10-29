@@ -1,0 +1,22 @@
+{
+  "$schema": "../../schemas/plugin.schema.json",
+  "name": "claude",
+  "version": "0.1.0",
+  "joint": "agent",
+  "status": "implemented",
+  "transport": "argv",
+  "summary": "Claude Code CLI print mode",
+  "command": [
+    "claude",
+    "-p",
+    "{brief}",
+    "--permission-mode",
+    "acceptEdits"
+  ],
+  "requires": {
+    "binaries": [
+      "claude"
+    ]
+  },
+  "mcp_style": "mcp-json"
+}

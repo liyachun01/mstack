@@ -1,0 +1,15 @@
+{
+  "database_removed": "inbox_zero",
+  "role_removed": "inbox_zero",
+  "containers_removed": [
+    "mcp-stack-inbox-zero-web-1",
+    "mcp-stack-inbox-zero-redis-1",
+    "mcp-stack-inbox-zero-redis-http-1"
+  ],
+  "volume_removed": "mcp-stack-inbox-zero-redis-data",
+  "networks_removed": [
+    "mcp-stack-inbox-zero-app",
+    "mcp-stack-inbox-zero-db"
+  ],
+  "shared_postgres": "running; only mail-specific network detached"
+}

@@ -1,0 +1,180 @@
+{
+  "version": 1,
+  "kind": "integration-plan-not-a-runtime-loader",
+  "project_id": "mcp-stack-demo",
+  "updated": "2026-10-06",
+  "provider": {
+    "id": "deepseek",
+    "credential_alias": "harnessbot",
+    "credential_source": ".secrets/agents.csv",
+    "chat_base_url": "https://api.deepseek.com",
+    "messages_base_url": "https://api.deepseek.com/anthropic",
+    "default_model": "deepseek-flash",
+    "optional_model": "deepseek-v4-pro",
+    "credential_check": "models-list-http-200",
+    "inference_test": "not-run",
+    "recommended_binding": "one-upstream-key-at-gateway; local-caller-tokens",
+    "central_model_route": "proposed-not-configured"
+  },
+  "tools": {
+    "codex": {
+      "role": "primary-interactive-harness",
+      "provider_binding": "existing-unchanged",
+      "mcp_binding": "not-registered",
+      "deepseek_key": false
+    },
+    "deepseek-harness": {
+      "role": "optional-interactive-agent",
+      "version": "0.2.0-rc.2",
+      "credential_alias": "harnessbot",
+      "provider_binding": "prepared-not-activated",
+      "mcp_binding": "graphify-codegraph-qualified-2026-10-03"
+    },
+    "windmill": {
+      "role": "primary-workflow-and-code-engine",
+      "version": "1.823.1",
+      "credential_alias": "harnessbot",
+      "provider_binding": "pending-workspace-resource",
+      "mcp_binding": "pending-scoped-workspace-token",
+      "s3_binding": "container-verified-app-resource-pending"
+    },
+    "n8n": {
+      "role": "optional-connectors-and-events",
+      "version": "2.41.6",
+      "credential_alias": "harnessbot",
+      "provider_binding": "pending-central-model-route-decision",
+      "mcp_binding": "pending-reviewed-workflow",
+      "s3_binding": "app-credential-registered-personal-project; workflow-test-not-run"
+    },
+    "agentgateway": {
+      "role": "authenticated-mcp-routing",
+      "version": "1.5.0",
+      "deepseek_key": false,
+      "mcp_routes": [
+        "/mcp/graphify",
+        "/mcp/codegraph"
+      ],
+      "model_proxy": "not-configured"
+    },
+    "graphify": {
+      "role": "relevant-corpus-relationships",
+      "deepseek_key": false,
+      "mcp_binding": "gateway-query-tools-qualified",
+      "automatic_indexing": false
+    },
+    "codegraph": {
+      "role": "opt-in-source-structure",
+      "deepseek_key": false,
+      "mcp_binding": "gateway-explore-qualified",
+      "automatic_indexing": false
+    },
+    "basic-memory": {
+      "role": "secondary-opt-in-legacy-markdown-knowledge",
+      "deepseek_key": false,
+      "mcp_binding": "pending-project-scoped-integration",
+      "search": "postgres-text",
+      "automatic_capture": false,
+      "automatic_mirroring": false
+    },
+    "garage": {
+      "role": "project-artifact-object-storage",
+      "version": "2.3.0",
+      "deepseek_key": false,
+      "status": "installed-stopped; previous-acceptance-preserved",
+      "container_endpoint": "http://mcp-stack-garage:3900",
+      "host_endpoint": "http://127.0.0.1:53900",
+      "region": "garage",
+      "demo_bucket": "project-mcp-stack-demo-artifacts"
+    },
+    "postgres": {
+      "role": "separate-service-and-project-databases",
+      "deepseek_key": false,
+      "status": "existing-unchanged"
+    },
+    "whodb": {
+      "role": "human-database-inspection",
+      "deepseek_key": false,
+      "ai_features": "not-configured",
+      "status": "installed-stopped; previous-acceptance-preserved"
+    },
+    "opencode": {
+      "role": "optional-harness",
+      "status": "not-requested-for-activation"
+    },
+    "openwiki": {
+      "role": "optional-documentation-generation",
+      "status": "not-requested-for-activation"
+    },
+    "notion": {
+      "role": "excluded-pkm-option",
+      "status": "no-integration-planned; preserve-historical-source"
+    },
+    "appflowy": {
+      "role": "excluded-pkm-option",
+      "status": "no-integration-planned; preserve-unrelated-data"
+    },
+    "anytype": {
+      "role": "sole-canonical-pkm",
+      "mode": "local-only",
+      "desktop_status": "macos-downloaded-user-reported",
+      "mcp_binding": "not-installed-or-registered",
+      "project_binding": "pending-explicit-space-id-and-credential",
+      "api_key": "Anytype-backend-auth-not-model-key",
+      "sync_server": "not-installed-or-requested",
+      "recommended_transport": "direct-harness-mcp"
+    },
+    "ai-memory": {
+      "role": "experimental-working-memory-and-handoff",
+      "version": "2.5.2",
+      "status": "installed-running-healthy",
+      "mcp_binding": "direct-qualified; gateway-and-harness-pending",
+      "automatic_capture": false,
+      "llm_provider": "none",
+      "embedding_provider": "none",
+      "host_endpoint": "http://127.0.0.1:58092/mcp",
+      "persistence": "own-markdown-wiki-and-sqlite-volume",
+      "tenant_isolation": "not-qualified; project-labels-not-RBAC",
+      "memory_refresh": "changed-Anytype-object-after-authorized-harness-write; pending-client-project-binding"
+    },
+    "llamacpp": {
+      "role": "future-local-model-backend",
+      "status": "deferred-not-installed; no-model-download"
+    }
+  },
+  "tracking": {
+    "status": "planned-native-logs-first",
+    "required_fields": [
+      "timestamp",
+      "project_id",
+      "run_id",
+      "caller",
+      "operation",
+      "provider",
+      "model",
+      "credential_alias",
+      "provider_request_id",
+      "input_tokens",
+      "output_tokens",
+      "cached_input_tokens",
+      "elapsed_ms",
+      "status"
+    ],
+    "forbidden_fields": [
+      "api_key",
+      "authorization_headers",
+      "prompt",
+      "response_content",
+      "database_password",
+      "signed_url"
+    ],
+    "shared_key_provider_billing": "aggregate-only; attribute-callers-in-local-run-records",
+    "tool_calls_and_model_tokens": "record-separately; graph-storage-db-operations-do-not-automatically-consume-model-tokens"
+  },
+  "runtime_observation": {
+    "date": "2026-10-06",
+    "preexisting_containers": "stopped-preserved",
+    "ai-memory": "running-healthy",
+    "scope": "no-broad-resume"
+  },
+  "active_profile": "direct-anytype; gateway-and-windmill-not-required"
+}

@@ -1,0 +1,348 @@
+{
+  "date": "2026-10-01",
+  "execution_domain": "macOS OrbStack Docker via Ubuntu macctl",
+  "authorization": "User requested unused image/container pruning, explicitly preserving stopped containers.",
+  "container_removals": [],
+  "image_targets": [
+    {
+      "id": "sha256:09800a7ea43a5e7897700e6ec0ee6aac7562ba346fc1e654090ebcb0eb720fb9",
+      "tags": [
+        "appflowyinc/appflowy_worker:latest"
+      ],
+      "digests": [
+        "appflowyinc/appflowy_worker@sha256:09800a7ea43a5e7897700e6ec0ee6aac7562ba346fc1e654090ebcb0eb720fb9"
+      ],
+      "inspect_size_bytes": 63052522
+    },
+    {
+      "id": "sha256:13ba145cba2f3e28fa801994876e4c086d1b95d5aa2a520a734765ffb6b12017",
+      "tags": [
+        "caddy:2.11.4"
+      ],
+      "digests": [
+        "caddy@sha256:13ba145cba2f3e28fa801994876e4c086d1b95d5aa2a520a734765ffb6b12017"
+      ],
+      "inspect_size_bytes": 22741240
+    },
+    {
+      "id": "sha256:143f7bfc2358911d6b36138eabfbfffea46273c5d4b5696d90e5cbf23d633cf8",
+      "tags": [
+        "redis:6"
+      ],
+      "digests": [
+        "redis@sha256:143f7bfc2358911d6b36138eabfbfffea46273c5d4b5696d90e5cbf23d633cf8"
+      ],
+      "inspect_size_bytes": 38576822
+    },
+    {
+      "id": "sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+      "tags": [
+        "appflowyinc/minio:RELEASE.2025-09-07T16-13-09Z",
+        "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
+      ],
+      "digests": [
+        "appflowyinc/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+        "quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
+      ],
+      "inspect_size_bytes": 57548825
+    },
+    {
+      "id": "sha256:281a7a6a7dd445d7b3b4d879430713eb41575c1e5213235ea9ae9e3d8771a993",
+      "tags": [
+        "appflowyinc/appflowy_cloud:latest"
+      ],
+      "digests": [
+        "appflowyinc/appflowy_cloud@sha256:281a7a6a7dd445d7b3b4d879430713eb41575c1e5213235ea9ae9e3d8771a993"
+      ],
+      "inspect_size_bytes": 99516322
+    },
+    {
+      "id": "sha256:298e5b3bc566bade82f46ad5511777a4a07a294097ce16ada2f6a42be5239df5",
+      "tags": [
+        "redis:8",
+        "redis:latest"
+      ],
+      "digests": [
+        "redis@sha256:298e5b3bc566bade82f46ad5511777a4a07a294097ce16ada2f6a42be5239df5"
+      ],
+      "inspect_size_bytes": 55248987
+    },
+    {
+      "id": "sha256:2b5af8e463f28d580c4aae322fe0ec20a8c5748729e87d4280c9076ac7241454",
+      "tags": [
+        "appflowyinc/admin_frontend:latest"
+      ],
+      "digests": [
+        "appflowyinc/admin_frontend@sha256:2b5af8e463f28d580c4aae322fe0ec20a8c5748729e87d4280c9076ac7241454"
+      ],
+      "inspect_size_bytes": 106359873
+    },
+    {
+      "id": "sha256:2d65ba1e6dd47f15fbc7b5fd5b3a2d646f835643b794fed98522e595f7c97699",
+      "tags": [
+        "steveltn/https-portal:latest"
+      ],
+      "digests": [
+        "steveltn/https-portal@sha256:2d65ba1e6dd47f15fbc7b5fd5b3a2d646f835643b794fed98522e595f7c97699"
+      ],
+      "inspect_size_bytes": 125134791
+    },
+    {
+      "id": "sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+      "tags": [
+        "postgres:18"
+      ],
+      "digests": [
+        "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280"
+      ],
+      "inspect_size_bytes": 161077735
+    },
+    {
+      "id": "sha256:566d24c7d9f5995e5a1a660293e151c72bc1371c294930e6d1abc0948e04fe21",
+      "tags": [
+        "baserow/web-frontend:2.3.3"
+      ],
+      "digests": [
+        "baserow/web-frontend@sha256:566d24c7d9f5995e5a1a660293e151c72bc1371c294930e6d1abc0948e04fe21"
+      ],
+      "inspect_size_bytes": 107756994
+    },
+    {
+      "id": "sha256:71a5b4738d1bed96e92112004054f0888e92791b64eb78afd79077c96e6f9327",
+      "tags": [
+        "neosmemo/memos:stable"
+      ],
+      "digests": [
+        "neosmemo/memos@sha256:71a5b4738d1bed96e92112004054f0888e92791b64eb78afd79077c96e6f9327"
+      ],
+      "inspect_size_bytes": 22903693
+    },
+    {
+      "id": "sha256:78c578af2f2391375dcf5bf43ac41bd9217baf2e8c75361c72d823205f72cb90",
+      "tags": [
+        "appflowyinc/appflowy_ai:latest"
+      ],
+      "digests": [
+        "appflowyinc/appflowy_ai@sha256:78c578af2f2391375dcf5bf43ac41bd9217baf2e8c75361c72d823205f72cb90"
+      ],
+      "inspect_size_bytes": 51644288
+    },
+    {
+      "id": "sha256:7ba71f93fd2b735ba0f8717f17a5c4353100975b415aea399c5da08fa4f52ce3",
+      "tags": [
+        "appflowyinc/gotrue:latest"
+      ],
+      "digests": [
+        "appflowyinc/gotrue@sha256:7ba71f93fd2b735ba0f8717f17a5c4353100975b415aea399c5da08fa4f52ce3"
+      ],
+      "inspect_size_bytes": 27896236
+    },
+    {
+      "id": "sha256:7c00549b3a6fd79ab861b9eb63468152d5a4c9deac9d6b60d840fdf0284c87c2",
+      "tags": [
+        "baserow/backend:2.3.3"
+      ],
+      "digests": [
+        "baserow/backend@sha256:7c00549b3a6fd79ab861b9eb63468152d5a4c9deac9d6b60d840fdf0284c87c2"
+      ],
+      "inspect_size_bytes": 370847545
+    },
+    {
+      "id": "sha256:7d4471a6a1c437a2c8afc137cd28e83ba9b9c2ace1f8aa47646a4295be3cb70a",
+      "tags": [
+        "budibase/proxy:latest"
+      ],
+      "digests": [
+        "budibase/proxy@sha256:7d4471a6a1c437a2c8afc137cd28e83ba9b9c2ace1f8aa47646a4295be3cb70a"
+      ],
+      "inspect_size_bytes": 71751936
+    },
+    {
+      "id": "sha256:832051f039b446c87aa23929cf92c00980c66aaa2d744d118c48c016ec816ad8",
+      "tags": [
+        "docker.getoutline.com/outlinewiki/outline:latest"
+      ],
+      "digests": [
+        "docker.getoutline.com/outlinewiki/outline@sha256:832051f039b446c87aa23929cf92c00980c66aaa2d744d118c48c016ec816ad8"
+      ],
+      "inspect_size_bytes": 297954500
+    },
+    {
+      "id": "sha256:955c873406ae350fa2620e06163aa1861c724bbdccfa3480460b78500bed7970",
+      "tags": [
+        "appflowyinc/appflowy_web:latest"
+      ],
+      "digests": [
+        "appflowyinc/appflowy_web@sha256:955c873406ae350fa2620e06163aa1861c724bbdccfa3480460b78500bed7970"
+      ],
+      "inspect_size_bytes": 141401422
+    },
+    {
+      "id": "sha256:a947c45cdc5906a1bc951f20a8709e321256343ee0f251e4ae00b5e7def4e6da",
+      "tags": [
+        "pgvector/pgvector:pg15"
+      ],
+      "digests": [
+        "pgvector/pgvector@sha256:a947c45cdc5906a1bc951f20a8709e321256343ee0f251e4ae00b5e7def4e6da"
+      ],
+      "inspect_size_bytes": 152008260
+    },
+    {
+      "id": "sha256:aa038175ddd009f407dd747ee02ed2dec5a72e3099ff3b89a5293225932c7c95",
+      "tags": [
+        "budibase/worker:latest"
+      ],
+      "digests": [
+        "budibase/worker@sha256:aa038175ddd009f407dd747ee02ed2dec5a72e3099ff3b89a5293225932c7c95"
+      ],
+      "inspect_size_bytes": 243616072
+    },
+    {
+      "id": "sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b",
+      "tags": [
+        "pgvector/pgvector:pg16"
+      ],
+      "digests": [
+        "pgvector/pgvector@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b"
+      ],
+      "inspect_size_bytes": 154119544
+    },
+    {
+      "id": "sha256:d0d674272be3be36f9a13d79194fa0db5aa630ab3ede9bec459d12f67370aaef",
+      "tags": [
+        "nginx:latest"
+      ],
+      "digests": [
+        "nginx@sha256:d0d674272be3be36f9a13d79194fa0db5aa630ab3ede9bec459d12f67370aaef"
+      ],
+      "inspect_size_bytes": 65050401
+    },
+    {
+      "id": "sha256:d90f656261c9fdccae7f15e73639103bf857b2897f105c4f81711ecd1234dd28",
+      "tags": [
+        "budibase/database:2.1.0"
+      ],
+      "digests": [
+        "budibase/database@sha256:d90f656261c9fdccae7f15e73639103bf857b2897f105c4f81711ecd1234dd28"
+      ],
+      "inspect_size_bytes": 363053756
+    },
+    {
+      "id": "sha256:e29d25e1952337eb7c9b605213865ae935c60f1689ad465cb5fc940b598174c9",
+      "tags": [
+        "litellm/litellm:main-v1.83.10-stable.patch.3"
+      ],
+      "digests": [
+        "litellm/litellm@sha256:e29d25e1952337eb7c9b605213865ae935c60f1689ad465cb5fc940b598174c9"
+      ],
+      "inspect_size_bytes": 585463128
+    },
+    {
+      "id": "sha256:e56b20cef187c0e976b3230ce6494114b43ee787ee3204cee4be96ff7bb6ae12",
+      "tags": [
+        "budibase/apps:latest"
+      ],
+      "digests": [
+        "budibase/apps@sha256:e56b20cef187c0e976b3230ce6494114b43ee787ee3204cee4be96ff7bb6ae12"
+      ],
+      "inspect_size_bytes": 386839911
+    },
+    {
+      "id": "sha256:f057845b03206b96ad24d7fc43bc6dcff9be0cec9a6d4559d9db26df937cb985",
+      "tags": [
+        "bash:4.4"
+      ],
+      "digests": [
+        "bash@sha256:f057845b03206b96ad24d7fc43bc6dcff9be0cec9a6d4559d9db26df937cb985"
+      ],
+      "inspect_size_bytes": 5235383
+    },
+    {
+      "id": "sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94",
+      "tags": [
+        "postgres:16"
+      ],
+      "digests": [
+        "postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94"
+      ],
+      "inspect_size_bytes": 158880805
+    },
+    {
+      "id": "sha256:f736b0f71457d888af7df564b527c76975d7126a365e410668fb980f030938bd",
+      "tags": [
+        "appflowyinc/appflowy_search:latest"
+      ],
+      "digests": [
+        "appflowyinc/appflowy_search@sha256:f736b0f71457d888af7df564b527c76975d7126a365e410668fb980f030938bd"
+      ],
+      "inspect_size_bytes": 67382759
+    }
+  ],
+  "preserved_unused_images": [
+    {
+      "id": "sha256:002193c9ff840a4946918641901bb6aa9e2036dc9ff7590e2b11e91d1e06bf86",
+      "tags": [
+        "public.ecr.aws/supabase/realtime:v2.130.0"
+      ],
+      "reason": "Supabase/{{mstack:CLIENT_REPO_TITLE}} protection."
+    },
+    {
+      "id": "sha256:105a2584129c9600aebed6f5ac49ca4371c92b996ecd1af7179750333e9e2120",
+      "tags": [
+        "public.ecr.aws/supabase/storage-api:v1.72.1"
+      ],
+      "reason": "Supabase/{{mstack:CLIENT_REPO_TITLE}} protection."
+    },
+    {
+      "id": "sha256:3a91e4f393bb9086f495d43118a9d0f7b71619681d063027991de8504c2d166b",
+      "tags": [
+        "clientapp-media-transform:worker"
+      ],
+      "reason": "Custom image; rebuild/pull availability not established."
+    },
+    {
+      "id": "sha256:4905784b715cb22b265d26405067649544b40faffff89fd8dc7a28736f42afb0",
+      "tags": [
+        "public.ecr.aws/supabase/studio:2026.08.24-sha-8ec45b2"
+      ],
+      "reason": "Supabase/{{mstack:CLIENT_REPO_TITLE}} protection."
+    },
+    {
+      "id": "sha256:85258123312dc496ad4c2ed832154a65e9746f84df0d6d09b44229ff9230c08e",
+      "tags": [
+        "public.ecr.aws/supabase/postgrest:v16.2"
+      ],
+      "reason": "Supabase/{{mstack:CLIENT_REPO_TITLE}} protection."
+    },
+    {
+      "id": "sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158",
+      "tags": [
+        "public.ecr.aws/supabase/postgres-meta:v0.99.0"
+      ],
+      "reason": "Supabase/{{mstack:CLIENT_REPO_TITLE}} protection."
+    },
+    {
+      "id": "sha256:ba88b97954573852eb18524d07507724000be02dbc94e22ee32c186ea006f1b6",
+      "tags": [
+        "public.ecr.aws/supabase/logflare:1.50.6"
+      ],
+      "reason": "Supabase/{{mstack:CLIENT_REPO_TITLE}} protection."
+    },
+    {
+      "id": "sha256:c0c25187a6b835e65a6f6e6c6b39d090e832d40e6de5186f2c038e0411944232",
+      "tags": [
+        "public.ecr.aws/supabase/gotrue:v2.196.0"
+      ],
+      "reason": "Supabase/{{mstack:CLIENT_REPO_TITLE}} protection."
+    },
+    {
+      "id": "sha256:eda7c5e68719e9c8287e78c017118407b48df904a51c935f5ab6098b8c0bc6bc",
+      "tags": [
+        "public.ecr.aws/supabase/pg_prove:3.36"
+      ],
+      "reason": "Supabase/{{mstack:CLIENT_REPO_TITLE}} protection."
+    }
+  ],
+  "before_storage_summary": "TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE\nImages          54        18        33.66GB   19.27GB (57%)\nContainers      21        5         32.51MB   31.81MB (97%)\nLocal Volumes   14        7         12.83GB   432.2MB (3%)\nBuild Cache     86        0         3.251GB   1.724GB\n",
+  "scope": "Exact unreferenced image tags only, non-force removal. All 21 containers and referenced images, volumes, networks and build cache protected. No broad prune."
+}

@@ -1,0 +1,17 @@
+{
+  "qualified_at": "2026-10-27T08:40:51.045268+00:00",
+  "platform": "linux",
+  "versions": {
+    "codex": "codex-cli 0.163.0",
+    "claude": "2.1.310 (Claude Code)"
+  },
+  "claude_auth": {
+    "loggedIn": true,
+    "authMethod": "claude.ai",
+    "apiProvider": "firstParty",
+    "subscriptionType": "max"
+  },
+  "codex_auth": "ChatGPT; Edge OAuth completed; same existing account",
+  "codex_home_preserved": "/home/developer/.codex",
+  "model_prompt_sent": false
+}

@@ -1,0 +1,107 @@
+{
+  "observed_at": "2026-10-16T04:21:20.356025+00:00",
+  "container": "mstack-headroom",
+  "version": "0.34.0",
+  "mcp_version": "1.29.0",
+  "image": "sha256:4dd47ac9644868cefb4921ce67bb5e6d882da44470c3acfbb721fe0fd54314d9",
+  "container_id": "0a68ee648db3754af26f1245444848d40cc071eaaecbe9a1e1a5480684edfb64",
+  "architecture": "shared container with authenticated project sessions and separate native SQLite caches",
+  "project_binding": "/home/developer/workspace/mstack-example/infra/stack.bindings.json",
+  "live_proof": {
+    "observed_at": "2026-10-16T04:17:15.481342+00:00",
+    "project": "mstack-example",
+    "provider": "shared-container-native-MCP",
+    "container": "mstack-headroom",
+    "version": "0.34.0",
+    "model_calls": 0,
+    "network": "none",
+    "two_tenants_concurrent": true,
+    "cross_tenant_hash_retrieval_denied": true,
+    "wrong_tenant_unknown_tenant_wrong_token_denied": true,
+    "file_read_and_selector_overrides_denied": true,
+    "same_tenant_reconnect_retrieval": true,
+    "native_cache_ttl_seconds": 3600,
+    "synthetic_tokens_saved": [
+      2026,
+      2026
+    ],
+    "example_compression": {
+      "hash": "45aa27b85ab088bafefb5c07",
+      "original_tokens": 594,
+      "compressed_tokens": 475,
+      "tokens_saved": 119,
+      "savings_percent": 20.0,
+      "transforms": [
+        "router:mixed:0.82"
+      ]
+    },
+    "example_original_sha256": "45aa27b85ab088bafefb5c0732a04253308e84111f03d5dc7f5becc660bc2c18",
+    "same_container_after_tenant_addition_and_restart": true,
+    "exact_retrieval_after_service_restart": true,
+    "passed": true
+  },
+  "container_comparison": {
+    "before_count": 29,
+    "after_count": 30,
+    "added": [
+      "mstack-headroom"
+    ],
+    "resumed_same_container": "mcp-stack-whodb",
+    "unrelated_preexisting_containers_unchanged": 28,
+    "compared_fields": [
+      "id",
+      "image",
+      "status",
+      "started",
+      "mounts",
+      "restart_count"
+    ],
+    "headroom_id": "0a68ee648db3754af26f1245444848d40cc071eaaecbe9a1e1a5480684edfb64",
+    "headroom_image": "sha256:4dd47ac9644868cefb4921ce67bb5e6d882da44470c3acfbb721fe0fd54314d9",
+    "headroom_no_network_or_published_port": true,
+    "passed": true
+  },
+  "tests": {
+    "python_tenant_tests": 10,
+    "node_tenant_tests": 5,
+    "stack_regression_tests": 36,
+    "total": 51,
+    "pip_check": true,
+    "compose_valid": true,
+    "root_and_project_skills_valid": true,
+    "saved_example_proof_stages": 6
+  },
+  "anytype": {
+    "documents_readback_verified": 4,
+    "new_note": "mstack-example \u2014 Shared Headroom",
+    "same_existing_channel_and_key": true
+  },
+  "boundaries": {
+    "host_global_headroom_preserved": true,
+    "global_harness_configuration_edited": false,
+    "model_provider_calls": 0,
+    "model_weight_downloads": 0,
+    "automatic_traffic_proxy": false,
+    "all_tenants_affected_by_service_stop": true,
+    "native_cache_ttl_seconds": 3600,
+    "no_new_database_connection_in_whodb": true,
+    "codegraph": "ignored"
+  },
+  "build_deviation": {
+    "unexpected_resolver_python_download": "interrupted before installation; exact temporary tree removed",
+    "retry": "existing mise Python with --no-python-downloads --no-managed-python",
+    "new_host_interpreter_installed": false
+  },
+  "build_artifacts_sha256": {
+    "infra/headroom/Dockerfile": "78299a16dda8448254043b1fe8bb8177c5957b9aa9519fef1514600e8d44f547",
+    "infra/headroom/requirements.in": "a818b500542a755576ed9193d77375fd3448289b32c02b3f5cf91981ac599899",
+    "infra/headroom/requirements.lock": "38a58e9c28b3a2827c75b36ed15308b2325cac7042d03fbbc0f9cb20ebc47eb3",
+    "infra/services/compose.yaml": "5f50bd2b961bafcee0fc7b980c545df9bd76508004de95a46d6b2138eefd8763",
+    "integrations/tenants/headroom_session.py": "575d56c80c6e9d0d0687a2b1148b4db305a048e751ae0c32cbcde5101735c3ae",
+    "integrations/tenants/launch.py": "5dd4eade38b0897390d7680b034962035d3d969bccf729c27acac1bd4ce94de5",
+    "integrations/tenants/manage.py": "ab1e319161250aafe9471d0c8b11c02a2aa78c6c106d02b2539b7b95829243b5",
+    "integrations/tenants/verify_headroom.py": "9ac45ba58b14a39787a205277d5deebccb1d81ac8dfbf81a409c5fb0e8fbc19f"
+  },
+  "rollback": "infra/headroom/README.md",
+  "passed": true
+}

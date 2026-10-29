@@ -1,0 +1,55 @@
+{
+  "date": "2026-10-21",
+  "version": "0.1.1206",
+  "provider": "deepseek",
+  "model": "deepseek-flash",
+  "desktop_alias": "mythos-magpie-9614455465",
+  "streaming": "passed",
+  "stream_seconds": 0.927,
+  "automatic_tool_roundtrip": "passed",
+  "tool_result": "5",
+  "synthetic_requests": 3,
+  "project_content_sent": false,
+  "usage": {
+    "tool_request": {
+      "input_tokens": 314,
+      "output_tokens": 54,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0
+    },
+    "tool_result": {
+      "input_tokens": 254,
+      "output_tokens": 2,
+      "cache_read_input_tokens": 128,
+      "cache_creation_input_tokens": 0
+    }
+  },
+  "codex_integration": "pending-explicit-user-request",
+  "native_desktop_ui": "not-opened-background-only",
+  "codex_files_unchanged": true,
+  "containers_unchanged": 33,
+  "old_opencodex_profile_unchanged": true,
+  "claude_profile_wired": true,
+  "claude_profile_id": "00000000-0000-4000-8000-6d6167706965",
+  "native_profile_library_repaired": true,
+  "claude_cli_readback_passed": true,
+  "existing_cowork_and_mode_chooser_policies_preserved": true,
+  "management_unauthenticated_status": 401,
+  "management_authenticated_status": 200,
+  "loopback_listeners": [
+    3425,
+    3430
+  ],
+  "claude_unrelated_settings_preserved": true,
+  "catalog_visible_models": 1,
+  "login_autostart": false,
+  "linux_codex_files_unchanged": true,
+  "gateway_ledger_entries": 3,
+  "native_profile_library_mode": "0700",
+  "native_profile_files_mode": "0600",
+  "claude_code_adapter_env_keys": [
+    "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
+    "CLAUDE_CODE_MODEL_CAPABILITIES"
+  ],
+  "claude_code_cli_installed": false
+}

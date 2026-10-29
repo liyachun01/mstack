@@ -1,0 +1,27 @@
+services:
+  agentgateway:
+    group_add: ["501"]
+    networks: [gateway, graphify, codegraph]
+    volumes:
+      - type: bind
+        source: ./infra/agentgateway/state/codegraph/config.json
+        target: /config/config.json
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ./infra/agentgateway/state/graphify/backend.key
+        target: /run/secrets/graphify-backend-key
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ./infra/agentgateway/state/codegraph/backend.key
+        target: /run/secrets/codegraph-backend-key
+        read_only: true
+        bind: {create_host_path: false}
+networks:
+  graphify:
+    name: mcp-stack-graphify-transport
+    external: true
+  codegraph:
+    name: mcp-stack-codegraph-transport
+    external: true

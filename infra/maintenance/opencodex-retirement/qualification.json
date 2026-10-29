@@ -1,0 +1,18 @@
+{
+  "date": "2026-10-21",
+  "removed_container": "mcp-stack-opencodex",
+  "removed_image": "sha256:2220a07c35556757ba7d06aee42e7c3966bab463878c0b3e09a9dabf48184791",
+  "removed_volumes": [
+    "mcp-stack_opencodex_codex_state",
+    "mcp-stack_opencodex_state"
+  ],
+  "removed_native_claude_profile": "caad58fd-df2b-4f21-a04e-f9bc798adb76",
+  "other_containers_unchanged": 31,
+  "other_volumes_unchanged": true,
+  "networks_unchanged": true,
+  "native_codex_unchanged": true,
+  "magpie_provider_settings_key_and_active_profile_unchanged": true,
+  "magpie_catalog": "passed;DeepSeek Flash (official)",
+  "inference_calls": 0,
+  "codex_integration": "pending-explicit-user-request"
+}

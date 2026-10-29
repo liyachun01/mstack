@@ -1,0 +1,48 @@
+name: mstack
+
+services:
+  whodb:
+    shm_size: 8409579520 # Retained OrbStack runtime limit.
+    image: clidey/whodb:0.134.0@sha256:040e47c5d3c5b7616d731771af90ce3594a3e92786ba01ef30b3aa12088e321f
+    platform: linux/arm64
+    pull_policy: never
+    container_name: mcp-stack-whodb
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: 0.5
+    mem_limit: 512m
+    pids_limit: 128
+    ports: ["127.0.0.1:58091:8080"]
+    environment:
+      PORT: "8080"
+      WHODB_LOG_LEVEL: info
+      WHODB_DATA_DIR: /data
+      WHODB_ENCRYPTION_KEY: ${MCP_STACK_WHODB_ENCRYPTION_KEY:?Use the private WhoDB runtime env file}
+      WHODB_DISABLE_UPDATE_CHECK: "true"
+      WHODB_DISABLE_MOCK_DATA_GENERATION: "true"
+    volumes:
+      - whodb_data:/data
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=64m,mode=1777
+    networks: [whodb_database]
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+    healthcheck:
+      test: [CMD-SHELL, "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  whodb_data:
+    external: true
+    name: mcp-stack-whodb-data
+
+networks:
+  whodb_database:
+    external: true
+    name: mcp-stack-memory

@@ -1,0 +1,239 @@
+{
+  "config": {
+    "adminAddr": "off",
+    "statsAddr": "off",
+    "readinessAddr": "off",
+    "enableIpv6": false,
+    "workerThreads": 1,
+    "storage": {
+      "mode": "readOnly"
+    },
+    "logging": {
+      "level": "warn",
+      "filter": "false"
+    }
+  },
+  "gateways": {
+    "synthetic": {
+      "port": 4000,
+      "apiKey": {
+        "mode": "strict",
+        "keys": [
+          {
+            "keyHash": "sha256:__CLIENT_KEY_SHA256__",
+            "metadata": {
+              "user": "local-synthetic-test"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "routes": [
+    {
+      "name": "health",
+      "gateways": [
+        "synthetic"
+      ],
+      "matches": [
+        {
+          "path": {
+            "exact": "/healthz"
+          }
+        }
+      ],
+      "policies": {
+        "directResponse": {
+          "status": 200
+        }
+      }
+    },
+    {
+      "name": "aggregate",
+      "gateways": [
+        "synthetic"
+      ],
+      "matches": [
+        {
+          "path": {
+            "exact": "/aggregate"
+          }
+        }
+      ],
+      "policies": {
+        "mcpAuthorization": {
+          "rules": [
+            "mcp.tool.name == \"echo\" && mcp.tool.target in [\"alpha\", \"beta\"]"
+          ]
+        }
+      },
+      "backends": [
+        {
+          "mcp": {
+            "targets": [
+              {
+                "name": "alpha",
+                "mcp": {
+                  "host": "http://fixture:8000/alpha/mcp"
+                }
+              },
+              {
+                "name": "beta",
+                "mcp": {
+                  "host": "http://fixture:8000/beta/mcp"
+                }
+              }
+            ],
+            "statefulMode": "stateful",
+            "prefixMode": "always",
+            "failureMode": "failClosed",
+            "dnsRebindingProtection": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "alpha-only",
+      "gateways": [
+        "synthetic"
+      ],
+      "matches": [
+        {
+          "path": {
+            "exact": "/alpha-only"
+          }
+        }
+      ],
+      "policies": {
+        "mcpAuthorization": {
+          "rules": [
+            "mcp.tool.name == \"echo\" && mcp.tool.target == \"alpha\""
+          ]
+        }
+      },
+      "backends": [
+        {
+          "mcp": {
+            "targets": [
+              {
+                "name": "alpha",
+                "mcp": {
+                  "host": "http://fixture:8000/alpha/mcp"
+                }
+              },
+              {
+                "name": "beta",
+                "mcp": {
+                  "host": "http://fixture:8000/beta/mcp"
+                }
+              }
+            ],
+            "statefulMode": "stateful",
+            "prefixMode": "always",
+            "failureMode": "failClosed",
+            "dnsRebindingProtection": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "deny",
+      "gateways": [
+        "synthetic"
+      ],
+      "matches": [
+        {
+          "path": {
+            "exact": "/deny"
+          }
+        }
+      ],
+      "policies": {
+        "mcpAuthorization": {
+          "rules": [
+            "false"
+          ]
+        }
+      },
+      "backends": [
+        {
+          "mcp": {
+            "targets": [
+              {
+                "name": "alpha",
+                "mcp": {
+                  "host": "http://fixture:8000/alpha/mcp"
+                }
+              },
+              {
+                "name": "beta",
+                "mcp": {
+                  "host": "http://fixture:8000/beta/mcp"
+                }
+              }
+            ],
+            "statefulMode": "stateful",
+            "prefixMode": "always",
+            "failureMode": "failClosed",
+            "dnsRebindingProtection": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "policy-error",
+      "gateways": [
+        "synthetic"
+      ],
+      "matches": [
+        {
+          "path": {
+            "exact": "/policy-error"
+          }
+        }
+      ],
+      "policies": {
+        "mcpAuthorization": {
+          "rules": [
+            "mcp.tool.name == \"echo\" && jwt.sub == \"synthetic-admin\""
+          ]
+        }
+      },
+      "backends": [
+        {
+          "mcp": {
+            "targets": [
+              {
+                "name": "alpha",
+                "mcp": {
+                  "host": "http://fixture:8000/alpha/mcp"
+                }
+              },
+              {
+                "name": "beta",
+                "mcp": {
+                  "host": "http://fixture:8000/beta/mcp"
+                }
+              }
+            ],
+            "statefulMode": "stateful",
+            "prefixMode": "always",
+            "failureMode": "failClosed",
+            "dnsRebindingProtection": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "not-found",
+      "gateways": [
+        "synthetic"
+      ],
+      "policies": {
+        "directResponse": {
+          "status": 404
+        }
+      }
+    }
+  ]
+}

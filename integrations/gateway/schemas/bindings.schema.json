@@ -1,0 +1,477 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Editor association."
+    },
+    "version": {
+      "const": 1
+    },
+    "projects": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]{0,62}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "slack": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "enum": [
+                  "pending",
+                  "qualified",
+                  "disabled"
+                ],
+                "description": "Qualified only after authenticated allowed/denied resource checks."
+              },
+              "scope_fingerprint": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "scope_enforcement": {
+                "enum": [
+                  "upstream-credential",
+                  "scoped-adapter"
+                ]
+              },
+              "access": {
+                "enum": [
+                  "read-only",
+                  "read-write"
+                ]
+              },
+              "mcp_url": {
+                "type": "string",
+                "description": "Endpoint template; blank is allowed during onboarding. Not an authenticated/qualified binding.",
+                "pattern": "^$|^https?://[^\\s]+$"
+              },
+              "tools": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                "uniqueItems": true
+              },
+              "evidence_file": {
+                "type": "string",
+                "description": "Repository-relative accepted live qualification evidence."
+              },
+              "backend_key_mount": {
+                "type": "string",
+                "pattern": "^/run/secrets/[a-z0-9-]+$"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "qualified"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "scope_fingerprint",
+                    "scope_enforcement",
+                    "access",
+                    "mcp_url",
+                    "tools",
+                    "evidence_file"
+                  ],
+                  "properties": {
+                    "tools": {
+                      "minItems": 1
+                    },
+                    "mcp_url": {
+                      "minLength": 1
+                    },
+                    "evidence_file": {
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "linear": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "enum": [
+                  "pending",
+                  "qualified",
+                  "disabled"
+                ],
+                "description": "Qualified only after authenticated allowed/denied resource checks."
+              },
+              "scope_fingerprint": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "scope_enforcement": {
+                "enum": [
+                  "upstream-credential",
+                  "scoped-adapter"
+                ]
+              },
+              "access": {
+                "enum": [
+                  "read-only",
+                  "read-write"
+                ]
+              },
+              "mcp_url": {
+                "type": "string",
+                "description": "Endpoint template; blank is allowed during onboarding. Not an authenticated/qualified binding.",
+                "pattern": "^$|^https?://[^\\s]+$"
+              },
+              "tools": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                "uniqueItems": true
+              },
+              "evidence_file": {
+                "type": "string",
+                "description": "Repository-relative accepted live qualification evidence."
+              },
+              "backend_key_mount": {
+                "type": "string",
+                "pattern": "^/run/secrets/[a-z0-9-]+$"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "qualified"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "scope_fingerprint",
+                    "scope_enforcement",
+                    "access",
+                    "mcp_url",
+                    "tools",
+                    "evidence_file"
+                  ],
+                  "properties": {
+                    "tools": {
+                      "minItems": 1
+                    },
+                    "mcp_url": {
+                      "minLength": 1
+                    },
+                    "evidence_file": {
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "figma": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "enum": [
+                  "pending",
+                  "qualified",
+                  "disabled"
+                ],
+                "description": "Qualified only after authenticated allowed/denied resource checks."
+              },
+              "scope_fingerprint": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "scope_enforcement": {
+                "enum": [
+                  "upstream-credential",
+                  "scoped-adapter"
+                ]
+              },
+              "access": {
+                "enum": [
+                  "read-only",
+                  "read-write"
+                ]
+              },
+              "mcp_url": {
+                "type": "string",
+                "description": "Endpoint template; blank is allowed during onboarding. Not an authenticated/qualified binding.",
+                "pattern": "^$|^https?://[^\\s]+$"
+              },
+              "tools": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                "uniqueItems": true
+              },
+              "evidence_file": {
+                "type": "string",
+                "description": "Repository-relative accepted live qualification evidence."
+              },
+              "backend_key_mount": {
+                "type": "string",
+                "pattern": "^/run/secrets/[a-z0-9-]+$"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "qualified"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "scope_fingerprint",
+                    "scope_enforcement",
+                    "access",
+                    "mcp_url",
+                    "tools",
+                    "evidence_file"
+                  ],
+                  "properties": {
+                    "tools": {
+                      "minItems": 1
+                    },
+                    "mcp_url": {
+                      "minLength": 1
+                    },
+                    "evidence_file": {
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "notion": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "enum": [
+                  "pending",
+                  "qualified",
+                  "disabled"
+                ],
+                "description": "Qualified only after authenticated allowed/denied resource checks."
+              },
+              "scope_fingerprint": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "scope_enforcement": {
+                "enum": [
+                  "upstream-credential",
+                  "scoped-adapter"
+                ]
+              },
+              "access": {
+                "enum": [
+                  "read-only",
+                  "read-write"
+                ]
+              },
+              "mcp_url": {
+                "type": "string",
+                "description": "Endpoint template; blank is allowed during onboarding. Not an authenticated/qualified binding.",
+                "pattern": "^$|^https?://[^\\s]+$"
+              },
+              "tools": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                "uniqueItems": true
+              },
+              "evidence_file": {
+                "type": "string",
+                "description": "Repository-relative accepted live qualification evidence."
+              },
+              "backend_key_mount": {
+                "type": "string",
+                "pattern": "^/run/secrets/[a-z0-9-]+$"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "qualified"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "scope_fingerprint",
+                    "scope_enforcement",
+                    "access",
+                    "mcp_url",
+                    "tools",
+                    "evidence_file"
+                  ],
+                  "properties": {
+                    "tools": {
+                      "minItems": 1
+                    },
+                    "mcp_url": {
+                      "minLength": 1
+                    },
+                    "evidence_file": {
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "anytype": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "enum": [
+                  "pending",
+                  "qualified",
+                  "disabled"
+                ],
+                "description": "Qualified only after authenticated allowed/denied resource checks."
+              },
+              "scope_fingerprint": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "scope_enforcement": {
+                "enum": [
+                  "upstream-credential",
+                  "scoped-adapter"
+                ]
+              },
+              "access": {
+                "enum": [
+                  "read-only",
+                  "read-write"
+                ]
+              },
+              "mcp_url": {
+                "type": "string",
+                "description": "Endpoint template; blank is allowed during onboarding. Not an authenticated/qualified binding.",
+                "pattern": "^$|^https?://[^\\s]+$"
+              },
+              "tools": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                "uniqueItems": true
+              },
+              "evidence_file": {
+                "type": "string",
+                "description": "Repository-relative accepted live qualification evidence."
+              },
+              "backend_key_mount": {
+                "type": "string",
+                "pattern": "^/run/secrets/[a-z0-9-]+$"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "qualified"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "scope_fingerprint",
+                    "scope_enforcement",
+                    "access",
+                    "mcp_url",
+                    "tools",
+                    "evidence_file"
+                  ],
+                  "properties": {
+                    "tools": {
+                      "minItems": 1
+                    },
+                    "mcp_url": {
+                      "minLength": 1
+                    },
+                    "evidence_file": {
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "required": []
+      }
+    }
+  },
+  "required": [
+    "version",
+    "projects"
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mcp-stack live binding evidence"
+}

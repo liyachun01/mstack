@@ -1,0 +1,26 @@
+{
+  "paths_removed": [
+    {
+      "path": "infra/inbox-zero",
+      "files_removed": 319
+    },
+    {
+      "path": "infra/email-mcp",
+      "files_removed": 4575
+    },
+    {
+      "path": "integrations/inbox-zero",
+      "files_removed": 4719
+    },
+    {
+      "path": "integrations/email-mcp",
+      "files_removed": 54
+    },
+    {
+      "path": ".secrets/zero-index",
+      "files_removed": 2
+    }
+  ],
+  "shared_recovery_preserved": "infra/postgres/.state/recovery-20261009",
+  "mail_credentials_retained": false
+}

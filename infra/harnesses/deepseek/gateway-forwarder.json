@@ -1,0 +1,14 @@
+{
+  "listen": { "host": "127.0.0.1", "port": 58081 },
+  "upstream": {
+    "host": "host.orb.internal",
+    "port": 58080,
+    "address": "0.250.250.254"
+  },
+  "limits": {
+    "maxConnections": 32,
+    "connectTimeoutMs": 5000,
+    "idleTimeoutMs": 600000,
+    "shutdownTimeoutMs": 5000
+  }
+}

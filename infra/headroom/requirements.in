@@ -1,0 +1,3 @@
+# Same Headroom version as the existing harness helper; no ML/model extras.
+headroom-ai[mcp]==0.34.0
+mcp==1.29.0

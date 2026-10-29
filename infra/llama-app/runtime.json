@@ -1,0 +1,100 @@
+{
+  "component": "Llama.app",
+  "version": "0.43.0",
+  "bundle_version": "261002.1149",
+  "source": "https://github.com/ggml-org/Llama-macOS/releases/tag/0.43.0",
+  "source_commit": "c7fb61e3f4fd2cd8f28392d11f2714a98381753e",
+  "installed_at": "2026-10-07",
+  "domain": "macos-native",
+  "application": "/Applications/Llama.app",
+  "bundle_id": "app.llama.Llama",
+  "installer_sha256": "1f9d77e44ff9f53c21a67eb38a351fd517563964ebf1d0df92d090d92b7f38a8",
+  "signature": {
+    "developer": "Caret.io OOD",
+    "team_id": "V89L745MNN",
+    "gatekeeper": "accepted;Notarized Developer ID"
+  },
+  "engine": {
+    "release": "b11200",
+    "build_info": "b11200-81bc6b83f",
+    "architecture": "aarch64/macos/metal/m5",
+    "file": "state/engine/llama",
+    "sha256": "75a80445a66b1af9ee9ed85e07d6b0542d2a09f773434768f90a55f646dc69b1",
+    "download_artifacts": [
+      {
+        "file": "infra/llama-app/state/engine/unzstd",
+        "url": "https://huggingface.co/buckets/ggml-org/install.sh/resolve/b11200/aarch64/macos/unzstd",
+        "bytes": 102952,
+        "sha256": "339d223ca355ce33711d13d1352979168e4bf8cccb1399e2614417dc07b6ddd6"
+      },
+      {
+        "file": "infra/llama-app/state/downloads/llama-app-b11200-m5.zst",
+        "url": "https://huggingface.co/buckets/ggml-org/install.sh/resolve/b11200/aarch64/macos/metal/m5/llama-app.zst",
+        "bytes": 7446391,
+        "sha256": "c9749feaebbd98eb751a2a8511994be1f9b8652a21d850d6698e8ec97c140c3a"
+      }
+    ],
+    "version_line": "0.5.0-dev build 11200 commit 81bc6b83f"
+  },
+  "host": "127.0.0.1",
+  "port": 9931,
+  "endpoint": "http://127.0.0.1:9931/v1",
+  "models_directory": "state/models/hub",
+  "selected_model": "Qwen3-4B-Instruct-2507",
+  "model_downloaded": false,
+  "launch_at_login": false,
+  "agent_mode": false,
+  "automatic_app_updates": false,
+  "native_preference_domain": "app.llama.Llama",
+  "initial_preferences_snapshot": "preferences.plist",
+  "macos_bridges": {
+    "~/.llama-app": "state/engine",
+    "~/.config/llama": "config",
+    "~/Library/Application Support/Llama": "state/application-support"
+  },
+  "native_logs": "~/Library/Logs/Llama/llama-server.log",
+  "status": "installed-running;model-and-proxy-integration-pending",
+  "verification": {
+    "bundle_signature": "passed",
+    "gatekeeper": "passed",
+    "health_http": 200,
+    "props_http": 200,
+    "models_http": 200,
+    "installed_models": 0,
+    "listener": "127.0.0.1:9931 only",
+    "inference": "not-run;no-weights",
+    "terminal_version_probe": "passed after atomic engine replacement while app stopped",
+    "terminal_symlink": "app-created ~/.local/bin/llama removed;GUI uses engine directly",
+    "storage": "restored repo-backed engine, model cache and application state; copy hashes/native version/router checks passed"
+  },
+  "installation_deviation": "Native FileManager helper copy into the OrbStack-backed directory failed. Prepared the same pinned artifacts using byte writes/stdin decompression. Initial terminal version probes were killed; atomically replacing the engine while Llama was stopped resolved them. Native version and live router build now pass. Future engine changes must stop this app and use atomic replacement; qualify app updates on this filesystem.",
+  "hold": "No Codex, OrbStack VM settings, skills, shared stack model routes or OpenCodex provider binding changed.",
+  "application_support_directory": "state/application-support",
+  "storage_history": [
+    {
+      "action": "temporary-native-move",
+      "details": {
+        "date": "2026-10-07",
+        "reason": "User requested native macOS model/runtime storage to avoid cross-VM hot-path I/O",
+        "native_filesystem": "/dev/disk3s5;macOS Data volume",
+        "models_at_move": 0,
+        "performance_benchmark": "not-run;no-model-weights",
+        "engine_version_check": "passed",
+        "health_http": 200,
+        "props_http": 200,
+        "models_http": 200,
+        "configuration": "repo runtime.json and override config retained; app preference cache pointer updated",
+        "rollback": "Quit Llama, restore pinned engine to the historical repo path, repoint only owned app links and cache pointer, then verify before starting. Native model data must be preserved."
+      }
+    },
+    {
+      "action": "restored-repo-storage",
+      "date": "2026-10-07",
+      "reason": "User explicitly requested moving back",
+      "native_temporary_folder_removed": true,
+      "models_at_move": 0,
+      "verification": "native version, hashes, owned links/cache preference, health/props/models and loopback listener passed",
+      "performance_benchmark": "not-run;no-model-weights"
+    }
+  ]
+}

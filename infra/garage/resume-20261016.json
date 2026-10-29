@@ -1,0 +1,52 @@
+{
+  "observed_at": "2026-10-16T03:22:31.137473+00:00",
+  "garage": {
+    "container": "mcp-stack-garage",
+    "id": "94edbaccb961af2630df924ac7f943834ba55ec1d7bd818414b6c39da2445317",
+    "image": "sha256:2d3f94a89a8a02dc49fa75594d6df67ed9c6ffe08fe55ed023d0c9776f71a9bd",
+    "status": "running",
+    "health": "healthy",
+    "resumed_original_container": true,
+    "same_mounts": true,
+    "checks": [
+      {
+        "credential": "windmill",
+        "transport": "existing Windmill worker network",
+        "operation": "S3 ListObjectsV2, max-keys=1",
+        "http": 200
+      },
+      {
+        "credential": "n8n",
+        "transport": "existing Windmill worker network",
+        "operation": "S3 ListObjectsV2, max-keys=1",
+        "http": 200
+      },
+      {
+        "operation": "anonymous S3 request",
+        "http": 403
+      }
+    ],
+    "objects_written": 0,
+    "credentials_changed": false,
+    "application_bindings_changed": false
+  },
+  "graphify": {
+    "container": "mstack-example-graphify",
+    "mcp_result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Nodes: 17\nEdges: 23\nCommunities: 3\nEXTRACTED: 100%\nINFERRED: 0%\nAMBIGUOUS: 0%\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  "codegraph": {
+    "container_present": false,
+    "original_image_present": false,
+    "retained_configuration": true,
+    "restored": false
+  },
+  "unrelated_containers_unchanged": 28
+}

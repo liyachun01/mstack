@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../integrations/gateway/schemas/ui.schema.json",
+  "enabled": true,
+  "username": "owner",
+  "password_file": ".secrets/agentgateway/ui-password",
+  "mode": "read-write",
+  "host_port": 58084,
+  "container_port": 4001
+}

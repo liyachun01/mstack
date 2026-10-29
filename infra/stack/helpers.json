@@ -1,0 +1,23 @@
+{
+  "gstack": {
+    "browse": {
+      "skill": "/home/developer/.codex/skills/gstack-browse/SKILL.md",
+      "command": "/home/developer/workspace/{{mstack:CLIENT_REPO}}/.agents/vendor/gstack/browse/dist/browse"
+    },
+    "review": {
+      "skill": "/home/developer/.codex/skills/gstack-review/SKILL.md"
+    },
+    "qa": {
+      "skill": "/home/developer/.codex/skills/gstack-qa/SKILL.md"
+    },
+    "qa-only": {
+      "skill": "/home/developer/.codex/skills/gstack-qa-only/SKILL.md"
+    },
+    "investigate": {
+      "skill": "/home/developer/.codex/skills/gstack-investigate/SKILL.md"
+    },
+    "ship": {
+      "skill": "/home/developer/.codex/skills/gstack-ship/SKILL.md"
+    }
+  }
+}

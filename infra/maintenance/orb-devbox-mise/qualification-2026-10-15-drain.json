@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-15",
+  "phase": "authorized helper drain and runtime retirement completed",
+  "execution_domain": "OrbStack Ubuntu development machine",
+  "authorization": "User requested temporarily stopping fnm/uv consumers to finish mise migration.",
+  "stop": {
+    "native_helper_trees": 16,
+    "native_helper_processes": 44,
+    "graceful": true,
+    "codex_owner_stopped": false,
+    "docker_services_stopped": 0
+  },
+  "python": {
+    "version": "3.13.15",
+    "owner": "mise",
+    "existing_venvs_rebound": 146,
+    "package_identity_records_preserved": 21931,
+    "all_venvs_executed_offline": true,
+    "packages_reinstalled": 0,
+    "application_environments_cache_retained": true
+  },
+  "deepseek": {
+    "profile_links_relocated": 430,
+    "package_files_preserved": 25906,
+    "package_bytes_preserved": 452257315,
+    "profile_regular_files_preserved": 3711,
+    "preexisting_broken_links_unchanged": 96,
+    "dependency_root": "infra/harnesses/deepseek/runtime/profile-packages/dsh",
+    "native_composition_without_fnm_passed": 2,
+    "retained_profile_startup_inference": false
+  },
+  "mcp": {
+    "reload_method": "config/mcpServer/reload",
+    "existing_bindings_preserved": true,
+    "loaded_sessions_verified": 10,
+    "headroom_serena_connected_in_every_loaded_session": true,
+    "global_registration_auth_config_changed": false,
+    "daemon_restarted": false
+  },
+  "reconnected_package_identity": {
+    "source_dependencies_unchanged": true,
+    "consumers_verified": 25,
+    "serena_commit": "4f2520efb128dd02e66a2302095bdbbb26ddd5a0"
+  },
+  "retirement": {
+    "original_paths_absent": [
+      "~/.local/share/fnm",
+      "~/.local/share/uv/python/cpython-3.13.15-linux-aarch64-gnu",
+      "~/.local/share/uv/python/cpython-3.13-linux-aarch64-gnu"
+    ],
+    "private_rollback_quarantine_retained": true,
+    "verified_archive_entries": {
+      "fnm": 35040,
+      "uv_python": 5006
+    },
+    "legacy_processes": 0
+  },
+  "checks": {
+    "tests_passed": 64,
+    "toolchain_tests": 57,
+    "launcher_tests": 7,
+    "docker_containers": 30,
+    "docker_names_ids_start_times_unchanged": true,
+    "codex_config_auth_hashes_unchanged": true,
+    "main_codex_running": true,
+    "provider_model_mailbox_test_calls": 0
+  },
+  "preserved": [
+    "OS Python",
+    "PostgreSQL client18.6",
+    "Docker data/volumes/credentials",
+    "project worktrees/data",
+    "uv application environments/cache",
+    "DeepSeek profile settings/credentials and exact dependencies"
+  ],
+  "private_evidence_pointer": "infra/maintenance/orb-devbox-mise/current-path.txt",
+  "private_drain_directory": "drain/",
+  "handover": "docs/HANDOVER.md",
+  "migration_record": "docs/ORB-DEVBOX-MISE-MIGRATION-2026-10-15.md",
+  "limitations": [
+    "DeepSeek retained-profile startup/inference remains untested; offline composition passes.",
+    "96 pre-existing broken DeepSeek links remain unchanged.",
+    "npm transitive artifact URLs are not fully locked by mise.lock.",
+    "Verified rollback copies retained; full rollback not executed."
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "kind": "instruction-policy-not-active-dispatcher",
+  "updated": "2026-10-16",
+  "default": "harness-and-local-files-first",
+  "pkm": {
+    "primary": "anytype",
+    "mode": "local-only",
+    "project_binding": "explicit-space-id-required",
+    "notion": "excluded",
+    "appflowy": "excluded",
+    "automatic_sync": false
+  },
+  "layers": {
+    "anytype": {
+      "usage": "when-relevant",
+      "role": "canonical-user-knowledge",
+      "binding": "pending"
+    },
+    "ai-memory": {
+      "usage": "opt-in",
+      "role": "experimental-working-memory-and-handoff",
+      "status": "installed-direct-mcp-qualified",
+      "gateway_binding": "pending",
+      "automatic_capture": false,
+      "llm": false,
+      "embeddings": false,
+      "client_binding": "direct-harness-pending",
+      "after_anytype_harness_write": "none; explicit opt-in only"
+    },
+    "graphify": {
+      "usage": "when-relevant",
+      "role": "approved-corpus-relationships",
+      "automatic_indexing": false
+    },
+    "codegraph": {
+      "usage": "opt-in",
+      "role": "approved-source-structure",
+      "automatic_indexing": false
+    },
+    "basic-memory": {
+      "usage": "opt-in",
+      "priority": "secondary",
+      "role": "existing-markdown-and-legacy-knowledge",
+      "automatic_mirroring": false
+    }
+  },
+  "routing": {
+    "broadcast": false,
+    "default_retrieval_backends_per_step": 0,
+    "additional_retrieval": "only-for-an-explicit-unresolved-question",
+    "tool_discovery": "selected-profile-only-after-runtime-qualification",
+    "cross_project_access": "deny",
+    "caller_project_ids": "derive-from-authenticated-binding-not-untrusted-arguments",
+    "transport": "direct-harness-mcp",
+    "gateway_required": false,
+    "windmill_required": false
+  },
+  "credentials": {
+    "model_provider_keys": "existing-harness-provider-unchanged; no-central-gateway-required",
+    "local_caller_tokens": "separate-per-caller",
+    "tool_backend_credentials": "only-in-corresponding-connector-or-backend",
+    "codex_provider": "existing-unchanged",
+    "llamacpp": "installed; no new model or inference qualification in this task"
+  },
+  "activation": {
+    "anytype_mcp": "root-unbound; project-specific grants only",
+    "ai_memory_harness": "not-registered",
+    "automatic_hooks": "not-authorized",
+    "llm_gateway": "not-configured",
+    "dynamic_task_profile_enforcement": "not-implemented"
+  },
+  "profile": "direct-anytype",
+  "direct_memory_update": {
+    "enabled": false,
+    "trigger": "none",
+    "status": "automatic-mirroring-disabled; source-write-readback-only"
+  }
+}

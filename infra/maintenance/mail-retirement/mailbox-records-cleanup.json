@@ -1,0 +1,14 @@
+{
+  "checked_at": "2026-10-15T14:39:00.895880+00:00",
+  "scope": "Stored mailbox records belonging to retired Inbox Zero and TimeCyber installations",
+  "mail_database_count": 0,
+  "mail_database_role_count": 0,
+  "mail_account_files_present": false,
+  "private_mail_credentials_present": false,
+  "project_account_connection_notes_removed": true,
+  "removed_agent_sections": 7,
+  "removed_handover_sections": 4,
+  "provider_accounts_deleted": false,
+  "unrelated_service_login_records_and_personal_documents": "preserved",
+  "mailbox_addresses_in_receipt": false
+}

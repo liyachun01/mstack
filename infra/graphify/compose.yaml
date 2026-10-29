@@ -1,0 +1,80 @@
+# Approved direct tests only; no harness registration or persistent service.
+x-graphify: &graphify
+  image: mcp-stack-graphify:0.9.72
+  platform: linux/arm64
+  build:
+    context: ./infra/graphify
+    dockerfile: Dockerfile
+  user: "501:501"
+  read_only: true
+  network_mode: none
+  mem_limit: 2g
+  cpus: 2
+  stdin_open: true
+  tty: false
+  environment:
+    GRAPHIFY_NO_AUTO_REFRESH: "1"
+    GRAPHIFY_QUERY_LOG_DISABLE: "1"
+    PYTHONDONTWRITEBYTECODE: "1"
+    PYTHONUNBUFFERED: "1"
+    HOME: /tmp/graphify-home
+    XDG_CACHE_HOME: /tmp/graphify-cache
+    XDG_CONFIG_HOME: /tmp/graphify-config
+  tmpfs:
+    - /tmp:rw,nosuid,nodev,size=67108864,mode=1777
+
+x-sources:
+  basic-memory: &basic-memory-source
+    type: bind
+    source: ./scripts/verify-basic-memory.py
+    target: /home/developer/workspace/mcp-stack/scripts/verify-basic-memory.py
+    read_only: true
+    bind:
+      create_host_path: false
+  codegraph: &codegraph-source
+    type: bind
+    source: ./scripts/verify-codegraph.py
+    target: /home/developer/workspace/mcp-stack/scripts/verify-codegraph.py
+    read_only: true
+    bind:
+      create_host_path: false
+  fixture: &fixture-source
+    type: bind
+    source: ./infra/graphify/fixtures/call-chain.py
+    target: /home/developer/workspace/mcp-stack/infra/graphify/fixtures/call-chain.py
+    read_only: true
+    bind:
+      create_host_path: false
+
+services:
+  graphify-build:
+    <<: *graphify
+    command: ["-m", "graphify", "extract", ".", "--code-only", "--out", "/state", "--max-workers", "2"]
+    volumes:
+      - *basic-memory-source
+      - *codegraph-source
+      - *fixture-source
+      - type: bind
+        source: ./infra/graphify/state/mcp-stack
+        target: /state
+        bind:
+          create_host_path: false
+  graphify:
+    <<: *graphify
+    command: ["/opt/mcp-stack/serve_filtered.py", "/state/graphify-out/graph.json"]
+    volumes:
+      - *basic-memory-source
+      - *codegraph-source
+      - *fixture-source
+      - type: bind
+        source: ./infra/graphify/state/mcp-stack
+        target: /state
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./infra/graphify/serve_filtered.py
+        target: /opt/mcp-stack/serve_filtered.py
+        read_only: true
+        bind:
+          create_host_path: false

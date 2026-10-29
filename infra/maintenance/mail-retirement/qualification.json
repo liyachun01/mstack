@@ -1,0 +1,41 @@
+{
+  "completed_at": "2026-10-15T14:35:48.233912+00:00",
+  "status": "all requested mail setup removed",
+  "microsoft_entra": {
+    "timecyber": "deleted; active-list absence verified",
+    "inbox_zero": "deleted; active-list absence verified"
+  },
+  "google": {
+    "inbox_zero_grant": "revoked; HTTP 200",
+    "inbox_zero_oauth_client": "deleted; active list empty",
+    "timecyber_app_password": "revoked; named entry absent"
+  },
+  "local": {
+    "inbox_zero_containers_remaining": 0,
+    "mail_volumes_remaining": 0,
+    "mail_networks_remaining": 0,
+    "inbox_zero_database_remaining": false,
+    "inbox_zero_role_remaining": false,
+    "timecyber_processes_remaining": 0,
+    "runtime_and_source_trees_removed": true,
+    "mail_credentials_removed": true,
+    "historical_mail_container_envs_scrubbed": 9
+  },
+  "preserved": {
+    "unrelated_container_ids_states_start_times": 27,
+    "databases": [
+      "postgres",
+      "basic_memory",
+      "n8n",
+      "windmill"
+    ],
+    "shared_postgres_running": true,
+    "shared_toolchains": true,
+    "opencodex_deepseek": true,
+    "provider_mailboxes_and_messages": true
+  },
+  "shared_postgres_compose_validation": "passed",
+  "no_harness_registration_was_present": true,
+  "remaining_requested_actions": [],
+  "mail_reinstallation": "not authorized; do not resume onboarding"
+}

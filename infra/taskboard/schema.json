@@ -1,0 +1,294 @@
+{
+  "$comment": "Shared Anytype task board channel, owned by mstack. Each project gets its own table (a query filtered on Project). Provisioned by integrations/agents/anytype_taskboard.py; operated by integrations/orchestrator.",
+  "channel": "mstack-taskboard-test",
+  "type": {
+    "key": "agent_task",
+    "name": "Agent Task",
+    "plural_name": "Agent Tasks",
+    "emoji": "🧭",
+    "default_view": "kanban"
+  },
+  "properties": [
+    {
+      "key": "task_project",
+      "name": "Project",
+      "format": "select",
+      "section": "featured",
+      "options": [
+        {
+          "name": "mstack",
+          "color": "ice"
+        }
+      ]
+    },
+    {
+      "key": "task_app",
+      "name": "App",
+      "format": "select",
+      "section": "featured",
+      "options": []
+    },
+    {
+      "key": "task_kind",
+      "name": "Kind",
+      "format": "select",
+      "section": "featured",
+      "options": [
+        {
+          "name": "FEAT",
+          "color": "blue"
+        },
+        {
+          "name": "BUG",
+          "color": "red"
+        },
+        {
+          "name": "CHORE",
+          "color": "grey"
+        },
+        {
+          "name": "DOCS",
+          "color": "teal"
+        },
+        {
+          "name": "TEST",
+          "color": "lime"
+        },
+        {
+          "name": "REFACTOR",
+          "color": "purple"
+        },
+        {
+          "name": "PERF",
+          "color": "orange"
+        },
+        {
+          "name": "SEC",
+          "color": "pink"
+        },
+        {
+          "name": "OPS",
+          "color": "ice"
+        }
+      ]
+    },
+    {
+      "key": "task_status",
+      "name": "Task Status",
+      "format": "select",
+      "section": "featured",
+      "options": [
+        {
+          "name": "Backlog",
+          "color": "grey"
+        },
+        {
+          "name": "Awaiting Approval",
+          "color": "orange"
+        },
+        {
+          "name": "Todo",
+          "color": "blue"
+        },
+        {
+          "name": "In Progress",
+          "color": "yellow"
+        },
+        {
+          "name": "In Review",
+          "color": "purple"
+        },
+        {
+          "name": "Done",
+          "color": "lime"
+        },
+        {
+          "name": "Canceled",
+          "color": "red"
+        }
+      ]
+    },
+    {
+      "key": "task_priority",
+      "name": "Priority",
+      "format": "select",
+      "section": "featured",
+      "options": [
+        {
+          "name": "Urgent",
+          "color": "red"
+        },
+        {
+          "name": "High",
+          "color": "orange"
+        },
+        {
+          "name": "Medium",
+          "color": "yellow"
+        },
+        {
+          "name": "Low",
+          "color": "grey"
+        }
+      ]
+    },
+    {
+      "key": "task_agent",
+      "name": "Assigned Agent",
+      "format": "select",
+      "section": "featured",
+      "options": [
+        {
+          "name": "unassigned",
+          "color": "grey"
+        },
+        {
+          "name": "dispatcher",
+          "color": "ice"
+        },
+        {
+          "name": "claude",
+          "color": "orange"
+        },
+        {
+          "name": "codex",
+          "color": "teal"
+        },
+        {
+          "name": "deepseek",
+          "color": "blue"
+        },
+        {
+          "name": "human",
+          "color": "pink"
+        }
+      ]
+    },
+    {
+      "key": "task_source",
+      "name": "Source",
+      "format": "select",
+      "section": "featured",
+      "options": [
+        {
+          "name": "anytype",
+          "color": "purple"
+        },
+        {
+          "name": "linear",
+          "color": "blue"
+        },
+        {
+          "name": "agent-capture",
+          "color": "teal"
+        }
+      ]
+    },
+    {
+      "key": "task_labels",
+      "name": "Labels",
+      "format": "multi_select",
+      "options": [
+        {
+          "name": "mstack",
+          "color": "ice"
+        },
+        {
+          "name": "gateway",
+          "color": "teal"
+        },
+        {
+          "name": "sync",
+          "color": "blue"
+        },
+        {
+          "name": "illustration",
+          "color": "grey"
+        }
+      ]
+    },
+    {
+      "key": "task_due",
+      "name": "Due",
+      "format": "date"
+    },
+    {
+      "key": "task_estimate",
+      "name": "Estimate",
+      "format": "number"
+    },
+    {
+      "key": "task_parent",
+      "name": "Parent Task",
+      "format": "objects"
+    },
+    {
+      "key": "task_blocked_by",
+      "name": "Blocked By",
+      "format": "objects"
+    },
+    {
+      "key": "linear_identifier",
+      "name": "Linear ID",
+      "format": "text"
+    },
+    {
+      "key": "linear_url",
+      "name": "Linear URL",
+      "format": "url"
+    },
+    {
+      "key": "linear_updated_at",
+      "name": "Linear Updated",
+      "format": "date",
+      "section": "hidden"
+    },
+    {
+      "key": "agent_session",
+      "name": "Agent Session",
+      "format": "text",
+      "section": "hidden"
+    },
+    {
+      "key": "agent_run_count",
+      "name": "Run Count",
+      "format": "number"
+    }
+  ],
+  "collection": "Task Board",
+  "chat": "Agent Log",
+  "linear_sync": {
+    "$comment": "Design intent only; no Linear token or sync job exists yet.",
+    "scope": "assignee = me OR creator = me",
+    "status_map": {
+      "Backlog": "backlog",
+      "Todo": "unstarted",
+      "In Progress": "started",
+      "In Review": "started",
+      "Done": "completed",
+      "Canceled": "canceled"
+    },
+    "priority_map": {
+      "Urgent": 1,
+      "High": 2,
+      "Medium": 3,
+      "Low": 4
+    },
+    "conflict_rule": "Anytype wins for agent fields; newest updated_at wins for title/status/priority/due"
+  },
+  "credential_file": ".mstack/secrets/anytype-taskboard-test.key",
+  "naming": {
+    "$comment": "Issue titles: [APP][KIND] description. APP is a short code per app in the repo (taskboard.apps); KIND is one of the task_kind options.",
+    "kinds": [
+      "FEAT",
+      "BUG",
+      "CHORE",
+      "DOCS",
+      "TEST",
+      "REFACTOR",
+      "PERF",
+      "SEC",
+      "OPS"
+    ]
+  }
+}

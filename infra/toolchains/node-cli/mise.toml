@@ -1,0 +1,11 @@
+# Explicit runtime for legacy global Node CLI invocations; not a global Node pin.
+[tools]
+node = { version = "24.19.0", os = ["linux"] }
+"npm:pnpm" = { version = "10.33.0", os = ["linux"] }
+"npm:@volcengine/cli" = { version = "1.1.8", os = ["linux"] }
+"npm:@volcengine/vefaas-cli" = { version = "0.3.1", os = ["linux"] }
+"npm:ve-tos-cli" = { version = "1.0.2", os = ["linux"] }
+
+[settings]
+lockfile = true
+npm.package_manager = "npm"

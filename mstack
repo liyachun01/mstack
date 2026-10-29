@@ -1,0 +1,7 @@
+#!/usr/bin/env python3
+"""mstack: project workflows using existing tools, without global installation."""
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'integrations/stack'))
+from cli import main
+raise SystemExit(main())

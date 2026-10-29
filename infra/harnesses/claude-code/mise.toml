@@ -1,0 +1,10 @@
+# Independent Claude Code CLI proposal. Not installed or activated.
+# Invoke this directory explicitly with the existing macOS mise.
+[tools."github:anthropics/claude-code"]
+version = "2.1.310"
+os = ["macos"]
+asset_pattern = "claude-darwin-arm64.tar.gz"
+checksum = "sha256:cf47d30004ff26e5cfed6004a29ca94e05ad53d6f890ee1be8bb582e8ce2a5b5"
+
+[settings]
+lockfile = true

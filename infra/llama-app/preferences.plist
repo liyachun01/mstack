@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUEnableAutomaticChecks</key>
+	<false/>
+	<key>agentMode</key>
+	<false/>
+	<key>hasSetDefaultLaunchAtLogin</key>
+	<true/>
+	<key>hfCacheDirectory</key>
+	<string>/Users/{{mstack:MAC_USER}}/OrbStack/devbox/home/developer/workspace/mstack/infra/llama-app/state/models/hub</string>
+	<key>serverPort</key>
+	<integer>9931</integer>
+</dict>
+</plist>

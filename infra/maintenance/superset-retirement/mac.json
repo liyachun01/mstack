@@ -1,0 +1,130 @@
+{
+  "date": "2026-10-26",
+  "platform": "macOS",
+  "product": "Superset",
+  "removed_version": "1.40.0",
+  "removed_paths": [
+    "/Applications/Superset.app",
+    "/Users/{{mstack:MAC_USER}}/.superset",
+    "/Users/{{mstack:MAC_USER}}/.claude/skills/superset",
+    "/Users/{{mstack:MAC_USER}}/.agents/skills/superset-standup",
+    "/Users/{{mstack:MAC_USER}}/.agents/skills/superset-page",
+    "/Users/{{mstack:MAC_USER}}/.agents/skills/superset-10x",
+    "/Users/{{mstack:MAC_USER}}/.agents/skills/superset-feedback",
+    "/Users/{{mstack:MAC_USER}}/.agents/skills/superset-plugins",
+    "/Users/{{mstack:MAC_USER}}/.agents/skills/superset-integrations",
+    "/Users/{{mstack:MAC_USER}}/.agents/skills/superset-setup",
+    "/Users/{{mstack:MAC_USER}}/.agents/skills/superset-computer",
+    "/Users/{{mstack:MAC_USER}}/.agents/skills/superset-panes",
+    "/Users/{{mstack:MAC_USER}}/.agents/skills/superset-orchestrate",
+    "/Users/{{mstack:MAC_USER}}/.agents/skills/superset-browser",
+    "/Users/{{mstack:MAC_USER}}/.agents/skills/superset-contribute",
+    "/Users/{{mstack:MAC_USER}}/.agents/skills/superset-doctor",
+    "/Users/{{mstack:MAC_USER}}/.agents/skills/superset-automate",
+    "/Users/{{mstack:MAC_USER}}/.config/amp/plugins/superset-lifecycle.ts",
+    "/Users/{{mstack:MAC_USER}}/.pi/agent/extensions/superset-hooks.ts",
+    "/Users/{{mstack:MAC_USER}}/.omp/agent/extensions/superset-hooks.ts",
+    "/Users/{{mstack:MAC_USER}}/.grok/hooks/superset-notify.json",
+    "/Users/{{mstack:MAC_USER}}/Library/Application Support/Superset",
+    "/Users/{{mstack:MAC_USER}}/Library/Caches/com.superset.desktop",
+    "/Users/{{mstack:MAC_USER}}/Library/Caches/com.superset.desktop.ShipIt",
+    "/Users/{{mstack:MAC_USER}}/Library/Caches/@supersetdesktop-updater",
+    "/Users/{{mstack:MAC_USER}}/Library/Preferences/com.superset.desktop.plist",
+    "/Users/{{mstack:MAC_USER}}/Library/HTTPStorages/com.superset.desktop",
+    "/Users/{{mstack:MAC_USER}}/Library/Logs/Superset",
+    "/Users/{{mstack:MAC_USER}}/.codex/hooks.json",
+    "/Users/{{mstack:MAC_USER}}/.gemini/settings.json",
+    "/Users/{{mstack:MAC_USER}}/.factory/settings.json",
+    "/Users/{{mstack:MAC_USER}}/.mastracode/hooks.json"
+  ],
+  "stopped_pids": [
+    44240,
+    45834
+  ],
+  "configuration_cleanup": [
+    {
+      "path": "/Users/{{mstack:MAC_USER}}/.claude/settings.json",
+      "removed_hooks_or_blocks": 11,
+      "before_sha256": "2667041c6bf247781523d984e1227013135b1273a1ea02b7cce02e3b2e84f5ae",
+      "after_sha256": "35e6b84a7d364b607d8ce368d9489fc7b614c34e251b8c72604af64bf7c52399"
+    },
+    {
+      "path": "/Users/{{mstack:MAC_USER}}/.codex/hooks.json",
+      "removed_hooks_or_blocks": 9,
+      "before_sha256": "7cd00bf9cad4ea526cd4929cc8440c0f4eeadcf75b50463162f8b3c16e15dae6",
+      "after_sha256": null
+    },
+    {
+      "path": "/Users/{{mstack:MAC_USER}}/.cursor/hooks.json",
+      "removed_hooks_or_blocks": 8,
+      "before_sha256": "3dde6573edd788ded874c9b5f15c54f32282a2f07cd867edfb81254d497d7cc5",
+      "after_sha256": "4b8894d57dfa621e534ef4eb25263e8f00254cbcb4327f1f98796314ac279dde"
+    },
+    {
+      "path": "/Users/{{mstack:MAC_USER}}/.gemini/settings.json",
+      "removed_hooks_or_blocks": 5,
+      "before_sha256": "4f2456a6dd9d89d43dbdc89f3ec7f9298f027cb16fe69f74147eb6ece2f66f45",
+      "after_sha256": null
+    },
+    {
+      "path": "/Users/{{mstack:MAC_USER}}/.factory/settings.json",
+      "removed_hooks_or_blocks": 6,
+      "before_sha256": "6f32e904d71aaa781f88f297683c5a169a96b45b319513f83c056fb6cfa25921",
+      "after_sha256": null
+    },
+    {
+      "path": "/Users/{{mstack:MAC_USER}}/.config/devin/config.json",
+      "removed_hooks_or_blocks": 6,
+      "before_sha256": "257be0b5ee3632d2e58aeaf3dc26ad515026569ef2c8709f3b7bbdf66b12ae39",
+      "after_sha256": "4b8894d57dfa621e534ef4eb25263e8f00254cbcb4327f1f98796314ac279dde"
+    },
+    {
+      "path": "/Users/{{mstack:MAC_USER}}/.mastracode/hooks.json",
+      "removed_hooks_or_blocks": 5,
+      "before_sha256": "c6cc455205a7b074ca00713c1ae997a6256718b7115d9645bc5c5d90dca3b483",
+      "after_sha256": null
+    },
+    {
+      "path": "/Users/{{mstack:MAC_USER}}/.config/muse/settings.json",
+      "removed_hooks_or_blocks": 1,
+      "before_sha256": "af5fee2b59d3b839868f9b4d5b0fb2239b882f6c6e15411faeccee7b619c9c31",
+      "after_sha256": "9f4950a9816a500445a000abbe7cb08d16296c306c3ccd481716f6aa07b90085"
+    },
+    {
+      "path": "/Users/{{mstack:MAC_USER}}/.grok/config.toml",
+      "removed_hooks_or_blocks": 1,
+      "before_sha256": "699648c4ff5fa95860d9efb884d36633ea6525fc4474b4b76aec88ce6df60fec",
+      "after_sha256": "3d82086fdee2ccb7255de02e170453d961e278930830dd4323dcdd3747bc24ce"
+    }
+  ],
+  "protected_files_unchanged": [
+    ".codex/config.toml",
+    ".codex/auth.json",
+    ".claude.json",
+    ".claude/.credentials.json",
+    ".zshrc",
+    ".zprofile",
+    ".paseo/config.json",
+    ".paseo/daemon-keypair.json",
+    "Library/Application Support/Paseo/desktop-settings.json",
+    "/Applications/Paseo.app/Contents/Info.plist",
+    "/Applications/T3 Code (Beta).app/Contents/Info.plist",
+    "/Applications/Claude.app/Contents/Info.plist",
+    "/Applications/magpie.app/Contents/Info.plist",
+    ".local/bin/mise"
+  ],
+  "project_preservation": {
+    "path": "/Users/{{mstack:MAC_USER}}/Developer/recovered-from-superset-20261026",
+    "repository_count": 1,
+    "worktree_count": 2,
+    "heads": {
+      "projects/supertest": "cdfae86ffbf4a034e7bcc4baf8e4b29a915c557a",
+      "worktrees/supertest/charming-daffodil-c735b09a": "cdfae86ffbf4a034e7bcc4baf8e4b29a915c557a",
+      "worktrees/supertest/set-up-superset-workspace-359a0669": "cdfae86ffbf4a034e7bcc4baf8e4b29a915c557a"
+    },
+    "clean_and_repaired": true
+  },
+  "superset_processes_remaining": 0,
+  "app_credentials_or_runtime_backups_retained": false,
+  "cloud_account_or_subscription_changed": false
+}

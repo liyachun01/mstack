@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "routes": {
+    "codex": {
+      "status": "native-provider-preserved",
+      "provider": "existing-Codex-provider",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "high"
+    },
+    "local": {
+      "status": "unbound;previous-proxy-removed;Codex-integration-awaits-explicit-request",
+      "provider": null,
+      "model": null,
+      "required": [
+        "explicit-Codex-integration-request",
+        "new-provider-binding",
+        "tool-roundtrip"
+      ]
+    },
+    "deepseek": {
+      "status": "unbound;previous-proxy-removed;Codex-integration-awaits-explicit-request",
+      "provider": null,
+      "model": null,
+      "required": [
+        "explicit-Codex-integration-request",
+        "new-provider-binding",
+        "tool-roundtrip"
+      ]
+    }
+  },
+  "automatic_fallback": false
+}

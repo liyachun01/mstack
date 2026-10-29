@@ -1,0 +1,46 @@
+# Native dsh --patch overlay; native loopback activation 2026-10-03.
+# Coding/repository work only. Both indexes cover narrow approved projections,
+# not the complete repository. Select relevant tools; do not call both by default.
+# Existing official @deepseek-ai/dsh-mcp-client 0.2.0-rc.2, no package install.
+# Ubuntu reaches the gateway through the separately qualified local TCP forwarder.
+# Native fetch derives loopback Host from the URL; no ineffective Host override.
+- insert:
+    - id: mcp-stack-graphify
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: stack_graphify
+        transport: streamable-http
+        url: http://127.0.0.1:58081/mcp/graphify
+        headers:
+          Authorization: &gateway_authorization !!js >-
+            (() => {
+              const fs = process.getBuiltinModule('node:fs');
+              const path = process.getBuiltinModule('node:path');
+              const file = process.env.MCP_STACK_GATEWAY_KEY_FILE;
+              if (file !== path.join(process.cwd(), '.secrets/agentgateway-client-key'))
+                throw new Error('mcp-stack: launch from repository root with the explicit project key-file path');
+              const info = fs.lstatSync(file);
+              if (!info.isFile() || (info.mode & 0o077) !== 0)
+                throw new Error('mcp-stack: gateway key must be a private regular file');
+              const key = fs.readFileSync(file, 'utf8').trim();
+              if (!/^[a-f0-9]{64}$/.test(key))
+                throw new Error('mcp-stack: gateway key format is invalid');
+              return 'Bearer ' + key;
+            })()
+        toolCallTimeoutMs: 10000
+        failOnStartupError: true
+        reconnect:
+          enabled: false
+
+    - id: mcp-stack-codegraph
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: stack_codegraph
+        transport: streamable-http
+        url: http://127.0.0.1:58081/mcp/codegraph
+        headers:
+          Authorization: *gateway_authorization
+        toolCallTimeoutMs: 10000
+        failOnStartupError: true
+        reconnect:
+          enabled: false

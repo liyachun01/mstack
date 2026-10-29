@@ -1,0 +1,14 @@
+{
+  "$schema": "../../schemas/plugin.schema.json",
+  "name": "claude-desktop",
+  "version": "0.1.0",
+  "joint": "agent",
+  "status": "implemented",
+  "transport": "handoff",
+  "via": "start_session",
+  "summary": "A Claude Desktop session started by the orchestrator agent from a launch spec",
+  "capabilities": [
+    "notify"
+  ],
+  "mcp_style": "mcp-json"
+}

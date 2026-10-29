@@ -1,0 +1,37 @@
+{
+  "project": "mcp-stack",
+  "preset": "solo",
+  "capture": {
+    "enabled": true,
+    "sink": "anytype-taskboard",
+    "harnesses": [
+      "claude"
+    ],
+    "events": [
+      "UserPromptSubmit",
+      "Stop"
+    ]
+  },
+  "taskboard": {
+    "table": "mstack",
+    "workers": [
+      "claude-desktop",
+      "codex-desktop"
+    ],
+    "link": {
+      "provider": "linear",
+      "mode": "full",
+      "scope": "mine",
+      "workspace": "yyyymmdd",
+      "team": "MST",
+      "key_entry": 1,
+      "credential_file": ".mstack/secrets/linear-api-key"
+    },
+    "backend": "linear",
+    "auto": false
+  },
+  "joints": {
+    "compress": "headroom",
+    "memory.long": "graphify"
+  }
+}

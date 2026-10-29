@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-16",
+  "project_folder": ".mstack",
+  "editable_intent": ".mstack/stack.json",
+  "generated_state": ".mstack/state.json",
+  "project_credentials": ".mstack/secrets/",
+  "retired_paths_absent": [
+    "infra/stack.json",
+    "infra/.mstack",
+    "infra/mcpstack.config.json",
+    "infra/stack.bindings.json",
+    "infra/stack.tenants.json",
+    "infra/stack.runtime.json",
+    "infra/maintenance/config-retirement/.state/mstack-example"
+  ],
+  "fresh_init_creates_infra_directory": false,
+  "shared_infrastructure_paths_unchanged": true,
+  "git_ignore_checked": true,
+  "python_tests": {
+    "stack": 46,
+    "tenants": 11,
+    "gateway": 10,
+    "windmill": 16
+  },
+  "all_python_tests_passed": true,
+  "root_plan_doctor_discovery_run_inspect_passed": true,
+  "gateway_schema_valid": true,
+  "gateway_runtime_drift": false,
+  "gateway_runtime_change": false,
+  "container_comparison": {
+    "count": 30,
+    "ids_start_times_images_mounts_settings_status_restart_counts_unchanged": true
+  },
+  "windmill_cleanup": "complete; see windmill.json",
+  "container_lifecycle_operations": 0,
+  "inference_calls": 0,
+  "global_harness_config_changes": 0
+}

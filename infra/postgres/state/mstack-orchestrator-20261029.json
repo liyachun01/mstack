@@ -1,0 +1,21 @@
+{
+  "kind": "shared Postgres per-tool database + WhoDB test",
+  "at": "2026-10-29T06:16:03+00:00",
+  "instance": "mcp-stack-postgres-1 (pgvector pg18)",
+  "database": "mstack_orchestrator (owner mstack_orchestrator; CONNECT revoked from PUBLIC)",
+  "schema": "orchestrator.events (id, at, board_table, task, kind, detail jsonb)",
+  "roles": {
+    "mstack_orchestrator": "owner, password in .secrets/postgres/ (0600)",
+    "mstack_viewer": "CONNECT + USAGE + SELECT only, password in .secrets/postgres/ (0600)"
+  },
+  "checks": {
+    "owner insert": "ok",
+    "viewer select": "ok",
+    "viewer insert": "permission denied",
+    "viewer create table": "refused",
+    "viewer -> windmill db": "no CONNECT",
+    "windmill/n8n roles -> mstack_orchestrator": "no CONNECT"
+  },
+  "whodb": "mcp-stack-whodb started, UI 127.0.0.1:58091 HTTP 200, same network as Postgres",
+  "not_done": "orchestrator still keeps state in its JSON file; moving runs/events into this database is a separate change"
+}

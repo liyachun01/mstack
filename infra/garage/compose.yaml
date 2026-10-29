@@ -1,0 +1,52 @@
+name: mstack
+
+services:
+  garage:
+    shm_size: 8409579520 # Retained OrbStack runtime limit.
+    # Qualified ARM64 manifest for the official v2.3.0 release.
+    image: dxflrs/garage:v2.3.0@sha256:2d3f94a89a8a02dc49fa75594d6df67ed9c6ffe08fe55ed023d0c9776f71a9bd
+    platform: linux/arm64
+    pull_policy: never
+    container_name: mcp-stack-garage
+    command: [/garage, server, --single-node]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: 1
+    mem_limit: 768m
+    pids_limit: 128
+    ports: ["127.0.0.1:53900:3900"]
+    environment:
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?Use the private Garage runtime env file}
+    volumes:
+      - ./garage.toml:/etc/garage.toml:ro
+      - garage_meta:/var/lib/garage/meta
+      - garage_data:/var/lib/garage/data
+    tmpfs: ["/tmp:rw,nosuid,nodev,size=32m,mode=1777"]
+    networks: [windmill_clients, n8n_clients]
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+    healthcheck:
+      test: [CMD, /garage, status]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  garage_meta:
+    external: true
+    name: mcp-stack-garage-meta
+  garage_data:
+    external: true
+    name: mcp-stack-garage-data
+
+networks:
+  windmill_clients:
+    external: true
+    name: mcp-stack-memory
+  n8n_clients:
+    external: true
+    name: mcp-stack-n8n-local

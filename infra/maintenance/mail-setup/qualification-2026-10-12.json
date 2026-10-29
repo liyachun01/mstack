@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-12",
+  "magpie": {
+    "removed_app": "/Applications/magpie.app",
+    "version": "0.1.1206",
+    "trash_path": "/Users/{{mstack:MAC_USER}}/.Trash/magpie-0.1.1206-20261012T134534Z.app",
+    "data_deleted": false,
+    "agent_configuration_changed": false
+  },
+  "inbox_zero": {
+    "resumed_existing_containers": [
+      "mcp-stack-inbox-zero-redis-1",
+      "mcp-stack-inbox-zero-redis-http-1",
+      "mcp-stack-postgres-1"
+    ],
+    "all_container_ids_preserved": 24,
+    "unrelated_container_metadata_preserved": 21,
+    "database_health": "healthy",
+    "redis_ping": "PONG",
+    "login_status": 200,
+    "completed_migrations": 293,
+    "oauth_credentials_pending": [
+      "google",
+      "microsoft"
+    ],
+    "mailbox_calls": 0,
+    "model_calls": 0
+  },
+  "interactive_step": "Google Cloud project selection pending"
+}

@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+case "$(uname -s)" in
+  Darwin) exec /usr/bin/open -a 'Microsoft Edge' "$@" ;;
+  Linux) exec macctl run open -a 'Microsoft Edge' "$@" ;;
+  *) echo 'Unsupported login host' >&2; exit 1 ;;
+esac

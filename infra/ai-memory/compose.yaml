@@ -1,0 +1,51 @@
+name: mstack
+services:
+  ai-memory:
+    shm_size: 8409579520 # Retained OrbStack runtime limit.
+    image: docker.io/akitaonrails/ai-memory:2.5.2@sha256:379d4892737ff6b9db7019a4df5c350fa0402a39bb3b7104eae177522b3ba8f6
+    platform: linux/arm64
+    container_name: mcp-stack-ai-memory
+    pull_policy: never
+    restart: unless-stopped
+    command: ["serve", "--transport", "http", "--bind", "0.0.0.0:49374"]
+    environment:
+      AI_MEMORY_DATA_DIR: /data
+      AI_MEMORY_AUTH_TOKEN: ${MCP_STACK_AI_MEMORY_AUTH_TOKEN:?private runtime.env required}
+      AI_MEMORY_ALLOWED_HOSTS: localhost,127.0.0.1,::1,mcp-stack-ai-memory
+      AI_MEMORY_SERVER_URL: http://127.0.0.1:49374
+      AI_MEMORY_RUN_AUTOWIRE: "false"
+    ports:
+      - "127.0.0.1:58092:49374"
+    volumes:
+      - data:/data
+    networks:
+      - local
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/ai-memory", "status"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+
+volumes:
+  data:
+    external: true
+    name: mcp-stack-ai-memory-data
+
+networks:
+  local:
+    external: true
+    name: mcp-stack-ai-memory-local

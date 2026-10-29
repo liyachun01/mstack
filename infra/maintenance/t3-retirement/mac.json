@@ -1,0 +1,66 @@
+{
+  "date": "2026-10-26",
+  "product": "T3 Code Beta",
+  "removed_version": "0.1.2",
+  "platform": "macOS",
+  "removed_paths": [
+    "/Applications/T3 Code (Beta).app",
+    "/Users/{{mstack:MAC_USER}}/.t3",
+    "/Users/{{mstack:MAC_USER}}/Library/Application Support/t3code-v2",
+    "/Users/{{mstack:MAC_USER}}/Library/Preferences/com.t3tools.t3code.plist"
+  ],
+  "removed_app_managed_codex_version": "0.156.1",
+  "removed_t3_cli_wrapper": "/Users/{{mstack:MAC_USER}}/.t3/bin/t3",
+  "removed_state": [
+    "T3 account tokens and secrets",
+    "T3 thread databases",
+    "app settings, attachments, logs and caches"
+  ],
+  "stopped_pids": [],
+  "remaining_t3_processes": 0,
+  "worktrees_before_removal": 0,
+  "scratch_files_before_removal": 0,
+  "external_project_paths_unchanged": [
+    "/Users/{{mstack:MAC_USER}}/Developer/codexwork",
+    "/Users/{{mstack:MAC_USER}}/{{mstack:CLIENT_C_FOLDER}}"
+  ],
+  "protected_files_unchanged": [
+    ".codex/config.toml",
+    ".codex/auth.json",
+    ".claude/settings.json",
+    ".claude.json",
+    ".claude/.credentials.json",
+    ".zshrc",
+    ".zprofile",
+    ".paseo/config.json",
+    ".paseo/daemon-keypair.json",
+    "Library/Application Support/Paseo/desktop-settings.json",
+    "/Applications/Paseo.app/Contents/Info.plist",
+    "/Applications/Claude.app/Contents/Info.plist",
+    "/Applications/magpie.app/Contents/Info.plist",
+    ".local/bin/mise",
+    ".local/bin/codex",
+    ".local/bin/claude"
+  ],
+  "protected_file_hashes_after": {
+    ".codex/config.toml": "d1b66f6016644c8f2b9a5924105b1704a043dc079b7922f392d873989f4740a6",
+    ".codex/auth.json": "03230deb1028cec05beed58cab45194947026a5d791139cf04f7b92b21fef3ad",
+    ".claude/settings.json": "35e6b84a7d364b607d8ce368d9489fc7b614c34e251b8c72604af64bf7c52399",
+    ".claude.json": "f81de45b3e28f70388b534af73115ded3a60f49e4cf566d59065b47221034766",
+    ".claude/.credentials.json": null,
+    ".zshrc": "4260cf78a4e3d270b02ee10dddcc870325d0911b3edcb20d61147cc36722ebb6",
+    ".zprofile": "fac3c2e34283394adda5c9b6d22a699fa456d2b0d10e71b84b2b0991fbb71ebd",
+    ".paseo/config.json": "183de561607b707c3f34178583a3a963f6ec4311bf78b17d42ddd3cd524aa2fe",
+    ".paseo/daemon-keypair.json": "fc7a7edc1369736122cdf91d41407d2e9b97313472fb1c1a7068acb9ca70d12d",
+    "Library/Application Support/Paseo/desktop-settings.json": "543e8f728a3d4dbb1fb71a9a948e35a4df85bd6677f80d80a1a37b385afd1daa",
+    "/Applications/Paseo.app/Contents/Info.plist": "2c6abb0997963656348a34f91987efaa7249cb25f8c2239b1c94b253ec9c21f3",
+    "/Applications/Claude.app/Contents/Info.plist": "00075ca3f823a0b7731e0591a25f512136ada6d5c208cad1a5dce562b392a276",
+    "/Applications/magpie.app/Contents/Info.plist": "109d9a281618f6c25c4d9aa301f5e290dde7cc37c35313a482b5033fde65426a",
+    ".local/bin/mise": "9560edf74a6e5e97f3d967a637c10bbe176c267897dd8011f09b16a8f28a95d2",
+    ".local/bin/codex": null,
+    ".local/bin/claude": null
+  },
+  "global_agent_configuration_edits": false,
+  "app_state_or_credentials_backup_retained": false,
+  "cloud_account_or_subscription_changed": false
+}

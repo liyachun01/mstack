@@ -1,0 +1,17 @@
+{
+  "container_count": 30,
+  "all_ids_start_times_images_mounts_configuration_and_status_unchanged": true,
+  "shared_services": {
+    "mstack-headroom": "running",
+    "mstack-anytype-mcp": "running",
+    "mstack-graphify": "running",
+    "mcp-stack-ai-memory": "created",
+    "mcp-stack-agentgateway-1": "created",
+    "mcp-stack-opencodex": "healthy",
+    "mcp-stack-garage": "healthy",
+    "mcp-stack-whodb": "healthy",
+    "mcp-stack-windmill-worker": "running",
+    "mcp-stack-windmill-server": "healthy",
+    "mcp-stack-postgres-1": "healthy"
+  }
+}

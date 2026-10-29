@@ -1,0 +1,13 @@
+{
+  "$schema": "../../schemas/plugin.schema.json",
+  "name": "ai-memory",
+  "version": "0.1.0",
+  "joint": "memory.instant",
+  "status": "adapter-pending",
+  "transport": "mcp",
+  "entry": "docker-exec:mcp-stack-ai-memory",
+  "summary": "ai-memory candidate as per-task working memory (no provider, no capture hooks)",
+  "expose": [
+    "orchestrator"
+  ]
+}

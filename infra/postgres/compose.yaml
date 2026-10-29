@@ -1,0 +1,53 @@
+name: mstack
+services:
+  postgres:
+    container_name: mcp-stack-postgres-1
+    # Upstream pgvector 0.8.6 on PostgreSQL 18; index includes Linux ARM64.
+    image: pgvector/pgvector:0.8.6-pg18-trixie@sha256:78bf48b801e792f99e3ac62b5036fd3876e9be48afda16c1e331af1c75ceb2ff
+    platform: linux/arm64
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: basic_memory
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    ports:
+      - "127.0.0.1:55322:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./infra/postgres/init/10-memory.sh:/docker-entrypoint-initdb.d/10-memory.sh:ro
+    secrets:
+      - postgres_password
+      - basic_memory_password
+    networks:
+      memory: {}
+      n8n_db:
+        aliases: [n8n-postgres]
+    shm_size: 256mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d basic_memory"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  postgres_data:
+    # Existing shared volume; retained after removing the mail-only overlay.
+    external: true
+    name: mcp-stack-postgres-data
+
+networks:
+  memory:
+    external: true
+    name: mcp-stack-memory
+  n8n_db:
+    external: true
+    name: mcp-stack-n8n-db
+
+secrets:
+  postgres_password:
+    file: ./.secrets/postgres_password
+  basic_memory_password:
+    file: ./.secrets/basic_memory_password

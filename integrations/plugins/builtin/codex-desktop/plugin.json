@@ -1,0 +1,11 @@
+{
+  "$schema": "../../schemas/plugin.schema.json",
+  "name": "codex-desktop",
+  "version": "0.1.0",
+  "joint": "agent",
+  "status": "implemented",
+  "transport": "handoff",
+  "via": "owner",
+  "summary": "Codex Desktop: the owner opens the worktree and starts the brief",
+  "mcp_style": "none"
+}

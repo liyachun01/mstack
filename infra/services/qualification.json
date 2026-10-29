@@ -1,0 +1,110 @@
+{
+  "observed_at": "2026-10-16T03:44:38.763521+00:00",
+  "project": "mstack-example",
+  "architecture": "one shared container per tool; authenticated project tenants; native stdio session per connection",
+  "containers": {
+    "mstack-anytype-mcp": {
+      "id": "336c31a6fa6b6553f157bd459e64bc9618f9eee3fbba71075c16064d8ad096c4",
+      "image": "sha256:bfd63423ea17c48d6986cf8218394e4daa44d3df6fbd0c78c04e04d09d82c146",
+      "status": "running",
+      "started": "2026-10-16T03:37:26.218102667Z"
+    },
+    "mstack-graphify": {
+      "id": "94b6b0c618ab91bc73f4f7ce567904bc63e2d4cc248782bab5c3beb3e6baf1ce",
+      "image": "sha256:2474b94caadd0aba2d3a27aa7de2f97a3692ea2a77dca9a0c061b940492b68e9",
+      "status": "running",
+      "started": "2026-10-16T03:37:25.805598444Z"
+    }
+  },
+  "tenant": "mstack-example",
+  "graphify": {
+    "version": "0.9.72",
+    "nodes": 17,
+    "edges": 23,
+    "index_sha256": "12b697d91e221ec7d74744ccc8f158e2f8f6091cf7d94f5dcaad3d038574461f",
+    "index_copied_byte_for_byte": true,
+    "graph_indexing": false,
+    "native_source_query_passed": true,
+    "two_concurrent_test_tenants_isolated": true,
+    "selector_and_resource_overrides_denied": true,
+    "wrong_tenant_unknown_tenant_wrong_token_denied": true,
+    "test_tenants_removed": true
+  },
+  "anytype": {
+    "version": "2.0.1",
+    "backend": "existing native desktop API",
+    "same_channel_and_api_key": true,
+    "exact_channel_grant_checked_on_session_start": true,
+    "all_spaces": false,
+    "permission": "readwrite",
+    "documents_readback_verified": 3,
+    "foreign_channel_denied": true
+  },
+  "lifecycle": {
+    "start_stop_both_services_passed": true,
+    "same_shared_containers_after_tenant_addition": true,
+    "tenant_data_preserved_across_stop_start": true,
+    "post_restart_graph_and_document_calls_passed": true,
+    "old_project_containers_removed": [
+      "/mstack-example-anytype",
+      "/mstack-example-graphify"
+    ],
+    "unrelated_containers_unchanged": 27,
+    "unchanged_fields": [
+      "id",
+      "image",
+      "status",
+      "started",
+      "mounts",
+      "restart_count"
+    ]
+  },
+  "validation": {
+    "python_tenant_tests": 7,
+    "node_tenant_tests_in_pinned_container": 5,
+    "stack_regression_tests": 36,
+    "compose_entry_points_valid": 2,
+    "mstack_skills_valid": 2,
+    "local_doctor_ready": true,
+    "native_codex_skill_discovered": true,
+    "explicit_launcher_mcp_servers": 4,
+    "saved_proof_stages_passed": 6,
+    "carried_forward_stages": [
+      "gstack",
+      "headroom",
+      "windmill"
+    ],
+    "carried_forward_dependencies_and_artifact_hashes_verified": true,
+    "new_project_credentials_git_ignored": true
+  },
+  "boundaries": {
+    "docker_owner_and_service_admin_trusted": true,
+    "no_hostile_public_tenant_isolation_claim": true,
+    "no_new_garage_application_binding": true,
+    "no_provider_or_model_calls": true,
+    "no_global_harness_config_change": true,
+    "codegraph": "ignored; unchanged",
+    "existing_claude_session_not_qualified": true
+  },
+  "evidence": {
+    "live_shared_tenants": "/home/developer/workspace/mstack-example/docs/evidence/shared-tenancy.json",
+    "anytype_write_and_readback": "/home/developer/workspace/mstack-example/docs/evidence/anytype.json",
+    "proof_dependency_comparison": "/home/developer/workspace/mstack-example/docs/evidence/tenant-migration-recheck.json",
+    "container_comparison": "infra/services/state/migration-20261016/container-comparison.json"
+  },
+  "implementation_sha256": {
+    "infra/graphify/serve_filtered.py": "cbc67fe31dfda818699721f91c3d6b1b695e8868d9b438b789b5cb44d0cc26e9",
+    "infra/services/compose.yaml": "81d588182a5a54ecb4dded07237e440de7530a77744673c6787462391175fe5b",
+    "integrations/stack/cli.py": "0a970230ef4ffa133e62c7592cbdcbd1178c7068f1af5ac860693f3740c88242",
+    "integrations/stack/proof.py": "472c3e3e4aaf9c8a4873f178a37745438e54bc07082e02cc989bdf4f5d0f997a",
+    "integrations/tenants/anytype.mjs": "2fce7c222d470d024ff419a42a585275bc9843eb7c67601fc3a408795b6f0f57",
+    "integrations/tenants/graphify_session.py": "b4256ce4a0c6813f0ab5cc906ca0b06c1055dc0ce23bce3f25aa7f5e3edae8d6",
+    "integrations/tenants/launch.py": "f976feaba79d247c6e46fa1c90249b2d0bc58bf597626aa179076e17f325fb38",
+    "integrations/tenants/manage.py": "c3e9fa127faf16a4ab4cb6bdd4fb5ea6ef12df98241893cac5c07d70dad16c85",
+    "integrations/tenants/registry.py": "887aab18f83d889536a0fe14451d8cb80159f5102dc6fed422c262b6e56b5995",
+    "integrations/tenants/tests/anytype.test.mjs": "772edb372c31906a92eeafa9307b5182c802a911a525c950a9fcbeb5d7c619fe",
+    "integrations/tenants/tests/test_tenants.py": "66758cd9933d56368e0b98f6aded501b8358e9414d9e08e703b4c22356e98bc2",
+    "integrations/tenants/verify.py": "9dc023016e8d44dec5043c840183056ff9384323650c279687c20d6a52cc8ba2"
+  },
+  "passed": true
+}

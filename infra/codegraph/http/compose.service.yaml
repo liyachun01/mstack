@@ -1,0 +1,76 @@
+name: mcp-stack
+services:
+  codegraph-http:
+    image: sha256:4b8cb16b0c3b5bb7446c3f90b8fd2b12f099b0d0029f8bf30113ad482bf75420
+    platform: linux/arm64
+    pull_policy: never
+    container_name: mcp-stack-codegraph-http
+    user: "501:501"
+    entrypoint: ["/opt/codegraph/node"]
+    command: ["--liftoff-only", "--disable-warning=ExperimentalWarning", "/opt/mcp-stack/serve_http.cjs"]
+    restart: unless-stopped
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 2
+    mem_limit: 2g
+    pids_limit: 128
+    stop_grace_period: 10s
+    networks: [transport]
+    environment:
+      CODEGRAPH_TELEMETRY: "0"
+      DO_NOT_TRACK: "1"
+      CODEGRAPH_NO_UPDATE_CHECK: "1"
+      CODEGRAPH_NO_DAEMON: "1"
+      CODEGRAPH_NO_WATCH: "1"
+      CODEGRAPH_MCP_TOOLS: explore,status
+      CODEGRAPH_QUERY_POOL_SIZE: "0"
+      NODE_COMPILE_CACHE: /tmp/node-compile-cache
+      HOME: /tmp/codegraph-home
+      XDG_CACHE_HOME: /tmp/codegraph-cache
+      XDG_CONFIG_HOME: /tmp/codegraph-config
+    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=67108864,mode=1777"]
+    volumes:
+      - type: bind
+        source: ./infra/codegraph/http/serve_http.cjs
+        target: /opt/mcp-stack/serve_http.cjs
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ./infra/codegraph/state/http/server.json
+        target: /config/server.json
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ./scripts/verify-basic-memory.py
+        target: /home/developer/workspace/mcp-stack/scripts/verify-basic-memory.py
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ./scripts/verify-codegraph.py
+        target: /home/developer/workspace/mcp-stack/scripts/verify-codegraph.py
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ./infra/codegraph/fixtures/call-chain.py
+        target: /home/developer/workspace/mcp-stack/infra/codegraph/fixtures/call-chain.py
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ./infra/codegraph/project.json
+        target: /home/developer/workspace/mcp-stack/codegraph.json
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ./infra/codegraph/state/mcp-stack
+        target: /home/developer/workspace/mcp-stack/.codegraph
+        read_only: true
+        bind: {create_host_path: false}
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+networks:
+  transport:
+    name: mcp-stack-codegraph-transport
+    internal: true

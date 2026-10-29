@@ -1,0 +1,5 @@
+# Optional first-MCP-qualification overlay, not loaded yet.
+# Prevent startup-time Python preparation/cache cleanup during that step.
+# Does not uninstall vision or modify the retained profile/bundle selection.
+- id: vision-toolkit
+  disabled: true

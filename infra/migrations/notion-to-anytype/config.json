@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "project": "kase-notion-migration",
+  "destination": {
+    "channel": "kase",
+    "space_id": "bafyreibvrv5shydv4y5bi2j4rotzp6tx5alskhxvlrfewkfayffpxiw7dq.2n7vawllhv7aa",
+    "api_execution_domain": "macos-desktop",
+    "api_base": "http://127.0.0.1:31009",
+    "credential_file": ".secrets/kase/anytype_api_key",
+    "all_spaces": false,
+    "permission": "readwrite"
+  },
+  "source": {
+    "cli": "ntn",
+    "version": "0.23.19",
+    "api_version": "2026-03-11",
+    "workspace_id": "058e9cb2-8541-4c4d-893e-0ecd0097f2bd",
+    "operations": "read-only",
+    "roots": [
+      [
+        "page",
+        "29b99dce-f499-8042-8e5c-c9f0639303c1"
+      ],
+      [
+        "page",
+        "37599dce-f499-8065-bd60-f1a586a5744c"
+      ],
+      [
+        "database",
+        "2e099dce-f499-8074-a7d3-f5a254cf18ee"
+      ]
+    ]
+  },
+  "state_directory": "infra/migrations/notion-to-anytype/state/kase-2026-10-09",
+  "memory_refresh": "pending-unprovisioned-ai-memory-binding",
+  "harness_registration": false,
+  "root_anytype_binding": "unchanged-unbound"
+}

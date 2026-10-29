@@ -1,0 +1,19 @@
+services:
+  agentgateway:
+    group_add: ["501"]
+    networks: [gateway, graphify]
+    volumes:
+      - type: bind
+        source: ./infra/agentgateway/state/graphify/config.json
+        target: /config/config.json
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ./infra/agentgateway/state/graphify/backend.key
+        target: /run/secrets/graphify-backend-key
+        read_only: true
+        bind: {create_host_path: false}
+networks:
+  graphify:
+    name: mcp-stack-graphify-transport
+    external: true

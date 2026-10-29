@@ -1,0 +1,9 @@
+{
+  "timecyber_entra": "deleted; success notification and absent from active app list",
+  "inbox_zero_google_grant": "revoked; HTTP 200",
+  "inbox_zero_entra": "deleted; Entra success notification",
+  "timecyber_google_app_password": "revoked; named entry removed from verified Google account",
+  "inbox_zero_google_client": "deleted; active client list says No OAuth clients to display",
+  "entra_active_list": "refreshed; both mail apps absent",
+  "completed_at": "2026-10-15T14:35:48.232518+00:00"
+}

@@ -1,0 +1,31 @@
+{
+  "$schema": "../../schemas/plugin.schema.json",
+  "name": "agentgateway",
+  "version": "0.1.0",
+  "joint": "gateway",
+  "status": "implemented",
+  "transport": "mcp",
+  "entry": "http://host.orb.internal:58080",
+  "summary": "Project route on the pinned agentgateway: one keyed endpoint, tool allowlist, rate limit and access log (backend today: Windmill)",
+  "requires": {
+    "services": [
+      "agentgateway"
+    ],
+    "credentials": [
+      ".mstack/secrets/agentgateway-key"
+    ]
+  },
+  "expose": [
+    "worker-mcp"
+  ],
+  "mcp": {
+    "name": "mstack_gateway",
+    "command": [
+      "{python}",
+      "{stack}/integrations/gateway/stdio_bridge.py",
+      "--project",
+      "{project}"
+    ],
+    "hint": "Windmill through the gateway: run approved scripts (windmill_s-*), list scripts, jobs, job logs and schedules. Only allowlisted tools exist; calls are rate-limited and logged with your task."
+  }
+}

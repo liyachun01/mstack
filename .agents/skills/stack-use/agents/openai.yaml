@@ -1,0 +1,4 @@
+interface:
+  display_name: "Use MCP Stack"
+  short_description: "Choose a project preset and run its scoped workflow"
+  default_prompt: "Use $stack-use to prepare or continue this project with the smallest suitable MCP stack preset."

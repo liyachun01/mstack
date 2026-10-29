@@ -1,0 +1,106 @@
+{
+  "date": "2026-10-27",
+  "platform": "linux",
+  "product": "Paradev (Superset 2.0.0)",
+  "removed_paths": [
+    "/home/developer/.superset",
+    "/home/developer/.claude/skills/superset",
+    "/home/developer/.agents/skills/superset-standup",
+    "/home/developer/.agents/skills/superset-page",
+    "/home/developer/.agents/skills/superset-10x",
+    "/home/developer/.agents/skills/superset-feedback",
+    "/home/developer/.agents/skills/superset-plugins",
+    "/home/developer/.agents/skills/superset-integrations",
+    "/home/developer/.agents/skills/superset-setup",
+    "/home/developer/.agents/skills/superset-computer",
+    "/home/developer/.agents/skills/superset-panes",
+    "/home/developer/.agents/skills/superset-orchestrate",
+    "/home/developer/.agents/skills/superset-browser",
+    "/home/developer/.agents/skills/superset-contribute",
+    "/home/developer/.agents/skills/superset-doctor",
+    "/home/developer/.agents/skills/superset-automate",
+    "/home/developer/.config/amp/plugins/superset-lifecycle.ts",
+    "/home/developer/.pi/agent/extensions/superset-hooks.ts",
+    "/home/developer/.omp/agent/extensions/superset-hooks.ts",
+    "/home/developer/.grok/hooks/superset-notify.json",
+    "/home/developer/superset",
+    "/home/developer/.node_modules",
+    "/home/developer/.claude/settings.json",
+    "/home/developer/.codex/hooks.json",
+    "/home/developer/.gemini/settings.json",
+    "/home/developer/.factory/settings.json",
+    "/home/developer/.mastracode/hooks.json"
+  ],
+  "stopped_pids": [],
+  "configuration_cleanup": [
+    {
+      "path": "/home/developer/.claude/settings.json",
+      "removed_hooks_or_blocks": 11,
+      "before_sha256": "e1204a7385081a31a6c7663ba912660f638c696d62b0bd90f147bb1873babd0b",
+      "after_sha256": null
+    },
+    {
+      "path": "/home/developer/.codex/hooks.json",
+      "removed_hooks_or_blocks": 9,
+      "before_sha256": "7cd00bf9cad4ea526cd4929cc8440c0f4eeadcf75b50463162f8b3c16e15dae6",
+      "after_sha256": null
+    },
+    {
+      "path": "/home/developer/.cursor/hooks.json",
+      "removed_hooks_or_blocks": 8,
+      "before_sha256": "6bc059d00ae882c5aa50e04d4d8bf75e7f80428d4a2a86736594ca1d0ff6b40e",
+      "after_sha256": "4b8894d57dfa621e534ef4eb25263e8f00254cbcb4327f1f98796314ac279dde"
+    },
+    {
+      "path": "/home/developer/.gemini/settings.json",
+      "removed_hooks_or_blocks": 5,
+      "before_sha256": "140c8ba81ed6553c3ed664240d8d90c112b5a1c3086841a2faa3694f754f7436",
+      "after_sha256": null
+    },
+    {
+      "path": "/home/developer/.factory/settings.json",
+      "removed_hooks_or_blocks": 6,
+      "before_sha256": "6f32e904d71aaa781f88f297683c5a169a96b45b319513f83c056fb6cfa25921",
+      "after_sha256": null
+    },
+    {
+      "path": "/home/developer/.config/devin/config.json",
+      "removed_hooks_or_blocks": 6,
+      "before_sha256": "257be0b5ee3632d2e58aeaf3dc26ad515026569ef2c8709f3b7bbdf66b12ae39",
+      "after_sha256": "4b8894d57dfa621e534ef4eb25263e8f00254cbcb4327f1f98796314ac279dde"
+    },
+    {
+      "path": "/home/developer/.mastracode/hooks.json",
+      "removed_hooks_or_blocks": 5,
+      "before_sha256": "c6cc455205a7b074ca00713c1ae997a6256718b7115d9645bc5c5d90dca3b483",
+      "after_sha256": null
+    },
+    {
+      "path": "/home/developer/.config/muse/settings.json",
+      "removed_hooks_or_blocks": 1,
+      "before_sha256": "d79fb1e21960a25337f3d11f7a598643ae5107a98214529052986f354c1565eb",
+      "after_sha256": "9f4950a9816a500445a000abbe7cb08d16296c306c3ccd481716f6aa07b90085"
+    },
+    {
+      "path": "/home/developer/.grok/config.toml",
+      "removed_hooks_or_blocks": 1,
+      "before_sha256": "def609d16ea8bca09aa2fda083aa06e5078bbc07cb6df64b4a672c7f5ab79ee4",
+      "after_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/developer/.zshrc",
+      "removed_hooks_or_blocks": 1,
+      "before_sha256": "16ef8bbe5626604e47a2fb1da7cb629a4e9c1704e97d4dc4f7d38c8c34bb3cb1",
+      "after_sha256": "f7ec431237cf6845dbf2fa2db742ec1a55aa94c1b822f11be716308471a642cf"
+    }
+  ],
+  "protected_files_unchanged": [
+    ".codex/config.toml",
+    ".codex/auth.json",
+    ".claude.json",
+    ".claude/.credentials.json",
+    ".zprofile",
+    ".local/bin/mise"
+  ],
+  "paradev_processes_remaining": 0
+}

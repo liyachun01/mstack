@@ -1,0 +1,25 @@
+{
+  "config": {
+    "adminAddr": "off",
+    "statsAddr": "off",
+    "readinessAddr": "off",
+    "enableIpv6": false,
+    "workerThreads": 1,
+    "storage": {"mode": "readOnly"},
+    "logging": {"level": "warn", "filter": "false"}
+  },
+  "gateways": {
+    "foundation": {
+      "port": 4000,
+      "apiKey": {
+        "mode": "strict",
+        "keys": [{"keyHash": "sha256:__CLIENT_KEY_SHA256__", "metadata": {"user": "local-foundation"}}]
+      }
+    }
+  },
+  "routes": [
+    {"name": "health", "gateways": ["foundation"], "matches": [{"path": {"exact": "/healthz"}}], "policies": {"directResponse": {"status": 200}}},
+    {"name": "mcp-not-configured", "gateways": ["foundation"], "matches": [{"path": {"pathPrefix": "/mcp"}}], "policies": {"directResponse": {"status": 503}}},
+    {"name": "not-found", "gateways": ["foundation"], "policies": {"directResponse": {"status": 404}}}
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "../../schemas/plugin.schema.json",
+  "name": "anytype-board",
+  "version": "0.1.0",
+  "joint": "board",
+  "status": "implemented",
+  "transport": "python",
+  "entry": "../../../orchestrator/board.py",
+  "summary": "Anytype channel: one reusable Agent Task type, one collection (table) per project, discussions with reactions",
+  "requires": {
+    "services": []
+  },
+  "capabilities": [
+    "reactions"
+  ],
+  "expose": [
+    "orchestrator"
+  ]
+}

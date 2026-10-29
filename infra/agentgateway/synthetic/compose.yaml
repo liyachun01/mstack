@@ -1,0 +1,65 @@
+name: mcp-stack-gateway-test
+services:
+  fixture:
+    image: sha256:2b1aa01c926d16fb25e5a5c7db077df29cdca85654e4606a03768a345d606fac
+    platform: linux/arm64
+    pull_policy: never
+    container_name: mcp-stack-gateway-fixture
+    user: "501:501"
+    entrypoint: ["python"]
+    command: ["/fixture/fixture.py"]
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+    restart: "no"
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 1
+    mem_limit: 256m
+    pids_limit: 128
+    stop_grace_period: 10s
+    networks: [synthetic]
+    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=16777216,mode=1777"]
+    volumes:
+      - type: bind
+        source: ./infra/agentgateway/synthetic/fixture.py
+        target: /fixture/fixture.py
+        read_only: true
+        bind: {create_host_path: false}
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+  test-gateway:
+    image: ghcr.io/agentgateway/agentgateway@sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
+    platform: linux/arm64
+    pull_policy: never
+    container_name: mcp-stack-gateway-synthetic
+    user: "65532:65532"
+    command: ["-f", "/config/config.json"]
+    restart: "no"
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 1
+    mem_limit: 512m
+    pids_limit: 128
+    stop_grace_period: 10s
+    ports: ["127.0.0.1:58081:4000"]
+    networks: [synthetic]
+    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=16777216,mode=1777"]
+    volumes:
+      - type: bind
+        source: ./infra/agentgateway/state/synthetic/config.json
+        target: /config/config.json
+        read_only: true
+        bind: {create_host_path: false}
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+networks:
+  synthetic:
+    name: mcp-stack-gateway-synthetic
+    internal: false

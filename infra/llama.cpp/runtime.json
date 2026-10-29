@@ -1,0 +1,31 @@
+{
+  "component": "llama.cpp",
+  "release": "b11429",
+  "version_line": "v0.6.0",
+  "source_commit": "d81235049384534c167caea52b85a694f6103d14",
+  "archive_sha256": "740288ec6887be94280a5dfa25b5e23a78285cab104519e6c7e218904ee82459",
+  "domain": "macos-metal",
+  "binary": "state/runtime/b11429/llama-b11429/llama-server",
+  "host": "127.0.0.1",
+  "port": 58093,
+  "context_size": 8192,
+  "parallel": 1,
+  "models_directory": "state/models",
+  "model_file": null,
+  "model_alias": null,
+  "status": "removed;replaced-by-llama-app",
+  "verification": {
+    "executable_version": "0.6.0-dev build 11429",
+    "metal_device": "MTL0 Apple M5",
+    "accelerate_backend": "available",
+    "model_inference": "not-tested;weights-postponed"
+  },
+  "replacement": "infra/llama-app/runtime.json",
+  "removed_at": "2026-10-07",
+  "removal": {
+    "runtime_artifact": "state/runtime/b11429",
+    "download_archive": "state/downloads/llama-b11429-bin-macos-arm64.tar.gz",
+    "model_data_removed": false,
+    "reason": "User chose a native menu-bar UI and model manager"
+  }
+}

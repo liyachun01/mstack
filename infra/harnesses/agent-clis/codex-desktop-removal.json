@@ -1,0 +1,11 @@
+{
+  "application": "Codex Desktop",
+  "bundle_id": "com.openai.codex",
+  "version": "26.1021.31345",
+  "original_path": "/Applications/ChatGPT.app",
+  "trash_path": "/Users/{{mstack:MAC_USER}}/.Trash/Codex-Desktop-removed-20261027.app",
+  "application_absent": true,
+  "native_codex_home_retained": true,
+  "current_window_process_preserved_until_owner_exits": true,
+  "removed_at": "2026-10-27T06:05:55.329846+00:00"
+}

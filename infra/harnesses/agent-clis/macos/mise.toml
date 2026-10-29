@@ -1,0 +1,15 @@
+[tools."github:openai/codex"]
+version = "0.163.0"
+version_prefix = "rust-v"
+os = ["macos"]
+asset_pattern = "codex-package-aarch64-apple-darwin.tar.gz"
+checksum = "sha256:b0344fc2e41f15e0071147e5869008047b8ff4bf2c4a8897975d3bae3f103b34"
+
+[tools."github:anthropics/claude-code"]
+version = "2.1.310"
+os = ["macos"]
+asset_pattern = "claude-darwin-arm64.tar.gz"
+checksum = "sha256:cf47d30004ff26e5cfed6004a29ca94e05ad53d6f890ee1be8bb582e8ce2a5b5"
+
+[settings]
+lockfile = true

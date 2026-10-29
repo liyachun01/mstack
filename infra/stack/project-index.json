@@ -1,0 +1,7 @@
+{
+  "$schema": "../../integrations/stack/schemas/index.schema.json",
+  "version": 1,
+  "projects": {
+    "mcp-stack": "."
+  }
+}

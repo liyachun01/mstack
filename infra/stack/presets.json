@@ -1,0 +1,193 @@
+{
+  "version": 1,
+  "presets": {
+    "daily": {
+      "model": "codex",
+      "knowledge": "anytype",
+      "jobs": "windmill",
+      "tools": [
+        "codex",
+        "headroom",
+        "graphify",
+        "anytype",
+        "windmill"
+      ],
+      "purpose": "Default direct project routing: shared Headroom, Graphify, Anytype and Windmill; use relevant tools on demand",
+      "workflow": {
+        "gstack": [
+          "browse"
+        ],
+        "capabilities": "harness-first-container-fallback"
+      },
+      "proof_steps": [
+        "configuration",
+        "gstack",
+        "headroom",
+        "graphify",
+        "anytype",
+        "windmill"
+      ]
+    },
+    "build": {
+      "model": "codex",
+      "knowledge": "manual-anytype",
+      "jobs": "manual",
+      "tools": [
+        "codex"
+      ],
+      "purpose": "Build and check a project using the existing gstack browser",
+      "workflow": {
+        "gstack": [
+          "browse"
+        ]
+      }
+    },
+    "notes": {
+      "model": "codex",
+      "knowledge": "anytype",
+      "jobs": "manual",
+      "tools": [
+        "codex",
+        "anytype"
+      ],
+      "purpose": "Read/write the explicitly bound Anytype project channel",
+      "workflow": {
+        "gstack": []
+      }
+    },
+    "automate": {
+      "model": "codex",
+      "knowledge": "manual-anytype",
+      "jobs": "windmill",
+      "tools": [
+        "codex",
+        "windmill"
+      ],
+      "purpose": "A reviewed Windmill job; storage and scheduling selected only when needed",
+      "workflow": {
+        "gstack": []
+      }
+    },
+    "proof": {
+      "model": "codex",
+      "knowledge": "anytype",
+      "jobs": "windmill",
+      "tools": [
+        "codex",
+        "headroom",
+        "graphify",
+        "anytype",
+        "windmill"
+      ],
+      "purpose": "Independent project proof: harness tools, container Graphify, Windmill job and scoped Anytype documents",
+      "workflow": {
+        "gstack": [
+          "browse"
+        ],
+        "capabilities": "harness-first-container-fallback"
+      },
+      "proof_steps": [
+        "configuration",
+        "gstack",
+        "headroom",
+        "graphify",
+        "anytype",
+        "windmill"
+      ]
+    },
+    "solo": {
+      "model": "codex",
+      "knowledge": "none",
+      "jobs": "manual",
+      "tools": [
+        "codex"
+      ],
+      "purpose": "Single local coding task"
+    },
+    "project": {
+      "model": "codex",
+      "knowledge": "anytype",
+      "jobs": "manual",
+      "tools": [
+        "codex",
+        "anytype"
+      ],
+      "purpose": "Code plus durable project docs/tasks"
+    },
+    "knowledge": {
+      "model": "local",
+      "knowledge": "anytype",
+      "jobs": "manual",
+      "tools": [
+        "codex",
+        "anytype"
+      ],
+      "purpose": "Daily PKM through Codex with a local provider",
+      "mcp_allowlist": {
+        "anytype": [
+          "API-search-space",
+          "API-get-object",
+          "API-create-object",
+          "API-patch-object"
+        ]
+      }
+    },
+    "research": {
+      "model": "codex",
+      "knowledge": "anytype",
+      "jobs": "manual",
+      "tools": [
+        "codex",
+        "anytype"
+      ],
+      "purpose": "Interactive investigation; context tools selected explicitly"
+    },
+    "jobs": {
+      "model": "codex",
+      "knowledge": "anytype",
+      "jobs": "windmill",
+      "tools": [
+        "codex",
+        "anytype",
+        "windmill",
+        "garage"
+      ],
+      "purpose": "Reviewed repeatable scripts and scoped artifacts"
+    },
+    "events": {
+      "model": "codex",
+      "knowledge": "anytype",
+      "jobs": "windmill",
+      "tools": [
+        "codex",
+        "anytype",
+        "windmill",
+        "garage",
+        "n8n"
+      ],
+      "purpose": "App event intake followed by reviewed jobs"
+    }
+  },
+  "tool_purposes": {
+    "codex": "Interactive reasoning, source edits, local tests and project tool calls",
+    "anytype": "Canonical docs/objects/tasks in the authenticated project channel",
+    "ai-memory": "Explicit secondary memory only; no automatic Anytype mirror",
+    "basic-memory": "Explicit secondary Markdown context",
+    "graphify": "Relationships in a qualified corpus",
+    "codegraph": "Symbols/callers within the qualified index",
+    "windmill": "Reviewed execution, schedules, retries and durable run records",
+    "n8n": "App connectors/event intake and authorized delivery",
+    "garage": "Scoped object artifacts, not arbitrary host sharing",
+    "agentgateway": "Optional qualified MCP routes for multiple callers",
+    "headroom": "On-demand compression and retrieval of selected tool output; not automatic chat compaction"
+  },
+  "boundaries": {
+    "memory_broadcast": false,
+    "background_sync": false,
+    "automatic_installation": false,
+    "automatic_indexing": false,
+    "paid_model_fallback": false,
+    "live_trading": false,
+    "project_labels_are_RBAC": false
+  }
+}

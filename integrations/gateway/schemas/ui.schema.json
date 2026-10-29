@@ -1,0 +1,48 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Editor association."
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "username": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,31}$"
+    },
+    "password_file": {
+      "type": "string",
+      "description": "Ignored repository-relative private credential file; a reference, never a token.",
+      "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$",
+      "minLength": 1
+    },
+    "mode": {
+      "enum": [
+        "read-only",
+        "read-write"
+      ],
+      "default": "read-write",
+      "description": "Owner chooses editable file-backed UI or read-only viewing."
+    },
+    "host_port": {
+      "const": 58084
+    },
+    "container_port": {
+      "const": 4001
+    }
+  },
+  "required": [
+    "enabled",
+    "username",
+    "password_file",
+    "mode",
+    "host_port",
+    "container_port"
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mcp-stack gateway owner UI",
+  "description": "Separate owner login on Mac loopback; native UI changes persist in the runtime directory."
+}

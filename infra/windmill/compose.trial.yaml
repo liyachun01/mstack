@@ -1,0 +1,97 @@
+# Inert until the separately approved trial secrets are prepared and this file
+# is explicitly selected. Never combine with the downloaded docker-compose.yml.
+name: mcp-stack-windmill-trial
+
+x-logging: &logging
+  driver: json-file
+  options: {max-size: "5m", max-file: "2"}
+
+x-windmill: &windmill
+  image: ghcr.io/windmill-labs/windmill:1.823.1@sha256:20932690bab6b1820bba7a4b5934998ec69fa3f82c0ddd9a500114e53ef51f50
+  platform: linux/arm64
+  pull_policy: never
+  restart: unless-stopped
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 256
+  logging: *logging
+  depends_on:
+    db: {condition: service_healthy}
+  volumes:
+    - worker_logs:/tmp/windmill/logs
+
+services:
+  db:
+    image: postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    platform: linux/arm64
+    pull_policy: never
+    container_name: mcp-stack-windmill-trial-db
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    cpus: 0.5
+    mem_limit: 512m
+    pids_limit: 128
+    shm_size: 128m
+    environment:
+      POSTGRES_USER: windmill
+      POSTGRES_DB: windmill
+      POSTGRES_PASSWORD_FILE: /run/secrets/windmill_trial_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    secrets: [windmill_trial_password]
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U windmill -d windmill"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    logging: *logging
+
+  server:
+    <<: *windmill
+    container_name: mcp-stack-windmill-trial-server
+    cpus: 0.5
+    mem_limit: 768m
+    environment:
+      MODE: server
+      DATABASE_URL: ${WM_TRIAL_DATABASE_URL:?Use the approved isolated trial env file}
+      BASE_URL: http://127.0.0.1:58090
+    ports: ["127.0.0.1:58090:8000"]
+    healthcheck:
+      test: [CMD-SHELL, "curl --fail --silent --max-time 5 http://127.0.0.1:8000/api/version >/dev/null"]
+      interval: 15s
+      timeout: 6s
+      retries: 20
+      start_period: 90s
+
+  worker:
+    <<: *windmill
+    container_name: mcp-stack-windmill-trial-worker
+    cpus: 1.0
+    mem_limit: 2g
+    pids_limit: 512
+    privileged: false
+    environment:
+      MODE: worker
+      WORKER_GROUP: default
+      NUM_WORKERS: "1"
+      DATABASE_URL: ${WM_TRIAL_DATABASE_URL:?Use the approved isolated trial env file}
+      DISABLE_NSJAIL: "true"
+      ENABLE_UNSHARE_PID: "false"
+      FAVOR_UNSHARE_PID: "false"
+    volumes:
+      - worker_cache:/tmp/windmill/cache
+      - worker_logs:/tmp/windmill/logs
+
+volumes:
+  postgres_data: {name: mcp-stack-windmill-trial-postgres-data}
+  worker_cache: {name: mcp-stack-windmill-trial-worker-cache}
+  worker_logs: {name: mcp-stack-windmill-trial-worker-logs}
+
+networks:
+  default: {name: mcp-stack-windmill-trial}
+
+secrets:
+  windmill_trial_password:
+    file: ../../.secrets/windmill_trial_password

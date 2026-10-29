@@ -1,0 +1,152 @@
+{
+  "observed_at": "2026-10-16T11:14:01.495354+00:00",
+  "namespace": "mstack",
+  "services": {
+    "headroom": {
+      "old_id": "0a68ee648db3754af26f1245444848d40cc071eaaecbe9a1e1a5480684edfb64",
+      "new_id": "87087ccd9dd6a266103ac9bb3a417ba8846d19f81e8347314c189afda0d1784d",
+      "running": true,
+      "equivalent": true
+    },
+    "anytype-mcp": {
+      "old_id": "336c31a6fa6b6553f157bd459e64bc9618f9eee3fbba71075c16064d8ad096c4",
+      "new_id": "509db07dc6e0c88c3fa10cdf2913e03addee9324fa07ce259775d4ceedd236ef",
+      "running": true,
+      "equivalent": true
+    },
+    "graphify": {
+      "old_id": "94b6b0c618ab91bc73f4f7ce567904bc63e2d4cc248782bab5c3beb3e6baf1ce",
+      "new_id": "1beb4299e650d0e481876f80afdbc11ffc2c5a7caf6adcbd503152365b4639ff",
+      "running": true,
+      "equivalent": true
+    },
+    "windmill-server": {
+      "old_id": "b70d154692fe6dedeef68f34a15d85fd08d7fee16d94f236f4152c08b978dddd",
+      "new_id": "1a122784f1c5911dcbe1f503f17d17b5a53868758ecc9e7ae37ab9a1e7397e22",
+      "running": true,
+      "equivalent": true
+    },
+    "windmill-worker": {
+      "old_id": "36fd50ad3751572fadd5113116836190d2f655c64c4771257e6f6152f4ef07ac",
+      "new_id": "37596a4a2e5c3b5e1a8225e598377a42a5732d8aaaf71f3945741f37b3cf518b",
+      "running": true,
+      "equivalent": true
+    },
+    "whodb": {
+      "old_id": "310ee0d231f3711feeb4b6f416d977e4e4b600dfaf522b7892a2a6b9e3bd3a4c",
+      "new_id": "2760fc569370ba4585cf206717b262ede956f5c38bfff9910effeea3a7a5faf6",
+      "running": true,
+      "equivalent": true
+    },
+    "garage": {
+      "old_id": "94edbaccb961af2630df924ac7f943834ba55ec1d7bd818414b6c39da2445317",
+      "new_id": "e555d1db7457408615abdff6835172fe2d5898f3ce86fd2ef08cdf4d8c628db3",
+      "running": true,
+      "equivalent": true
+    },
+    "postgres": {
+      "old_id": "6f057f9f1b2df70b6250bed5602c60dfa2f2782f60d549a15402086c86a342a5",
+      "new_id": "fe594a41b0ea67fe10fbfa7f573896072f9d0abbded950a15d9ba9ce37181bab",
+      "running": true,
+      "equivalent": true
+    },
+    "agentgateway": {
+      "old_id": "a5553ee11ea9bfab0308ce73ba0647e1894d4a9a6fb0dbf10fabb613b87b96e7",
+      "new_id": "8e1885fc456d0b7c54238bb14fa6443444487b99b316371d3c5a74ad8072bf26",
+      "running": false,
+      "equivalent": true
+    },
+    "opencodex": {
+      "old_id": "8d1941c3a568580ac928aac9bbb6dfdea1d1abfa0a4c99d61bb58b78890a2a56",
+      "new_id": "8165bf21056865f51b26ebcde301136008c9f2b634edacfc5dc2b46d4c1d862e",
+      "running": true,
+      "equivalent": true
+    },
+    "ai-memory": {
+      "old_id": "99bbfb9d7a0cf8659c44965c9151ddbaacf6a89630f0ff1948116b4c4c5b8559",
+      "new_id": "4e4d8f723d844feac4566200908a4aa53f3ec47cf1ed854243c81a3a186923a0",
+      "running": false,
+      "equivalent": true
+    }
+  },
+  "unrelated_unchanged": [
+    "/supabase_db_{{mstack:CLIENT_REPO}}",
+    "/supabase_studio_{{mstack:CLIENT_REPO}}",
+    "/supabase_pg_meta_{{mstack:CLIENT_REPO}}",
+    "/supabase_edge_runtime_{{mstack:CLIENT_REPO}}",
+    "/supabase_storage_{{mstack:CLIENT_REPO}}",
+    "/supabase_rest_{{mstack:CLIENT_REPO}}",
+    "/supabase_realtime_{{mstack:CLIENT_REPO}}",
+    "/supabase_inbucket_{{mstack:CLIENT_REPO}}",
+    "/supabase_auth_{{mstack:CLIENT_REPO}}",
+    "/supabase_kong_{{mstack:CLIENT_REPO}}",
+    "/supabase_vector_{{mstack:CLIENT_REPO}}",
+    "/supabase_analytics_{{mstack:CLIENT_REPO}}",
+    "/supabase_db_{{mstack:CLIENT_REPO}}-iro91-phase1",
+    "/supabase_edge_runtime_{{mstack:CLIENT_REPO}}-iro91-phase1",
+    "/supabase_rest_{{mstack:CLIENT_REPO}}-iro91-phase1",
+    "/supabase_inbucket_{{mstack:CLIENT_REPO}}-iro91-phase1",
+    "/supabase_auth_{{mstack:CLIENT_REPO}}-iro91-phase1",
+    "/supabase_kong_{{mstack:CLIENT_REPO}}-iro91-phase1",
+    "/{{mstack:CLIENT_C_FOLDER}}-yel507-postgres"
+  ],
+  "unrelated_count": 19,
+  "volumes_credentials_ports_images_preserved": true,
+  "passed": true,
+  "old_namespace_empty": true,
+  "old_containers_removed_without_volumes": true,
+  "live_support": {
+    "uis": {
+      "whodb": 200,
+      "windmill": 200,
+      "opencodex": 200
+    },
+    "garage": [
+      {
+        "credential": "windmill",
+        "operation": "signed ListObjectsV2 max-keys=1",
+        "http": 200
+      },
+      {
+        "credential": "n8n",
+        "operation": "signed ListObjectsV2 max-keys=1",
+        "http": 200
+      }
+    ],
+    "objects_written": 0,
+    "new_database_connections": 0,
+    "passed": true
+  },
+  "database": {
+    "database_role_definitions_unchanged": true,
+    "compared_statements": 21,
+    "fresh_worker_heartbeat": true,
+    "private_logical_backup_retained": true
+  },
+  "running_count": 9,
+  "stopped_services": [
+    "agentgateway",
+    "ai-memory"
+  ],
+  "model_provider_calls": 0,
+  "new_grants": 0,
+  "reindexing": false,
+  "global_harness_config_changed": false,
+  "corrections": [
+    "Host container inspection now strips the leading slash to avoid macctl path translation.",
+    "PostgreSQL uses its existing memory and n8n DB networks, removing a stale reference to the previously deleted mail network.",
+    "Exact original shared-memory limits made explicit; empty/null default DNS lists treated equivalently."
+  ],
+  "qualification": {
+    "unit_tests": 42,
+    "project_proof_stages": 6,
+    "fresh_stages": [
+      "configuration",
+      "graphify",
+      "headroom",
+      "anytype",
+      "windmill"
+    ],
+    "gstack": "unchanged source dependencies and artifact hashes verified; not replayed"
+  }
+}

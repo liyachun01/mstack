@@ -1,0 +1,18 @@
+{
+  "$schema": "../../schemas/plugin.schema.json",
+  "name": "linear",
+  "version": "0.1.0",
+  "joint": "link",
+  "status": "implemented",
+  "transport": "python",
+  "entry": "../../../orchestrator/linear.py",
+  "summary": "Linear GraphQL link: pull/push/full, my issues or one label",
+  "requires": {
+    "credentials": [
+      "credential_file"
+    ]
+  },
+  "expose": [
+    "orchestrator"
+  ]
+}

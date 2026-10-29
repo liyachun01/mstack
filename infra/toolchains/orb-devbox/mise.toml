@@ -1,0 +1,19 @@
+# Linux common CLI baseline. Loaded from this repository by the shell bootstrap.
+# Node/Python selections remain scoped to project or explicit CLI invocations.
+# Git and Git LFS are Ubuntu packages: /usr/bin/git and /usr/bin/git-lfs.
+[tools]
+"aqua:cli/cli" = { version = "2.97.0", os = ["linux"] }
+"aqua:astral-sh/uv" = { version = "0.12.3", os = ["linux"] }
+bun = { version = "1.3.14", os = ["linux"] }
+"aqua:direnv/direnv" = { version = "2.37.1", os = ["linux"] }
+"aqua:sharkdp/fd" = { version = "10.3.0", os = ["linux"] }
+"aqua:junegunn/fzf" = { version = "0.67.0", os = ["linux"] }
+"aqua:jqlang/jq" = { version = "1.8.1", os = ["linux"] }
+"aqua:BurntSushi/ripgrep" = { version = "15.1.0", os = ["linux"] }
+"aqua:koalaman/shellcheck" = { version = "0.11.0", os = ["linux"] }
+"aqua:mvdan/sh" = { version = "3.12.0", os = ["linux"] }
+"aqua:tmux/tmux-builds" = { version = "3.6a", os = ["linux"] }
+
+[settings]
+experimental = true
+lockfile = true

@@ -1,0 +1,45 @@
+{
+  "date": "2026-10-18",
+  "cause": "Existing command links and zsh bootstrap still referenced the renamed mcp-stack repository; no system Git fallback was installed.",
+  "git": {
+    "version": "2.54.0",
+    "path": "/usr/bin/git",
+    "package": "1:2.54.0-0ppa1~ubuntu26.04.1"
+  },
+  "git_lfs": {
+    "version": "3.7.1",
+    "path": "/usr/bin/git-lfs",
+    "package": "3.7.1-1"
+  },
+  "cached_packages_verified_against_retirement_sha256": true,
+  "downloads": 0,
+  "package_removals": 0,
+  "services_restarted": 0,
+  "git_removed_from_active_mise_config_and_lock": true,
+  "existing_git_and_lfs_launchers_point_to_system": true,
+  "other_existing_command_links_repaired": 23,
+  "shell_bootstrap_repaired": true,
+  "reviewed_profile_trust_refreshed_for_renamed_paths": 6,
+  "minimal_path_git_and_lfs_passed": true,
+  "live_editor_extension_host_path_checks": [
+    {
+      "pid": 1281064,
+      "git_executable": "/home/developer/.local/bin/git",
+      "resolves_to": "/usr/bin/git",
+      "version": "git version 2.54.0",
+      "repository_status_ok": true
+    },
+    {
+      "pid": 1281166,
+      "git_executable": "/home/developer/.local/bin/git",
+      "resolves_to": "/usr/bin/git",
+      "version": "git version 2.54.0",
+      "repository_status_ok": true
+    }
+  ],
+  "login_shell_git_node_rg_checks_passed": true,
+  "entrypoint_and_shell_tests_passed": 17,
+  "protected_git_config_credentials_and_repo_metadata_unchanged_during_launcher_repair": true,
+  "existing_mise_git_installations": "retained inactive for rollback",
+  "editor_ui_reload": "left to user; no foreground input or editor restart performed"
+}

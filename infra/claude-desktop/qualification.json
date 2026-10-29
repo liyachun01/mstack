@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-08",
+  "provider": "deepseek",
+  "upstream": "https://api.deepseek.com",
+  "model": "deepseek-flash",
+  "desktop_model_alias": "claude-opus-4-8-dji",
+  "streaming": "passed",
+  "tool_roundtrip": "passed",
+  "tool_result": "5",
+  "forced_tool_choice": "rejected by upstream thinking mode; auto is qualified",
+  "native_desktop_ui": "passed: gateway welcome without login; Cowork surface replied MCP_STACK_DESKTOP_OK",
+  "codex_integration": "held",
+  "usage": {
+    "tool_request": {
+      "input_tokens": 510,
+      "output_tokens": 82,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0
+    },
+    "tool_followup": {
+      "input_tokens": 194,
+      "output_tokens": 2,
+      "cache_read_input_tokens": 384,
+      "cache_creation_input_tokens": 0
+    }
+  },
+  "desktop_visible_model": "DeepSeek Flash (official)",
+  "native_code_tab": "not qualified",
+  "native_project_mcp": "not registered",
+  "ui_process_accessibility": "restored original false values",
+  "screenshot": "state/qualification.png (private, ignored)"
+}

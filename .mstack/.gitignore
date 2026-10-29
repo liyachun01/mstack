@@ -1,0 +1,8 @@
+/state.json
+/.lock
+/secrets/
+/cache/
+/evidence/
+/worktrees/
+/journal.json
+/journal.lock

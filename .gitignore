@@ -1,0 +1,41 @@
+.secrets/
+.state/
+infra/basic-memory/state/
+infra/codegraph/state/
+infra/graphify/state/
+infra/agentgateway/state/
+infra/harnesses/deepseek/state/
+infra/harnesses/deepseek/runtime/profile-packages/
+__pycache__/
+knowledge/
+.env
+.env.*
+!.env.example
+backups/
+mise.local.toml
+.DS_Store
+infra/n8n/state/
+infra/windmill/state/
+infra/whodb/state/
+infra/garage/state/
+infra/ai-memory/state/
+
+infra/stack/state/
+infra/migrations/notion-to-anytype/state/
+
+# Inbox Zero's separate pinned upstream checkout and private runtime evidence.
+integrations/inbox-zero/upstream/
+infra/inbox-zero/state/
+
+# Standalone email-mcp pinned checkout and local runtime evidence.
+integrations/email-mcp/upstream/
+infra/email-mcp/state/
+infra/email-mcp/runtime/
+
+# Project helper indexes, UI captures and temporary private provisioning state.
+infra/projects/*/state/
+infra/services/state/
+/.secrets/
+
+# Personal Claude Code settings
+.claude/settings.local.json

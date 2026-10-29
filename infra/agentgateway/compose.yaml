@@ -1,0 +1,38 @@
+name: mstack
+services:
+  agentgateway:
+    shm_size: 8409579520 # Retained OrbStack runtime limit.
+    container_name: mcp-stack-agentgateway-1
+    image: ghcr.io/agentgateway/agentgateway@sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
+    platform: linux/arm64
+    pull_policy: never
+    user: "65532:65532"
+    command: ["-f", "/config/config.json"]
+    restart: unless-stopped
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 1
+    mem_limit: 512m
+    pids_limit: 128
+    stop_grace_period: 15s
+    ports: ["127.0.0.1:58080:4000"]
+    networks: [gateway]
+    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=16777216,mode=1777"]
+    volumes:
+      - type: bind
+        source: ./infra/agentgateway/state/config.json
+        target: /config/config.json
+        read_only: true
+        bind:
+          create_host_path: false
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+networks:
+  gateway:
+    external: true
+    name: mcp-stack-gateway-local

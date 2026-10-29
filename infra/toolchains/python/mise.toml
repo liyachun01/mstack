@@ -1,0 +1,8 @@
+# Development/MCP Python only. OS /usr/bin/python3 remains untouched.
+[tools]
+python = { version = "3.13.15", os = ["linux"] }
+"aqua:astral-sh/uv" = { version = "0.12.3", os = ["linux"] }
+
+[settings]
+python.compile = false
+lockfile = true

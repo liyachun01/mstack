@@ -1,0 +1,11 @@
+{
+  "exclude": [
+    ".secrets/**",
+    "backups/**",
+    "knowledge/**",
+    "infra/basic-memory/state/**",
+    "infra/codegraph/state/**",
+    "node_modules/**",
+    "**/__pycache__/**"
+  ]
+}

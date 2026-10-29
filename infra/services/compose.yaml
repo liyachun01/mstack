@@ -1,0 +1,71 @@
+name: mstack
+services:
+  headroom:
+    shm_size: 8408530944 # Retained OrbStack runtime limit.
+    image: mstack-headroom@sha256:4dd47ac9644868cefb4921ce67bb5e6d882da44470c3acfbb721fe0fd54314d9
+    container_name: mstack-headroom
+    labels: {io.mstack.runtime: shared-tenants}
+    platform: linux/arm64
+    pull_policy: never
+    user: "501:501"
+    restart: unless-stopped
+    init: true
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1g
+    pids_limit: 128
+    tmpfs: [/tmp:size=64m]
+    volumes:
+      - ./state/headroom:/runtime:ro
+      - ./state/headroom/tenants:/runtime/tenants:rw
+      - ../../integrations/tenants:/integration:ro
+  graphify:
+    shm_size: 8408530944 # Retained OrbStack runtime limit.
+    image: mstack-graphify@sha256:2474b94caadd0aba2d3a27aa7de2f97a3692ea2a77dca9a0c061b940492b68e9
+    container_name: mstack-graphify
+    labels: {io.mstack.runtime: shared-tenants}
+    platform: linux/arm64
+    pull_policy: never
+    user: "501:501"
+    restart: unless-stopped
+    init: true
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 2g
+    pids_limit: 128
+    tmpfs: [/tmp:size=64m]
+    working_dir: /runtime
+    command: ["-c", "import time; time.sleep(2147483647)"]
+    volumes:
+      - ./state/graphify:/runtime:ro
+      - ../../integrations/tenants:/integration:ro
+      - ../graphify/serve_filtered.py:/adapter/serve_filtered.py:ro
+  anytype-mcp:
+    shm_size: 8408530944 # Retained OrbStack runtime limit.
+    image: mstack-anytype-mcp@sha256:bfd63423ea17c48d6986cf8218394e4daa44d3df6fbd0c78c04e04d09d82c146
+    container_name: mstack-anytype-mcp
+    labels: {io.mstack.runtime: shared-tenants}
+    platform: linux/arm64
+    pull_policy: never
+    user: "501:501"
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1g
+    pids_limit: 128
+    tmpfs: [/tmp:size=32m]
+    command: ["-e", "setInterval(() => {}, 2147483647)"]
+    volumes:
+      - ./state/anytype:/runtime:ro
+      - ../../integrations/tenants:/integration:ro
+
+networks:
+  default:
+    external: true
+    name: mcp-stack_default

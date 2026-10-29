@@ -1,0 +1,202 @@
+{
+  "version": 1,
+  "description": "Synthetic unit-test input only; no live projects, keys or destinations.",
+  "connections": {
+    "slack-shared": {
+      "tool": "slack",
+      "mcp_url": "",
+      "input": {
+        "workspace_id": "",
+        "credential_file": "",
+        "auth_type": "oauth",
+        "oauth_client_id": "",
+        "oauth_client_secret_file": "",
+        "oauth_scopes": []
+      },
+      "space": {
+        "channel_ids": []
+      },
+      "label": "slack-shared"
+    },
+    "linear-shared": {
+      "tool": "linear",
+      "mcp_url": "",
+      "input": {
+        "workspace_id": "",
+        "credential_file": "",
+        "auth_type": "oauth",
+        "oauth_client_id": "",
+        "oauth_client_secret_file": "",
+        "oauth_scopes": []
+      },
+      "space": {
+        "team_ids": [],
+        "project_ids": []
+      },
+      "label": "linear-shared"
+    },
+    "figma-shared": {
+      "tool": "figma",
+      "mcp_url": "",
+      "input": {
+        "account": "",
+        "credential_file": "",
+        "auth_type": "oauth",
+        "oauth_client_id": "",
+        "oauth_client_secret_file": "",
+        "oauth_scopes": []
+      },
+      "space": {
+        "file_keys": []
+      },
+      "label": "figma-shared"
+    },
+    "notion-shared": {
+      "tool": "notion",
+      "mcp_url": "",
+      "input": {
+        "workspace_id": "",
+        "credential_file": "",
+        "auth_type": "oauth",
+        "oauth_client_id": "",
+        "oauth_client_secret_file": "",
+        "oauth_scopes": []
+      },
+      "space": {
+        "page_ids": [],
+        "data_source_ids": []
+      },
+      "label": "notion-shared"
+    },
+    "anytype-project-a": {
+      "tool": "anytype",
+      "mcp_url": "",
+      "input": {
+        "credential_file": "",
+        "auth_type": "local-api-key",
+        "api_url": ""
+      },
+      "space": {
+        "space_id": "",
+        "docs_collection_id": "",
+        "tasks_collection_id": ""
+      },
+      "label": "anytype-project-a"
+    },
+    "anytype-project-b": {
+      "tool": "anytype",
+      "mcp_url": "",
+      "input": {
+        "credential_file": "",
+        "auth_type": "local-api-key",
+        "api_url": ""
+      },
+      "space": {
+        "space_id": "",
+        "docs_collection_id": "",
+        "tasks_collection_id": ""
+      },
+      "label": "anytype-project-b"
+    }
+  },
+  "projects": {
+    "project-a": {
+      "input": {
+        "repo": "",
+        "display_name": "",
+        "description": ""
+      },
+      "tools": {
+        "slack": {
+          "connection": "slack-shared",
+          "space": {},
+          "enabled": true,
+          "access": "read-only",
+          "purpose": "Read project channel context"
+        },
+        "linear": {
+          "connection": "linear-shared",
+          "space": {},
+          "enabled": true,
+          "access": "read-only",
+          "purpose": "Read project tasks and issue status"
+        },
+        "figma": {
+          "connection": "figma-shared",
+          "space": {},
+          "enabled": true,
+          "access": "read-only",
+          "purpose": "Read project designs"
+        },
+        "notion": {
+          "connection": "notion-shared",
+          "space": {},
+          "enabled": true,
+          "access": "read-only",
+          "purpose": "Optional project document access"
+        },
+        "anytype": {
+          "connection": "anytype-project-a",
+          "space": {},
+          "enabled": true,
+          "access": "read-only",
+          "purpose": "Canonical project docs and tasks"
+        }
+      },
+      "harnesses": [
+        "codex",
+        "claude"
+      ],
+      "tool_transport": "agentgateway"
+    },
+    "project-b": {
+      "input": {
+        "repo": "",
+        "display_name": "",
+        "description": ""
+      },
+      "tools": {
+        "slack": {
+          "connection": "slack-shared",
+          "space": {},
+          "enabled": true,
+          "access": "read-only",
+          "purpose": "Read project channel context"
+        },
+        "linear": {
+          "connection": "linear-shared",
+          "space": {},
+          "enabled": true,
+          "access": "read-only",
+          "purpose": "Read project tasks and issue status"
+        },
+        "figma": {
+          "connection": "figma-shared",
+          "space": {},
+          "enabled": true,
+          "access": "read-only",
+          "purpose": "Read project designs"
+        },
+        "notion": {
+          "connection": "notion-shared",
+          "space": {},
+          "enabled": true,
+          "access": "read-only",
+          "purpose": "Optional project document access"
+        },
+        "anytype": {
+          "connection": "anytype-project-b",
+          "space": {},
+          "enabled": true,
+          "access": "read-only",
+          "purpose": "Canonical project docs and tasks"
+        }
+      },
+      "harnesses": [
+        "codex",
+        "claude"
+      ],
+      "tool_transport": "agentgateway"
+    }
+  }
+}

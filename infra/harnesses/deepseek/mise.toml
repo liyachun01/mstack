@@ -1,0 +1,6 @@
+# Linux DeepSeek consumer pins; the common shell baseline does not select these.
+# Install only as an explicitly authorized migration step. The launcher uses
+# `mise where TOOL@VERSION` and refuses missing installations or changed metadata.
+[tools]
+node = { version = "24.19.0", os = ["linux"] }
+"npm:@deepseek-ai/dsh" = { version = "0.2.0-rc.2", os = ["linux"] }

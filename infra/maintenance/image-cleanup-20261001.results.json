@@ -1,0 +1,81 @@
+{
+  "date": "2026-10-01",
+  "status": "completed",
+  "removed_image_count": 27,
+  "removed_container_count": 0,
+  "remaining_image_count": 27,
+  "preserved_container_count": 21,
+  "preserved_stopped_container_count": 16,
+  "protected_file_hashes_unchanged": 269,
+  "volumes_and_networks_unchanged": true,
+  "build_cache_not_pruned": true,
+  "docker_image_usage_before_gb": 33.66,
+  "docker_image_usage_after_gb": 18.6,
+  "docker_reported_reduction_gb": 15.06,
+  "restoration": "Registry digests/tags retained in image-cleanup-20261001.json; no archive/no automatic download. Registry availability is not guaranteed.",
+  "workload": {
+    "samples": 4,
+    "span_seconds": 30.477806091977982,
+    "mean_container_cpu_percent_one_core": 0.9225,
+    "mean_container_working_set_mib": 490.275,
+    "services": [
+      {
+        "name": "mcp-stack-codegraph-http",
+        "meanCpu": 0.0025,
+        "peakCpu": 0.01,
+        "meanMiB": 120.75,
+        "blockStart": "252MB / 0B",
+        "blockEnd": "263MB / 0B",
+        "networkStart": "1.13kB / 126B",
+        "networkEnd": "1.13kB / 126B"
+      },
+      {
+        "name": "mcp-stack-agentgateway-1",
+        "meanCpu": 0.15000000000000002,
+        "peakCpu": 0.17,
+        "meanMiB": 23.787499999999998,
+        "blockStart": "404MB / 0B",
+        "blockEnd": "428MB / 0B",
+        "networkStart": "115kB / 88.7kB",
+        "networkEnd": "115kB / 88.7kB"
+      },
+      {
+        "name": "mcp-stack-graphify-http",
+        "meanCpu": 0.2975,
+        "peakCpu": 0.31,
+        "meanMiB": 69,
+        "blockStart": "240MB / 0B",
+        "blockEnd": "240MB / 0B",
+        "networkStart": "96.9kB / 119kB",
+        "networkEnd": "96.9kB / 119kB"
+      },
+      {
+        "name": "mcp-stack-basic-memory-1",
+        "meanCpu": 0.4725,
+        "peakCpu": 0.56,
+        "meanMiB": 238.77499999999998,
+        "blockStart": "26.2GB / 0B",
+        "blockEnd": "26.2GB / 0B",
+        "networkStart": "383kB / 391kB",
+        "networkEnd": "383kB / 391kB"
+      },
+      {
+        "name": "mcp-stack-postgres-1",
+        "meanCpu": 0,
+        "peakCpu": 0,
+        "meanMiB": 37.9625,
+        "blockStart": "6.12GB / 87.8MB",
+        "blockEnd": "6.12GB / 87.8MB",
+        "networkStart": "687kB / 526kB",
+        "networkEnd": "687kB / 526kB"
+      }
+    ],
+    "limitations": [
+      "Short post-cleanup sample with active desktop/diagnostic tooling; not a controlled battery A/B test.",
+      "Docker memory excludes inactive file cache and is not whole-VM resident memory.",
+      "Mac on AC power; no watts/battery-runtime estimate.",
+      "OrbStack helper CPU includes Docker, devbox and VM services, not just mcp-stack.",
+      "No MCP usage calls, indexing, local-model test, service start/stop/restart or gateway retry performed."
+    ]
+  }
+}

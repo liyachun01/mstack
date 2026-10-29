@@ -1,0 +1,9 @@
+{
+  "project": "mstack-demo",
+  "revoked": true,
+  "http_status": 401,
+  "channel_deleted_via_native_confirmation": true,
+  "replacement": "/home/developer/workspace/mstack-example",
+  "replacement_anytype": "pending-new-grant; background-only user preference",
+  "local_files_removed": true
+}

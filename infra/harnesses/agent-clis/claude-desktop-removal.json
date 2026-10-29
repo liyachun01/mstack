@@ -1,0 +1,10 @@
+{
+  "application": "Claude Desktop",
+  "bundle_id": "com.anthropic.claudefordesktop",
+  "version": "3.6556.2",
+  "original_path": "/Applications/Claude.app",
+  "trash_path": "/Users/{{mstack:MAC_USER}}/.Trash/Claude-removed-20261027.app",
+  "application_absent": true,
+  "history_and_profiles_retained": true,
+  "removed_at": "2026-10-27T06:04:09.373038+00:00"
+}

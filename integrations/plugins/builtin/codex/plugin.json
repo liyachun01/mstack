@@ -1,0 +1,30 @@
+{
+  "$schema": "../../schemas/plugin.schema.json",
+  "name": "codex",
+  "version": "0.1.0",
+  "joint": "agent",
+  "status": "implemented",
+  "transport": "argv",
+  "summary": "OpenAI Codex CLI, non-interactive exec in the task worktree",
+  "command": [
+    "codex",
+    "exec",
+    "--cd",
+    "{cwd}",
+    "--sandbox",
+    "workspace-write",
+    "{mcp}",
+    "-c",
+    "notify={notify}",
+    "{brief}"
+  ],
+  "requires": {
+    "binaries": [
+      "codex"
+    ]
+  },
+  "capabilities": [
+    "notify"
+  ],
+  "mcp_style": "codex-config"
+}

@@ -1,0 +1,58 @@
+# Approved local Basic Memory configuration.
+# Opt in with -f compose.yaml and -f infra/basic-memory/compose.yaml.
+services:
+  basic-memory:
+    image: ghcr.io/basicmachines-co/basic-memory:0.23.2@sha256:939f1173d96626c280763e14622f2381d49fbbb7db17cae2e832f4f639405643
+    restart: unless-stopped
+    # Current macOS/Ubuntu repository owner; avoids root or UID 1000 note files.
+    user: "501:501"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/app/mcp-stack/start-basic-memory.sh"]
+    command: ["basic-memory", "mcp", "--transport", "streamable-http", "--host", "0.0.0.0", "--port", "8000", "--path", "/mcp"]
+    environment:
+      BASIC_MEMORY_DATABASE_BACKEND: postgres
+      BASIC_MEMORY_CONFIG_DIR: /app/state
+      BASIC_MEMORY_HOME: /app/data/main
+      BASIC_MEMORY_PROJECT_ROOT: /app/data
+      BASIC_MEMORY_DEFAULT_PROJECT: main
+      BASIC_MEMORY_FORCE_LOCAL: "true"
+      BASIC_MEMORY_SEMANTIC_SEARCH_ENABLED: "false"
+      BASIC_MEMORY_DEFAULT_SEARCH_TYPE: text
+      BASIC_MEMORY_LOGFIRE_ENABLED: "false"
+      BASIC_MEMORY_LOGFIRE_SEND_TO_LOGFIRE: "false"
+      # Keep the pinned container from checking PyPI for framework updates.
+      FASTMCP_CHECK_FOR_UPDATES: "off"
+      BASIC_MEMORY_DB_POOL_SIZE: "5"
+      BASIC_MEMORY_DB_POOL_OVERFLOW: "5"
+    ports:
+      - "127.0.0.1:58000:8000"
+    volumes:
+      - type: bind
+        source: ./knowledge
+        target: /app/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./infra/basic-memory/state
+        target: /app/state
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./scripts/start-basic-memory.sh
+        target: /app/mcp-stack/start-basic-memory.sh
+        read_only: true
+        bind:
+          create_host_path: false
+    secrets:
+      - basic_memory_password
+    networks:
+      - memory
+    # Image's version check isn't an endpoint test; verify MCP separately.
+    healthcheck:
+      test: ["CMD", "basic-memory", "--version"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 5

@@ -1,0 +1,6 @@
+name: mstack
+
+# Root entry point only. Tool/service configuration belongs under infra/.
+include:
+  - path: ./infra/postgres/compose.yaml
+    project_directory: .

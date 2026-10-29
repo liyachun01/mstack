@@ -1,0 +1,13 @@
+{
+  "workspace": "mstack-example",
+  "deleted": true,
+  "project_tokens_revoked": 2,
+  "other_workspace_ids_unchanged": true,
+  "read_only_followup_passed": true,
+  "temporary_admin_session_revoked": true,
+  "revocation_check_statuses": [
+    200,
+    200,
+    401
+  ]
+}

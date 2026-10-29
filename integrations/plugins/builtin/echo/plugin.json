@@ -1,0 +1,15 @@
+{
+  "$schema": "../../schemas/plugin.schema.json",
+  "name": "echo",
+  "version": "0.1.0",
+  "joint": "agent",
+  "status": "implemented",
+  "transport": "argv",
+  "summary": "Model-free test worker: commits the brief as a note",
+  "command": [
+    "{python}",
+    "{plugin_dir}/worker.py",
+    "{brief}"
+  ],
+  "mcp_style": "none"
+}

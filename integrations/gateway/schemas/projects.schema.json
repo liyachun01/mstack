@@ -1,0 +1,906 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Editor association with this local JSON Schema."
+    },
+    "version": {
+      "const": 1
+    },
+    "description": {
+      "type": "string",
+      "description": "Registry guidance."
+    },
+    "connections": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]{0,62}$"
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "tool": {
+                "const": "slack",
+                "description": "Provider type; must match each project selection."
+              },
+              "label": {
+                "type": "string",
+                "description": "Human-readable connection label."
+              },
+              "mcp_url": {
+                "type": "string",
+                "description": "Endpoint template; blank is allowed during onboarding. Not an authenticated/qualified binding.",
+                "pattern": "^$|^https?://[^\\s]+$"
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "credential_file": {
+                    "type": "string",
+                    "description": "Ignored repository-relative private credential file; a reference, never a token.",
+                    "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+                  },
+                  "auth_type": {
+                    "type": "string",
+                    "enum": [
+                      "oauth",
+                      "api-key",
+                      "local-api-key"
+                    ],
+                    "description": "Selected authentication method. Does not perform login."
+                  },
+                  "workspace_id": {
+                    "type": "string",
+                    "description": "Provider workspace/account ID; blank until selected."
+                  },
+                  "oauth_client_id": {
+                    "type": "string",
+                    "description": "Optional registered OAuth app ID; no app registration is performed."
+                  },
+                  "oauth_client_secret_file": {
+                    "type": "string",
+                    "description": "Ignored repository-relative private credential file; a reference, never a token.",
+                    "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+                  },
+                  "oauth_scopes": {
+                    "type": "array",
+                    "description": "Requested OAuth permissions, not proof of granted project access.",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\s*]+$"
+                    },
+                    "uniqueItems": true,
+                    "default": []
+                  }
+                },
+                "required": [
+                  "credential_file"
+                ]
+              },
+              "space": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "channel_ids": {
+                    "type": "array",
+                    "description": "Slack channel IDs allowed for this project. No workspace-wide search implied.",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\s*]+$"
+                    },
+                    "uniqueItems": true,
+                    "default": []
+                  }
+                },
+                "required": [
+                  "channel_ids"
+                ]
+              }
+            },
+            "required": [
+              "tool",
+              "mcp_url",
+              "input",
+              "space"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "tool": {
+                "const": "linear",
+                "description": "Provider type; must match each project selection."
+              },
+              "label": {
+                "type": "string",
+                "description": "Human-readable connection label."
+              },
+              "mcp_url": {
+                "type": "string",
+                "description": "Endpoint template; blank is allowed during onboarding. Not an authenticated/qualified binding.",
+                "pattern": "^$|^https?://[^\\s]+$"
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "credential_file": {
+                    "type": "string",
+                    "description": "Ignored repository-relative private credential file; a reference, never a token.",
+                    "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+                  },
+                  "auth_type": {
+                    "type": "string",
+                    "enum": [
+                      "oauth",
+                      "api-key",
+                      "local-api-key"
+                    ],
+                    "description": "Selected authentication method. Does not perform login."
+                  },
+                  "workspace_id": {
+                    "type": "string",
+                    "description": "Provider workspace/account ID; blank until selected."
+                  },
+                  "oauth_client_id": {
+                    "type": "string",
+                    "description": "Optional registered OAuth app ID; no app registration is performed."
+                  },
+                  "oauth_client_secret_file": {
+                    "type": "string",
+                    "description": "Ignored repository-relative private credential file; a reference, never a token.",
+                    "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+                  },
+                  "oauth_scopes": {
+                    "type": "array",
+                    "description": "Requested OAuth permissions, not proof of granted project access.",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\s*]+$"
+                    },
+                    "uniqueItems": true,
+                    "default": []
+                  }
+                },
+                "required": [
+                  "credential_file"
+                ]
+              },
+              "space": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "team_ids": {
+                    "type": "array",
+                    "description": "Linear team IDs; account permissions still apply.",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\s*]+$"
+                    },
+                    "uniqueItems": true,
+                    "default": []
+                  },
+                  "project_ids": {
+                    "type": "array",
+                    "description": "Allowed Linear projects; issue ownership must be checked before access.",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\s*]+$"
+                    },
+                    "uniqueItems": true,
+                    "default": []
+                  }
+                },
+                "required": [
+                  "team_ids",
+                  "project_ids"
+                ]
+              }
+            },
+            "required": [
+              "tool",
+              "mcp_url",
+              "input",
+              "space"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "tool": {
+                "const": "figma",
+                "description": "Provider type; must match each project selection."
+              },
+              "label": {
+                "type": "string",
+                "description": "Human-readable connection label."
+              },
+              "mcp_url": {
+                "type": "string",
+                "description": "Endpoint template; blank is allowed during onboarding. Not an authenticated/qualified binding.",
+                "pattern": "^$|^https?://[^\\s]+$"
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "credential_file": {
+                    "type": "string",
+                    "description": "Ignored repository-relative private credential file; a reference, never a token.",
+                    "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+                  },
+                  "auth_type": {
+                    "type": "string",
+                    "enum": [
+                      "oauth",
+                      "api-key",
+                      "local-api-key"
+                    ],
+                    "description": "Selected authentication method. Does not perform login."
+                  },
+                  "account": {
+                    "type": "string",
+                    "description": "Account label for the intended Figma identity."
+                  },
+                  "oauth_client_id": {
+                    "type": "string",
+                    "description": "Optional registered OAuth app ID; no app registration is performed."
+                  },
+                  "oauth_client_secret_file": {
+                    "type": "string",
+                    "description": "Ignored repository-relative private credential file; a reference, never a token.",
+                    "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+                  },
+                  "oauth_scopes": {
+                    "type": "array",
+                    "description": "Requested OAuth permissions, not proof of granted project access.",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\s*]+$"
+                    },
+                    "uniqueItems": true,
+                    "default": []
+                  }
+                },
+                "required": [
+                  "credential_file"
+                ]
+              },
+              "space": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "file_keys": {
+                    "type": "array",
+                    "description": "Allowed Figma file keys; arbitrary URLs or other file keys are denied.",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\s*]+$"
+                    },
+                    "uniqueItems": true,
+                    "default": []
+                  }
+                },
+                "required": [
+                  "file_keys"
+                ]
+              }
+            },
+            "required": [
+              "tool",
+              "mcp_url",
+              "input",
+              "space"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "tool": {
+                "const": "notion",
+                "description": "Provider type; must match each project selection."
+              },
+              "label": {
+                "type": "string",
+                "description": "Human-readable connection label."
+              },
+              "mcp_url": {
+                "type": "string",
+                "description": "Endpoint template; blank is allowed during onboarding. Not an authenticated/qualified binding.",
+                "pattern": "^$|^https?://[^\\s]+$"
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "credential_file": {
+                    "type": "string",
+                    "description": "Ignored repository-relative private credential file; a reference, never a token.",
+                    "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+                  },
+                  "auth_type": {
+                    "type": "string",
+                    "enum": [
+                      "oauth",
+                      "api-key",
+                      "local-api-key"
+                    ],
+                    "description": "Selected authentication method. Does not perform login."
+                  },
+                  "workspace_id": {
+                    "type": "string",
+                    "description": "Provider workspace/account ID; blank until selected."
+                  },
+                  "oauth_client_id": {
+                    "type": "string",
+                    "description": "Optional registered OAuth app ID; no app registration is performed."
+                  },
+                  "oauth_client_secret_file": {
+                    "type": "string",
+                    "description": "Ignored repository-relative private credential file; a reference, never a token.",
+                    "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+                  },
+                  "oauth_scopes": {
+                    "type": "array",
+                    "description": "Requested OAuth permissions, not proof of granted project access.",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\s*]+$"
+                    },
+                    "uniqueItems": true,
+                    "default": []
+                  }
+                },
+                "required": [
+                  "credential_file"
+                ]
+              },
+              "space": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "page_ids": {
+                    "type": "array",
+                    "description": "Allowed Notion root pages; descendants require qualified ownership checking.",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\s*]+$"
+                    },
+                    "uniqueItems": true,
+                    "default": []
+                  },
+                  "data_source_ids": {
+                    "type": "array",
+                    "description": "Allowed Notion data sources; not every accessible workspace page.",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\s*]+$"
+                    },
+                    "uniqueItems": true,
+                    "default": []
+                  }
+                },
+                "required": [
+                  "page_ids",
+                  "data_source_ids"
+                ]
+              }
+            },
+            "required": [
+              "tool",
+              "mcp_url",
+              "input",
+              "space"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "tool": {
+                "const": "anytype",
+                "description": "Provider type; must match each project selection."
+              },
+              "label": {
+                "type": "string",
+                "description": "Human-readable connection label."
+              },
+              "mcp_url": {
+                "type": "string",
+                "description": "Endpoint template; blank is allowed during onboarding. Not an authenticated/qualified binding.",
+                "pattern": "^$|^https?://[^\\s]+$"
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "credential_file": {
+                    "type": "string",
+                    "description": "Ignored repository-relative private credential file; a reference, never a token.",
+                    "pattern": "^$|^\\.secrets/(?!\\.\\.(?:/|$))(?!.*?/\\.\\.(?:/|$))[^\\s]+$"
+                  },
+                  "auth_type": {
+                    "type": "string",
+                    "enum": [
+                      "oauth",
+                      "api-key",
+                      "local-api-key"
+                    ],
+                    "description": "Selected authentication method. Does not perform login."
+                  },
+                  "api_url": {
+                    "type": "string",
+                    "description": "Endpoint template; blank is allowed during onboarding. Not an authenticated/qualified binding.",
+                    "pattern": "^$|^https?://[^\\s]+$"
+                  }
+                },
+                "required": [
+                  "credential_file"
+                ]
+              },
+              "space": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "space_id": {
+                    "type": "string",
+                    "description": "Full project-only Anytype Space ID; use a separate credential."
+                  },
+                  "docs_collection_id": {
+                    "type": "string",
+                    "description": "Docs collection within this Space; a collection is not an access grant."
+                  },
+                  "tasks_collection_id": {
+                    "type": "string",
+                    "description": "Tasks collection within this Space."
+                  }
+                },
+                "required": [
+                  "space_id",
+                  "docs_collection_id",
+                  "tasks_collection_id"
+                ]
+              }
+            },
+            "required": [
+              "tool",
+              "mcp_url",
+              "input",
+              "space"
+            ]
+          }
+        ]
+      }
+    },
+    "projects": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]{0,62}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "repo": {
+                "type": "string",
+                "description": "Repository path; blank until known. Does not authenticate a caller."
+              },
+              "display_name": {
+                "type": "string",
+                "description": "Project name shown in docs."
+              },
+              "description": {
+                "type": "string",
+                "description": "Project goal and tool-use context."
+              }
+            },
+            "required": [
+              "repo"
+            ]
+          },
+          "harnesses": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "codex",
+                "claude"
+              ]
+            },
+            "minItems": 1,
+            "uniqueItems": true,
+            "description": "Callers receiving distinct project keys; does not register them globally."
+          },
+          "tool_transport": {
+            "const": "agentgateway",
+            "description": "Shared connectors use the project gateway route; native file tools are unaffected."
+          },
+          "tools": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "slack": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "connection": {
+                    "type": "string",
+                    "description": "Reference to a named shared or project-specific connection.",
+                    "minLength": 1
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "False disables this project tool even if its binding is qualified."
+                  },
+                  "access": {
+                    "enum": [
+                      "read-only",
+                      "read-write"
+                    ],
+                    "default": "read-only",
+                    "description": "Requested capability boundary. Qualified binding must attest to the same access mode."
+                  },
+                  "purpose": {
+                    "type": "string",
+                    "description": "Why this project uses this tool; guidance, not authorization."
+                  },
+                  "space": {
+                    "description": "Empty object inherits connection scope; otherwise replaces the complete scope. Empty inherited destinations stay closed.",
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {},
+                        "required": []
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "channel_ids": {
+                            "type": "array",
+                            "description": "Slack channel IDs allowed for this project. No workspace-wide search implied.",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "^[^\\s*]+$"
+                            },
+                            "uniqueItems": true,
+                            "default": []
+                          }
+                        },
+                        "required": [
+                          "channel_ids"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "connection",
+                  "space"
+                ]
+              },
+              "linear": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "connection": {
+                    "type": "string",
+                    "description": "Reference to a named shared or project-specific connection.",
+                    "minLength": 1
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "False disables this project tool even if its binding is qualified."
+                  },
+                  "access": {
+                    "enum": [
+                      "read-only",
+                      "read-write"
+                    ],
+                    "default": "read-only",
+                    "description": "Requested capability boundary. Qualified binding must attest to the same access mode."
+                  },
+                  "purpose": {
+                    "type": "string",
+                    "description": "Why this project uses this tool; guidance, not authorization."
+                  },
+                  "space": {
+                    "description": "Empty object inherits connection scope; otherwise replaces the complete scope. Empty inherited destinations stay closed.",
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {},
+                        "required": []
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "team_ids": {
+                            "type": "array",
+                            "description": "Linear team IDs; account permissions still apply.",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "^[^\\s*]+$"
+                            },
+                            "uniqueItems": true,
+                            "default": []
+                          },
+                          "project_ids": {
+                            "type": "array",
+                            "description": "Allowed Linear projects; issue ownership must be checked before access.",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "^[^\\s*]+$"
+                            },
+                            "uniqueItems": true,
+                            "default": []
+                          }
+                        },
+                        "required": [
+                          "team_ids",
+                          "project_ids"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "connection",
+                  "space"
+                ]
+              },
+              "figma": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "connection": {
+                    "type": "string",
+                    "description": "Reference to a named shared or project-specific connection.",
+                    "minLength": 1
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "False disables this project tool even if its binding is qualified."
+                  },
+                  "access": {
+                    "enum": [
+                      "read-only",
+                      "read-write"
+                    ],
+                    "default": "read-only",
+                    "description": "Requested capability boundary. Qualified binding must attest to the same access mode."
+                  },
+                  "purpose": {
+                    "type": "string",
+                    "description": "Why this project uses this tool; guidance, not authorization."
+                  },
+                  "space": {
+                    "description": "Empty object inherits connection scope; otherwise replaces the complete scope. Empty inherited destinations stay closed.",
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {},
+                        "required": []
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "file_keys": {
+                            "type": "array",
+                            "description": "Allowed Figma file keys; arbitrary URLs or other file keys are denied.",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "^[^\\s*]+$"
+                            },
+                            "uniqueItems": true,
+                            "default": []
+                          }
+                        },
+                        "required": [
+                          "file_keys"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "connection",
+                  "space"
+                ]
+              },
+              "notion": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "connection": {
+                    "type": "string",
+                    "description": "Reference to a named shared or project-specific connection.",
+                    "minLength": 1
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "False disables this project tool even if its binding is qualified."
+                  },
+                  "access": {
+                    "enum": [
+                      "read-only",
+                      "read-write"
+                    ],
+                    "default": "read-only",
+                    "description": "Requested capability boundary. Qualified binding must attest to the same access mode."
+                  },
+                  "purpose": {
+                    "type": "string",
+                    "description": "Why this project uses this tool; guidance, not authorization."
+                  },
+                  "space": {
+                    "description": "Empty object inherits connection scope; otherwise replaces the complete scope. Empty inherited destinations stay closed.",
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {},
+                        "required": []
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "page_ids": {
+                            "type": "array",
+                            "description": "Allowed Notion root pages; descendants require qualified ownership checking.",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "^[^\\s*]+$"
+                            },
+                            "uniqueItems": true,
+                            "default": []
+                          },
+                          "data_source_ids": {
+                            "type": "array",
+                            "description": "Allowed Notion data sources; not every accessible workspace page.",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "^[^\\s*]+$"
+                            },
+                            "uniqueItems": true,
+                            "default": []
+                          }
+                        },
+                        "required": [
+                          "page_ids",
+                          "data_source_ids"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "connection",
+                  "space"
+                ]
+              },
+              "anytype": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "connection": {
+                    "type": "string",
+                    "description": "Reference to a named shared or project-specific connection.",
+                    "minLength": 1
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "False disables this project tool even if its binding is qualified."
+                  },
+                  "access": {
+                    "enum": [
+                      "read-only",
+                      "read-write"
+                    ],
+                    "default": "read-only",
+                    "description": "Requested capability boundary. Qualified binding must attest to the same access mode."
+                  },
+                  "purpose": {
+                    "type": "string",
+                    "description": "Why this project uses this tool; guidance, not authorization."
+                  },
+                  "space": {
+                    "description": "Empty object inherits connection scope; otherwise replaces the complete scope. Empty inherited destinations stay closed.",
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {},
+                        "required": []
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "space_id": {
+                            "type": "string",
+                            "description": "Full project-only Anytype Space ID; use a separate credential."
+                          },
+                          "docs_collection_id": {
+                            "type": "string",
+                            "description": "Docs collection within this Space; a collection is not an access grant."
+                          },
+                          "tasks_collection_id": {
+                            "type": "string",
+                            "description": "Tasks collection within this Space."
+                          }
+                        },
+                        "required": [
+                          "space_id",
+                          "docs_collection_id",
+                          "tasks_collection_id"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "connection",
+                  "space"
+                ]
+              }
+            },
+            "required": []
+          }
+        },
+        "required": [
+          "input",
+          "tools"
+        ]
+      }
+    }
+  },
+  "required": [
+    "version",
+    "connections",
+    "projects"
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mcp-stack project connections",
+  "description": "Typed intent for shared accounts and per-project destinations. Valid blank config is not a live connection."
+}

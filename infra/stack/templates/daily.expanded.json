@@ -1,0 +1,44 @@
+{
+  "version": 3,
+  "project": "my-project",
+  "preset": "daily",
+  "model": "codex",
+  "harnesses": [
+    "codex"
+  ],
+  "context": [],
+  "jobs": "windmill",
+  "input": {
+    "repo": "/path/to/my-project",
+    "display_name": "My project",
+    "description": "The concrete outcome this project should deliver."
+  },
+  "workflow": {
+    "gstack": [
+      "browse"
+    ],
+    "capabilities": "harness-first-container-fallback"
+  },
+  "tools": {
+    "codex": {
+      "enabled": true,
+      "purpose": "Interactive work and project tool calls"
+    },
+    "headroom": {
+      "enabled": true,
+      "purpose": "Compress selected tool output; retrieve originals when needed"
+    },
+    "graphify": {
+      "enabled": true,
+      "purpose": "Query relationships in this project’s approved graph"
+    },
+    "anytype": {
+      "enabled": true,
+      "purpose": "Read/write this project’s channel and verify writes"
+    },
+    "windmill": {
+      "enabled": true,
+      "purpose": "Run this project’s reviewed, scoped jobs"
+    }
+  }
+}

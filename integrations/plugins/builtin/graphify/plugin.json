@@ -1,0 +1,32 @@
+{
+  "$schema": "../../schemas/plugin.schema.json",
+  "name": "graphify",
+  "version": "0.1.0",
+  "joint": "memory.long",
+  "status": "implemented",
+  "transport": "python",
+  "entry": "adapter.py",
+  "summary": "Project's Graphify tenant: read-only graph retrieval over an explicitly indexed code snapshot",
+  "requires": {
+    "services": [
+      "graphify"
+    ],
+    "tenant": "graphify"
+  },
+  "expose": [
+    "orchestrator",
+    "worker-mcp"
+  ],
+  "mcp": {
+    "name": "mstack_graphify",
+    "command": [
+      "{python}",
+      "{stack}/integrations/tenants/launch.py",
+      "--project",
+      "{project}",
+      "--tool",
+      "graphify"
+    ],
+    "hint": "ask query_graph about how code fits together (callers, classes, tests); answers cite file:line. No result does not mean absent; the graph is a snapshot of master."
+  }
+}

@@ -1,0 +1,8 @@
+# Authoritative mcp-stack project runtime selection. Root .mise.toml is discovery only.
+# macOS runtime selection, OrbStack Docker/Compose and native apps are unchanged.
+[tools]
+node = { version = "24.19.0", os = ["linux"] }
+"npm:pnpm" = { version = "10.33.0", os = ["linux"] }
+
+[settings]
+lockfile = true

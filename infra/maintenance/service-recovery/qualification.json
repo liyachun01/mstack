@@ -1,0 +1,171 @@
+{
+  "completed_at": "2026-10-09T13:42:05.586955+00:00",
+  "docker_engine": "macOS OrbStack",
+  "restored": [
+    {
+      "container": "mcp-stack-whodb",
+      "id": "310ee0d231f3711feeb4b6f416d977e4e4b600dfaf522b7892a2a6b9e3bd3a4c",
+      "image": "clidey/whodb:0.134.0@sha256:040e47c5d3c5b7616d731771af90ce3594a3e92786ba01ef30b3aa12088e321f",
+      "architecture": "arm64",
+      "status": "running",
+      "health": "healthy",
+      "restarts": 0,
+      "networks": [
+        "mcp-stack-memory"
+      ],
+      "volumes": [
+        "mcp-stack-whodb-data"
+      ],
+      "ports": {
+        "8080/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "58091"
+          }
+        ]
+      }
+    },
+    {
+      "container": "mcp-stack-garage",
+      "id": "94edbaccb961af2630df924ac7f943834ba55ec1d7bd818414b6c39da2445317",
+      "image": "dxflrs/garage:v2.3.0@sha256:2d3f94a89a8a02dc49fa75594d6df67ed9c6ffe08fe55ed023d0c9776f71a9bd",
+      "architecture": "arm64",
+      "status": "running",
+      "health": "healthy",
+      "restarts": 0,
+      "networks": [
+        "mcp-stack-memory",
+        "mcp-stack-n8n-local"
+      ],
+      "volumes": [
+        "mcp-stack-garage-data",
+        "mcp-stack-garage-meta"
+      ],
+      "ports": {
+        "3900/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "53900"
+          }
+        ]
+      }
+    },
+    {
+      "container": "mcp-stack-windmill-server",
+      "id": "b70d154692fe6dedeef68f34a15d85fd08d7fee16d94f236f4152c08b978dddd",
+      "image": "ghcr.io/windmill-labs/windmill:1.823.1@sha256:a0c7f7ea7db229cabd05d06615b961d1700e6755ad9489b62aff27739735b362",
+      "architecture": "arm64",
+      "status": "running",
+      "health": "healthy",
+      "restarts": 0,
+      "networks": [
+        "mcp-stack-memory"
+      ],
+      "volumes": [
+        "mcp-stack-windmill-worker-logs"
+      ],
+      "ports": {
+        "8000/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "58090"
+          }
+        ]
+      }
+    },
+    {
+      "container": "mcp-stack-windmill-worker",
+      "id": "36fd50ad3751572fadd5113116836190d2f655c64c4771257e6f6152f4ef07ac",
+      "image": "ghcr.io/windmill-labs/windmill:1.823.1@sha256:a0c7f7ea7db229cabd05d06615b961d1700e6755ad9489b62aff27739735b362",
+      "architecture": "arm64",
+      "status": "running",
+      "health": null,
+      "restarts": 0,
+      "networks": [
+        "mcp-stack-memory"
+      ],
+      "volumes": [
+        "mcp-stack-windmill-worker-cache",
+        "mcp-stack-windmill-worker-logs"
+      ],
+      "ports": {
+        "8000/tcp": null
+      }
+    }
+  ],
+  "unchanged_previous_containers": 19,
+  "changed_previous_containers": [],
+  "windmill_database": {
+    "migrations": 673,
+    "users": 0,
+    "workspaces": 1,
+    "queued_jobs": 0,
+    "enabled_schedules": 0,
+    "recent_workers": 1
+  },
+  "whodb_http": {
+    "ui_http": 200,
+    "assets": [
+      {
+        "asset": "/assets/index-HZdGOBGV.js",
+        "status": 200
+      },
+      {
+        "asset": "/assets/rolldown-runtime-B0Z9INg1.js",
+        "status": 200
+      },
+      {
+        "asset": "/assets/index-scvcxT_3.css",
+        "status": 200
+      }
+    ]
+  },
+  "windmill_http": {
+    "version": "CE v1.823.1",
+    "version_http": 200,
+    "ui_http": 200,
+    "assets": [
+      {
+        "asset": "/_app/immutable/entry/start.Lsj9WIGe.js",
+        "status": 200
+      },
+      {
+        "asset": "/_app/immutable/chunks/DFuU1WDg.js",
+        "status": 200
+      },
+      {
+        "asset": "/_app/immutable/chunks/Bx6u-J1J.js",
+        "status": 200
+      }
+    ]
+  },
+  "garage_s3": [
+    {
+      "client_key": "windmill",
+      "bucket": "project-mcp-stack-demo-artifacts",
+      "signed_list_http": 200,
+      "object_count": 0
+    },
+    {
+      "client_key": "n8n",
+      "bucket": "project-mcp-stack-demo-artifacts",
+      "signed_list_http": 200,
+      "object_count": 0
+    }
+  ],
+  "volume_backup": {
+    "archive": "retained-volumes-before.tar.gz",
+    "bytes": 86891137,
+    "sha256": "0d9704e8a61b4a9e3a8840de7374c928d6e1bff62e108dbba4db6298e13e7037",
+    "entries": 13637,
+    "volumes": [
+      "mcp-stack-whodb-data",
+      "mcp-stack-garage-meta",
+      "mcp-stack-garage-data",
+      "mcp-stack-windmill-worker-cache",
+      "mcp-stack-windmill-worker-logs"
+    ]
+  },
+  "removal_cause": "not established from retained evidence",
+  "backup_restore_drill_performed": false
+}

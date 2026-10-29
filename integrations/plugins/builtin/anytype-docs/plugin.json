@@ -1,0 +1,31 @@
+{
+  "$schema": "../../schemas/plugin.schema.json",
+  "name": "anytype-docs",
+  "version": "0.1.0",
+  "joint": "docs",
+  "status": "adapter-pending",
+  "transport": "mcp",
+  "entry": "docker-exec:mstack-anytype-mcp",
+  "summary": "Project documents in the project's own Anytype channel with read-back",
+  "requires": {
+    "services": [
+      "anytype"
+    ],
+    "tenant": "anytype"
+  },
+  "expose": [
+    "worker-mcp"
+  ],
+  "mcp": {
+    "name": "mstack_anytype",
+    "command": [
+      "{python}",
+      "{stack}/integrations/tenants/launch.py",
+      "--project",
+      "{project}",
+      "--tool",
+      "anytype"
+    ],
+    "hint": "read and write this project's Anytype documents; read back every write."
+  }
+}
