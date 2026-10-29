@@ -51,7 +51,7 @@ def missing_secrets():
 
 
 def leaks():
-    """Private values anywhere git would push: every commit on every branch, and the index."""
+    """Private values anywhere git would push: every commit on every branch (files, messages, authors) and the index."""
     values = [real for real, _ in private_filter.pairs()]
     commits = git('rev-list', '--all', check=False).stdout.split()
     found = {}
@@ -62,6 +62,8 @@ def leaks():
             hits |= {line.split(':', 1)[1] for line in out.splitlines() if ':' in line}
         cached = git('grep', '--cached', '-l', '-F', '-e', value, check=False).stdout.split()
         hits |= set(cached)
+        if value in git('log', '--all', '--format=%an %ae %cn %ce %B', check=False).stdout:
+            hits.add('(commit message or author)')
         if hits:
             found[value[:3] + '…'] = sorted(hits)[:10]
     return found
