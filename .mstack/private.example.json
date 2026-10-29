@@ -1,0 +1,41 @@
+{
+  "note": "Copy to .mstack/private.json and fill in the values; then run `mstack hydrate`.",
+  "values": {
+    "MAC_USER": "",
+    "OWNER_EMAIL": "",
+    "OWNER_EMAIL_WORK": "",
+    "CLIENT_REPO": "",
+    "CLIENT_REPO_CAMEL": "",
+    "CLIENT_REPO_TITLE": "",
+    "CLIENT_REPO_UPPER": "",
+    "CLIENT_BRAND": "",
+    "CLIENT_BRAND_LOWER": "",
+    "CLIENT_BRAND_UPPER": "",
+    "CLIENT_ORG_A": "",
+    "CLIENT_ORG_A_TITLE": "",
+    "CLIENT_ORG_A_CAMEL": "",
+    "CLIENT_ORG_A_SHORT": "",
+    "CLIENT_ORG_B": "",
+    "CLIENT_ORG_B_TITLE": "",
+    "CLIENT_ORG_B_UPPER": ""
+  },
+  "meaning": {
+    "MAC_USER": "macOS account name (home folder /Users/<name>)",
+    "OWNER_EMAIL": "owner email",
+    "OWNER_EMAIL_WORK": "owner work email",
+    "CLIENT_REPO": "client monorepo name, lowercase",
+    "CLIENT_REPO_CAMEL": "same, CamelCase",
+    "CLIENT_REPO_TITLE": "same, Titlecase",
+    "CLIENT_REPO_UPPER": "same, UPPERCASE",
+    "CLIENT_BRAND": "client product brand",
+    "CLIENT_BRAND_LOWER": "same, lowercase",
+    "CLIENT_BRAND_UPPER": "same, UPPERCASE",
+    "CLIENT_ORG_A": "first client Linear workspace",
+    "CLIENT_ORG_A_TITLE": "same, Titlecase",
+    "CLIENT_ORG_A_CAMEL": "same, CamelCase",
+    "CLIENT_ORG_A_SHORT": "its short slug",
+    "CLIENT_ORG_B": "second client Linear workspace",
+    "CLIENT_ORG_B_TITLE": "same, Titlecase",
+    "CLIENT_ORG_B_UPPER": "same, UPPERCASE"
+  }
+}

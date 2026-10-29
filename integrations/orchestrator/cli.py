@@ -162,6 +162,23 @@ def board_of_task(task, b):
     return board_for(name, b, scope) if name in st.get('tables', {}) else b
 
 
+def doc_links(table, docs):
+    """'Docs: [path](url)' for paths under the project's taskboard.docs_url, so Linear links to the
+    repo's docs instead of carrying long text. Empty when no docs were given."""
+    if not docs:
+        return ''
+    base = ''
+    if table in read_state().get('tables', {}):
+        base = project_settings(read_state()['tables'][table]).get('docs_url', '')
+    return '\n\nDocs: ' + ', '.join('[%s](%s%s)' % (d, base, d) if base else '`%s`' % d for d in docs)
+
+
+def table_of_task(task):
+    st = read_state()
+    record = st.get('task_tables', {}).get(task) or {}
+    return (st.get('runs', {}).get(task) or {}).get('table') or (record if isinstance(record, str) else record.get('table'))
+
+
 # ---- commands ---------------------------------------------------------
 def cmd_table(args, b):
     path = Path(args.project).resolve()
@@ -226,7 +243,7 @@ def cmd_propose(args, b):
     task = b.get(args.task)
     plan = sys.stdin.read() if args.plan == '-' else Path(args.plan).read_text()
     b.say(task['id'], 'Plan ready for **%s** (agent: %s).\n\n## Plan\n\n%s\n\nReact 👍 to approve, 👎 to drop, '
-          'or reply with changes.' % (task['name'], args.agent, plan.strip()), ask=True)
+          'or reply with changes.' % (task['name'], args.agent, plan.strip() + doc_links(name, args.doc)), ask=True)
     remember(task['id'], name, task.get('linear_identifier'))
     return {'task': task['id'], 'issue': task.get('linear_identifier'), 'status': 'Awaiting Approval'}
 
@@ -656,6 +673,30 @@ def cmd_tick(args, b):
     return out
 
 
+def code_fingerprint():
+    """Changes whenever mstack's own code or schemas change (a commit, a merge or a plain edit)."""
+    parts = []
+    for folder in ('orchestrator', 'stack', 'plugins', 'gateway'):
+        for path in sorted((STACK_ROOT/'integrations'/folder).rglob('*')):
+            if path.suffix in ('.py', '.json') and '__pycache__' not in path.parts and 'tests' not in path.parts:
+                stat = path.stat()
+                parts.append('%s:%d:%d' % (path, stat.st_mtime_ns, stat.st_size))
+    return hashlib.sha256('\n'.join(parts).encode()).hexdigest()
+
+
+def reload_watcher(args):
+    """mstack changed under a running watcher: sync its project, then restart in place (same PID,
+    same command line) so it runs the new code. The lock is released by exec and taken again."""
+    if args.project:
+        try:
+            path = table_of(args.project)[1]['path']
+            subprocess.run([str(STACK_ROOT/'mstack'), 'sync', '--project', path, '--quiet'], timeout=120, check=False)
+        except (ValueError, KeyError, OSError, subprocess.TimeoutExpired) as error:
+            print('sync before reload failed: %s' % str(error)[:200], file=sys.stderr, flush=True)
+    print('%s mstack updated: reloading watcher' % time.strftime('%H:%M:%S'), file=sys.stderr, flush=True)
+    os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()), *ARGV])
+
+
 def cmd_watch(args, b):
     """Shell-only loop (no model calls): tick every --interval seconds; exit with the work
     when an orchestrator agent is needed, so a waiting agent wakes only for real work.
@@ -668,7 +709,10 @@ def cmd_watch(args, b):
     except BlockingIOError:
         raise ValueError('Another watcher is already running (lock %s)' % lock)
     failures = 0
+    started_on = code_fingerprint()
     while True:
+        if ARGV is not None and code_fingerprint() != started_on:
+            reload_watcher(args)
         try:
             result = cmd_tick(argparse.Namespace(project=args.project), b)
             failures = 0
@@ -716,7 +760,7 @@ def cmd_done(args, b):
     run = read_state().get('runs', {}).get(args.task)
     if not run:
         raise ValueError('Task %s was not dispatched' % args.task)
-    summary = sys.stdin.read() if args.summary == '-' else args.summary
+    summary = (sys.stdin.read() if args.summary == '-' else args.summary) + doc_links(table_of_task(args.task), args.doc)
     commits = finish(b, args.task, Path(run['tree']), run['runner'], summary)
     return {'task': args.task, 'status': 'In Review', 'commits': commits}
 
@@ -725,7 +769,7 @@ def cmd_note(args, b):
     b = board_of_task(args.task, b)
     text = SECRET.sub('[redacted]', sys.stdin.read() if args.text == '-' else args.text).strip()
     who = {'in': '%s ← owner (session)', 'out': '%s → (session)', 'note': '%s'}[args.direction] % args.agent
-    b.say(args.task, '%s: %s' % (who, text[:1800]))
+    b.say(args.task, '%s: %s%s' % (who, text[:1800], doc_links(table_of_task(args.task), args.doc)))
     if args.status:
         b.set(args.task, task_status=args.status)
     return {'task': args.task, 'posted': True, 'status': args.status}
@@ -929,6 +973,7 @@ def parser():
     s = sub.add_parser('propose', help='post a plan on an existing issue and ask for a verdict (the /plan flow)')
     s.add_argument('--project', required=True); s.add_argument('--task', required=True, help='issue id or IRO-123')
     s.add_argument('--plan', required=True, help='file or - for stdin'); s.add_argument('--agent', default='claude-desktop')
+    s.add_argument('--doc', action='append', default=[], help='repo doc path to link (taskboard.docs_url)')
     s = sub.add_parser('ask'); s.add_argument('--task', required=True); s.add_argument('text')
     s.add_argument('--status', default='Awaiting Approval', choices=list(PENDING))
     s = sub.add_parser('poll'); s.add_argument('--project')
@@ -943,7 +988,9 @@ def parser():
     s = sub.add_parser('ack'); s.add_argument('--task', required=True); s.add_argument('--session', required=True)
     s = sub.add_parser('done'); s.add_argument('--task', required=True)
     s.add_argument('--summary', default='', help='text or - for stdin')
+    s.add_argument('--doc', action='append', default=[], help='repo doc path to link (taskboard.docs_url)')
     s = sub.add_parser('note'); s.add_argument('--task', required=True); s.add_argument('text')
+    s.add_argument('--doc', action='append', default=[], help='repo doc path to link (taskboard.docs_url)')
     s.add_argument('--agent', default=os.environ.get('MSTACK_AGENT', 'agent'))
     s.add_argument('--direction', choices=['in', 'out', 'note'], default='note')
     s.add_argument('--status', choices=['Todo', 'In Progress', 'In Review', 'Done', 'Canceled'])
@@ -970,13 +1017,17 @@ def parser():
     return p
 
 
+ARGV = None                               # this process's command line, for reloading a watcher in place
+
+
 def main(argv=None, b=None):
-    global SCOPE
+    global SCOPE, ARGV
     p = parser()
     for sp in p._subparsers._group_actions[0].choices.values():
         sp.add_argument('--scope', help='orchestrator scope from taskboard.orchestrators')
     args = p.parse_args(argv)
     SCOPE = getattr(args, 'scope', None)
+    ARGV = list(sys.argv[1:] if argv is None else argv)
     try:
         result = globals()['cmd_' + args.command](args, b or anyboard.Board())
     except (ValueError, RuntimeError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:

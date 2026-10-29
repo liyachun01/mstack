@@ -345,5 +345,15 @@ class LinearBoardFlow(unittest.TestCase):
         for text in ('api orchestrator', 'PRIVATE', "worker `local_w`", '1. fix it', 'start `watch --project repo --scope api`'):
             self.assertIn(text, out['prompt'])
 
+    def test_notes_link_docs_instead_of_carrying_them(self):
+        cfg = json.loads((self.repo / '.mstack/stack.json').read_text())
+        cfg['taskboard']['docs_url'] = 'https://github.com/o/r/blob/main/'
+        (self.repo / '.mstack/stack.json').write_text(json.dumps(cfg))
+        old = self.old_issue(n=950, state='s-started')
+        self.cli('adopt', '--project', 'repo', '--task', 'MST-950', '--session', 'local_x')
+        self.cli('note', '--task', 'MST-950', 'Design written', '--doc', 'docs/design/011-HUB.md')
+        self.assertIn('[docs/design/011-HUB.md](https://github.com/o/r/blob/main/docs/design/011-HUB.md)',
+                      self.fake.issues[old]['comments'][-1]['body'])
+
 if __name__ == '__main__':
     unittest.main()

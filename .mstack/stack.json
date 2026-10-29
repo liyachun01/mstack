@@ -28,7 +28,9 @@
       "credential_file": ".mstack/secrets/linear-api-key"
     },
     "backend": "linear",
-    "auto": false
+    "auto": false,
+    "private": false,
+    "docs_url": "https://github.com/liyachun01/mstack/blob/main/"
   },
   "joints": {
     "compress": "headroom",

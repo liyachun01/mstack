@@ -6,3 +6,5 @@
 /worktrees/
 /journal.json
 /journal.lock
+/projects.json
+/private.json

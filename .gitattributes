@@ -1,0 +1,3 @@
+# Private names become placeholders in commits and real values in the checkout.
+# See docs/PRIVATE-REPO.md; run `mstack hydrate` after cloning.
+* filter=mstack-private

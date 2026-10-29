@@ -8,6 +8,9 @@ import tempfile
 
 RELATIVE = Path('.mstack/state.json')
 SECTIONS = ('bindings', 'tenants', 'documents', 'runtime', 'launch', 'proofs')
+# Generated or private files inside .mstack/ (its own .gitignore); sync adds rules new mstack versions need.
+IGNORED = ('/state.json', '/.lock', '/secrets/', '/cache/', '/evidence/', '/worktrees/', '/journal.json', '/journal.lock',
+           '/private.json')
 
 
 def identity(project):
@@ -36,8 +39,9 @@ def ignored(project):
     path=folder/'.gitignore'
     if path.is_symlink():raise ValueError('Mstack .gitignore cannot be a symlink')
     prior=path.read_text() if path.exists() else ''
-    rules=[x for x in ['/state.json','/.lock','/secrets/','/cache/','/evidence/','/worktrees/'] if x not in prior.splitlines()]
+    rules=[x for x in IGNORED if x not in prior.splitlines()]
     if rules:path.write_text(prior+('\n' if prior and not prior.endswith('\n') else '')+'\n'.join(rules)+'\n')
+    return rules
 
 
 def credential(project,ref,exists=False):

@@ -477,6 +477,18 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual([(n['kind'], n['feedback']) for n in need], [('replan', 'split this into two tasks')])
         self.assertEqual(self.tick()['needs_orchestrator'], [])
 
+    def test_watch_reloads_itself_when_mstack_changes(self):
+        class Reloaded(Exception):
+            pass
+        def execv(exe, argv):
+            raise Reloaded(argv)
+        with patch.object(cli, 'code_fingerprint', side_effect=['old', 'new']), \
+                patch.object(cli.os, 'execv', execv), patch.object(cli.subprocess, 'run') as run:
+            with self.assertRaises(Reloaded) as raised:
+                cli.main(['watch', '--interval', '0'], self.b)
+        self.assertEqual(raised.exception.args[0][2:], ['watch', '--interval', '0'])
+        run.assert_not_called()                        # no --project: nothing to sync first
+
     def test_watch_exits_only_with_work(self):
         self.configure(auto=True, workers=['claude-desktop'])
         with patch.object(cli.time, 'sleep'), contextlib.redirect_stderr(io.StringIO()):

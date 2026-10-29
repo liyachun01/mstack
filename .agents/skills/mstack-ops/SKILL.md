@@ -8,6 +8,32 @@ description: Operate mstack's shared infrastructure: watcher, services, tenants,
 Load `.agents/skills/mcp-stack-setup-guard/SKILL.md` first: every start, stop,
 registration or config change needs the owner's approval for that step.
 
+## Keeping projects up to date
+- After changing mstack (a new skill, an ignore rule, the project skill template, a config change), run
+  `mstack sync --all`. `--check` previews the changes. It updates only mstack's own files inside each project
+  (skill links, `.mstack/.gitignore`, the unedited generated skill, the local `.git/info/exclude` block, config
+  migrations), never team files, and commits nothing.
+- A config change that existing projects must adopt goes in `integrations/stack/sync.py` `MIGRATIONS` as a new,
+  higher version. Never edit a shipped migration.
+- New skills: add the name to `SKILLS` in `integrations/stack/cli.py`; sync links it everywhere.
+- `mstack doctor` lists pending updates under `mstack_updates`.
+- Running watchers reload themselves when mstack's code changes, after syncing their project.
+
+## Private GitHub repo
+- mstack is pushed to the private repo `liyachun01/mstack` (docs/PRIVATE-REPO.md). Secrets are never committed.
+  Private names (account name, emails, client names) become `{{mstack:KEY}}` placeholders in commits through the
+  `mstack-private` git filter. Real values live in `.mstack/private.json`.
+- Run `./mstack hydrate --check` before every push; it must report `"clean": true`.
+- New private name: add it to `.mstack/private.json` (and an empty key to `.mstack/private.example.json`),
+  then `git add --renormalize .`.
+- New secret file: add its path (never its value) to `infra/secrets-inventory.json`.
+
+## Working on mstack itself
+Use mstack's own board and config: `.mstack/stack.json` (MST in the yyyymmdd workspace, `private: false`,
+`docs_url`). One MST issue per piece of work. Write the detail in `docs/`, update affected skills, and keep the
+issue short: a summary and `--doc docs/…` links (`propose`, `note` and `done` take `--doc`). Never paste long
+write-ups into Linear.
+
 ## Watcher
 - `mstack board watch [--project P]` runs as a background task of an orchestrator session, with a lock per project.
 - Its log is `.mstack/cache/watch.log`. To check it's alive: `ps -eo pid=,cmd= | awk '/[o]rchestrator\/cli.py watch/'`.

@@ -2265,6 +2265,11 @@
             }
           }
         },
+        "docs_url": {
+          "type": "string",
+          "pattern": "^https://",
+          "description": "Base URL for the repo's docs (e.g. https://github.com/<owner>/<repo>/blob/main/). Linear issues link to docs under it instead of carrying long text."
+        },
         "private": {
           "type": "boolean",
           "default": false,

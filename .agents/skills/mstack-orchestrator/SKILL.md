@@ -54,6 +54,8 @@ result with `done`; the owner's 👍 makes it Done, and a reply sends the notes 
 - **Branches:** use Linear's own branch names. Never merge or push unless the owner asks.
 - **Earlier chats about an issue:** link them with `adopt --task <ISSUE> --session <id> --related obsolete`.
   They're listed by `status` and are never messaged or treated as workers.
+- **Linear stays short:** plans and results are a few lines; detail goes in the repo's docs, linked with `--doc
+  <path>` on `propose`, `note` or `done` (resolved against `taskboard.docs_url`).
 - **Report briefly:** what waits on the owner, and what is running.
 
 ## Private boards (`taskboard.private: true`)

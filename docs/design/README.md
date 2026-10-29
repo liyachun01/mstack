@@ -26,3 +26,5 @@ For changing live status, use [the canonical handover](../HANDOVER.md).
    Linear link results, with evidence locations.
 10. [Linear issues ↔ Claude sessions](010-LINEAR-SESSIONS.md): Linear as the board (polling, comment verdicts,
    `/plan` triggers), a flat orchestrator → worker session layout, and the four mstack skills.
+11. [Event hub](011-EVENT-HUB.md) (planned): Windmill polls Linear into a Postgres event queue, and one small
+   mstack hub chat delivers each event to the right project orchestrator.

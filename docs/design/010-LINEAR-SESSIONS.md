@@ -176,3 +176,21 @@ another session, so this link and the chat's title prefix are what tie it to its
 
 The skill's "Rotating to a fresh session" section has the steps. Tests stub `psql`, so `tick` never writes to the real
 issue table, and psql calls now time out after 60 s. This was the cause of an intermittent test hang.
+
+## Projects follow mstack updates (2026-10-29)
+
+`mstack sync --project P | --all [--check]` (`integrations/stack/sync.py`) updates what mstack owns inside each
+project. It's idempotent and never touches team files or commits. It handles:
+- versioned config migrations;
+- `.mstack/.gitignore` rules;
+- the mstack skill-group links: new skills linked, dropped ones removed;
+- the generated project skill, while unedited;
+- the local `.git/info/exclude` block.
+
+Each project records `runtime.mstack_sync` (version, mstack commit, skill digest) in `.mstack/state.json`.
+Projects are found through mstack's `.mstack/projects.json` (written by `init`, `skills` and `sync`) plus board
+tables. `doctor` reports pending updates as `mstack_updates`.
+
+A running watcher checks mstack's code fingerprint before each tick. When it changes, the watcher syncs its
+project and re-executes itself in place: same PID and command line, with the lock released and taken again.
+`sync --hook` would install post-commit/post-merge hooks in mstack that run `sync --all`. It isn't installed yet.
