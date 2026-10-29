@@ -1,6 +1,7 @@
-# 011 — Event hub: Windmill polling, a Postgres queue, one mstack hub chat (planned, 2026-10-29)
+# 011 — Event hub: Windmill polling, a Postgres queue, one mstack hub chat (phase 1 built, 2026-10-29)
 
-Status: agreed design, not built. Claude Desktop workflow only.
+Status: phase 1 built (MST-21), off until the owner applies the schema and switches `hub.store`; phases 2–3
+planned. Claude Desktop workflow only.
 
 ## Why
 
@@ -45,3 +46,53 @@ Linear ──poll──▶ Windmill (every 30–60 s) ──▶ Postgres event q
 
 Windmill's single worker runs in a container on the Mac with no access to the repo files that hold today's board
 state (`.mstack/evidence/taskboard-test.json`) and private journals. That's why phase 1 moves them into Postgres.
+
+## Phase 1 as built (MST-21)
+
+### Store (`integrations/orchestrator/store.py`, schema `integrations/orchestrator/schema.sql`)
+`hub.store` in mstack's `.mstack/stack.json` (schema: `project.schema.json` → `hub`) picks the backend:
+
+| | `file` (default) | `postgres` |
+|---|---|---|
+| Board state (tables, runs, related, task_tables, task_repos, attention_seen, orchestrators, poll timers) | `.mstack/evidence/taskboard-test.json` | `orchestrator.board_state`: one jsonb row per top-level key |
+| Private journals | each project's `.mstack/journal.json` | `orchestrator.journal` (project path, issue, body, created_at) |
+| Event queue | `events` in the state file | `orchestrator.queue` |
+
+- **Fallback:** with `postgres`, the JSON files are still written on every change. When Postgres doesn't
+  answer, reads come from the file and a `.pg-dirty` marker is left beside it. The next command that reaches
+  Postgres pushes the file back first (it's the newer copy). The first use after the switch does the same, so
+  the existing state and journals are migrated by just switching. Events queued while Postgres is down are spooled
+  in the state file (`events_spool`, ids `local-N`) and moved into the queue when it's back; `events next` and
+  `resolve` refuse with a clear error meanwhile, and the watcher's own output still lists the items.
+- **Writes** stay serialized by the local file lock (every writer is on this machine in phase 1). Only changed
+  keys are written, in one transaction. Plain reads are cached for 2 s per process; locked read-modify-writes
+  always read fresh.
+- **Tests never reach Postgres:** only the real state file can use it; a test that points `STATE` elsewhere
+  always gets the file backend. Postgres tests drive `Store` with a fake `psql` runner.
+- No driver was installed: everything goes through the `psql` client, as `mirror` already did.
+
+### Queue and registry
+- `mstack orchestrators register --project P [--scope S] --session ID` (also `list`, `remove`). Routes are
+  `project/scope`; an event for a scope with no route falls back to the board's unscoped route.
+- `tick` turns every `needs_orchestrator` item, and every verdict it applied, into an event, and adds the event id to
+  the item (`event`). Kinds: `plan`, `replan`, `forward`, `stop`, `handoff`, `verdict`. Items were already raised
+  once by the watcher's seen-keys; handoffs repeat until acked, so each carries a dedupe key per dispatch.
+  An event's scope is the tick's `--scope`, else the scope that planned, adopted or dispatched the task.
+- `mstack events next`: hands out `new` events and `sent` ones older than `hub.resend_minutes` (5), marks them
+  `sent`, and groups them by recipient session, each group with a ready-to-send `message`. Events with no route
+  stay `new` and are listed under `unrouted`. `--peek` shows without marking.
+- `mstack events resolve --id N [--note]`, run by the receiving orchestrator. `events list [--status]` for a look;
+  `events schema [--apply]` prints or applies the schema.
+- Two scopes of one board now keep separate Linear poll timers (`last_linear_poll["board/scope"]`).
+
+### Hub watcher and chat
+- `mstack board watch --hub` (lock `watch.hub.lock`) ticks every registered (project, scope) and exits when routable
+  events wait (`events_waiting`). If the queue is unavailable it exits on the raw items, as the per-scope watchers do.
+- The hub chat's playbook is `.agents/skills/mstack-hub`. The orchestrator skill now registers at start and on
+  handover and resolves events; per-scope watchers keep working unchanged meanwhile, and since their items carry
+  event ids, resolving them keeps the queue clean for when the hub starts.
+
+### Not done in phase 1
+- The schema is not applied to the live database, and `hub.store` stays `file`, until the owner approves.
+- The hub session isn't started; the owner decides after review.
+- Concurrent writers outside this machine (Windmill, phase 2) need row-level updates instead of the local lock.

@@ -35,5 +35,9 @@
   "joints": {
     "compress": "headroom",
     "memory.long": "graphify"
+  },
+  "hub": {
+    "store": "file",
+    "resend_minutes": 5
   }
 }

@@ -394,12 +394,16 @@ def main(argv=None):
         return hydrate.main(arguments[1:])
     if arguments[:1] == ['board']:
         os.execv(sys.executable, [sys.executable, str(STACK_ROOT/'integrations/orchestrator/cli.py'), *arguments[1:]])
+    if arguments[:1] in (['events'], ['orchestrators']):      # the event hub (design 011): board subcommands
+        os.execv(sys.executable, [sys.executable, str(STACK_ROOT/'integrations/orchestrator/cli.py'), *arguments])
     if arguments[:1] == ['connections']:
         return subprocess.call([sys.executable, str(STACK_ROOT/'integrations/gateway/projects.py'), *arguments[1:]])
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('connections', help='Plan/render shared project connections; no remote provisioning')
     sub.add_parser('board', help='Orchestrator toolbelt for the shared Anytype task board')
+    sub.add_parser('events', help='Event hub queue: next|resolve|list|schema (design 011)')
+    sub.add_parser('orchestrators', help='Event hub registry: register|list|remove orchestrator sessions')
     sub.add_parser('plugin', help='List/validate joint plugins (agent, board, link, memory, compress, gateway, docs)')
     sub.add_parser('skills', help='Link mstack skills into a repo (local, gitignored with local visibility)')
     sub.add_parser('hydrate', help='Fill private names into this checkout; --check verifies none are committed')

@@ -39,6 +39,16 @@ write-ups into Linear.
 - Its log is `.mstack/cache/watch.log`. To check it's alive: `ps -eo pid=,cmd= | awk '/[o]rchestrator\/cli.py watch/'`.
 - Stop it by its exact PID; never by pattern-killing your own shell.
 
+## Board store and event hub (design 011)
+- `hub.store` in mstack's `.mstack/stack.json` picks where board state, private journals and the event queue live:
+  `file` (default) or `postgres` (`mstack_orchestrator`). The JSON files stay the fallback either way.
+- Switching to `postgres` is a setup step: with the owner's OK, `mstack events schema --apply`, then set
+  `hub.store: postgres`. The first command after the switch pushes the existing files into Postgres.
+- A `.pg-dirty` file next to the state file or a journal means a write missed Postgres; the next command that
+  reaches Postgres pushes the file back and removes it.
+- Queue: `mstack events list [--status new|sent|resolved]`; routes: `mstack orchestrators list`. The hub chat
+  follows `.agents/skills/mstack-hub` and runs the only `watch --hub`.
+
 ## Services and tenants
 - `mstack services status|start|stop <tool>` and `mstack tenant add --project P --tool T`.
 - Stopping a shared service affects every tenant.

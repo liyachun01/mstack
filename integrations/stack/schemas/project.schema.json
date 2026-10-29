@@ -2348,6 +2348,28 @@
           "pattern": "^[a-z][a-z0-9-]{0,40}$"
         }
       }
+    },
+    "hub": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "mstack's own config only: where the board keeps its state, private journals and the event queue (docs/design/011-EVENT-HUB.md).",
+      "properties": {
+        "store": {
+          "enum": [
+            "file",
+            "postgres"
+          ],
+          "default": "file",
+          "description": "file: .mstack/evidence JSON and each project's .mstack/journal.json. postgres: mstack_orchestrator (apply `mstack events schema --apply` first); the JSON files stay as the fallback."
+        },
+        "resend_minutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120,
+          "default": 5,
+          "description": "`mstack events next` resends events still `sent` after this many minutes."
+        }
+      }
     }
   },
   "required": [

@@ -17,6 +17,8 @@ plan and who works; these commands do the deterministic parts:
   status   one table at a glance
   sync     reconcile a linked table with Linear (pull, push or full)
   link     link a table to Linear with an entry of the owner's .secrets/linear.csv
+  orchestrators  register|list: which orchestrator session serves a (project, scope)
+  events   next|resolve|list|schema: the event hub queue (design 011)
 """
 import argparse
 import contextlib
@@ -37,10 +39,12 @@ import board as anyboard
 import config as intent
 import runners          # puts integrations/plugins on sys.path
 import registry
+import store
 import visibility
 
 STACK_ROOT = anyboard.STACK_ROOT
 STATE = STACK_ROOT/'.mstack/evidence/taskboard-test.json'
+DEFAULT_STATE = STATE
 SECRET = re.compile(r'(anytype_[0-9A-Za-z_]{20,}|sk-[0-9A-Za-z_-]{16,}|Bearer\s+\S+|ghp_[0-9A-Za-z]{20,}|lin_api_[0-9A-Za-z]{20,})')
 PENDING = ('Awaiting Approval', 'In Review')
 SYNC_EVERY = 300          # seconds between Linear syncs per table inside tick/watch
@@ -48,18 +52,32 @@ LINEAR_EVERY = 30         # seconds between polls of a Linear board inside tick/
 TRIGGER = re.compile(r'^\s*(/plan|@agent plan)\b(.*)', re.S | re.I)
 
 
+def hub_settings():
+    try:
+        return intent.project_config(STACK_ROOT).get('hub') or {}
+    except (ValueError, OSError, KeyError):
+        return {}
+
+
+def board_store():
+    """The store for STATE (store.py). Postgres only for the real state file and `hub.store: postgres`;
+    any other STATE (tests) is always the plain file."""
+    current = store.ACTIVE
+    if current is None or current.path != STATE:
+        conf = hub_settings() if STATE == DEFAULT_STATE else {}
+        current = store.ACTIVE = store.Store(STATE, conf.get('store', 'file'),
+                                             conf.get('resend_minutes', store.RESEND_MINUTES))
+    return current
+
+
 @contextlib.contextmanager
 def state():
-    STATE.parent.mkdir(parents=True, exist_ok=True)
-    with open(STATE.with_suffix('.lock'), 'w') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        data = json.loads(STATE.read_text()) if STATE.exists() else {}
+    with board_store().locked() as data:
         yield data
-        STATE.write_text(json.dumps(data, indent=2) + '\n')
 
 
 def read_state():
-    return json.loads(STATE.read_text()) if STATE.exists() else {}
+    return board_store().read()
 
 
 def table_of(project):
@@ -524,8 +542,8 @@ def cmd_dispatch(args, b):
         tree, short, brief, wiring = prepare(b, repo, task, name, runner)
         app = (settings.get('apps') or {}).get(task.get('task_app') or '')
         work_dir = tree/app['path'] if app else tree
-        run = {'table': name, 'runner': runner, 'tree': str(tree), 'cwd': str(work_dir), 'pid': None,
-               'mcp': wiring['servers']}
+        run = {'table': name, 'scope': SCOPE, 'runner': runner, 'tree': str(tree), 'cwd': str(work_dir), 'pid': None,
+               'mcp': wiring['servers'], 'dispatched_at': time.strftime('%Y-%m-%dT%H:%M:%S%z')}
         row = {'task': task['id'], 'name': task.get('name'), 'runner': runner,
                'tools': wiring['tools'], 'skipped_tools': wiring['skipped']}
         if runners.kind(runner, repo) == 'spawn':
@@ -602,8 +620,7 @@ def linear_signals(name, lb, seen, fresh):
     return out
 
 
-PG = {'host': 'host.orb.internal', 'port': '55322', 'db': 'mstack_orchestrator', 'user': 'mstack_orchestrator',
-      'password_file': STACK_ROOT/'.secrets/postgres/mstack_orchestrator.password'}
+PG = store.PG
 COLUMNS = ('identifier', 'linear_id', 'team', 'app', 'title', 'state', 'state_type', 'parent', 'focus',
            'scopes', 'managed', 'agent_phase', 'url', 'updated_at')
 
@@ -645,9 +662,7 @@ def mirror(name, run_sql=None):
 
 
 def psql(sql):
-    env = dict(os.environ, PGPASSWORD=Path(PG['password_file']).read_text().strip())
-    subprocess.run(['psql', '-X', '-q', '-v', 'ON_ERROR_STOP=1', '-h', PG['host'], '-p', PG['port'], '-U', PG['user'],
-                    '-d', PG['db']], input=sql, text=True, env=env, check=True, capture_output=True, timeout=60)
+    store.psql(sql)
 
 
 def cmd_mirror(args, b):
@@ -679,10 +694,68 @@ def cmd_adopt(args, b):
     return {'task': task['id'], 'issue': task.get('linear_identifier'), 'scope': SCOPE, 'status': status}
 
 
+def scope_of_task(task):
+    """The orchestrator scope an event about `task` belongs to: this call's, else the one that planned,
+    adopted or dispatched it."""
+    if SCOPE or not task:
+        return SCOPE
+    st = read_state()
+    record = st.get('task_tables', {}).get(task) or {}
+    return (st.get('runs', {}).get(task) or {}).get('scope') or (record.get('scope') if isinstance(record, dict) else None)
+
+
+def to_events(items, verdicts):
+    """Watcher output as queue events. Each needs_orchestrator item is offered once by the watcher's own
+    seen-keys; handoffs repeat until acked, so they carry a dedupe key per dispatch."""
+    runs = read_state().get('runs', {})
+    out = []
+    for item in items:
+        task = item.get('task')
+        if item['kind'] == 'handoff':
+            dedupe = 'handoff:%s:%s' % (task, (runs.get(task) or {}).get('dispatched_at', ''))
+        else:
+            dedupe = '%s:%s' % (item['kind'], hashlib.sha256(json.dumps(item, sort_keys=True).encode()).hexdigest()[:16])
+        out.append({'board': item['table'], 'scope': scope_of_task(task) or '', 'kind': item['kind'],
+                    'task': task, 'issue': item.get('issue') or item.get('linear'), 'dedupe': dedupe, 'payload': item})
+    for row in verdicts:
+        out.append({'board': row['table'], 'scope': scope_of_task(row['task']) or '', 'kind': 'verdict',
+                    'task': row['task'], 'issue': None, 'dedupe': None, 'payload': row})
+    return out
+
+
 def cmd_tick(args, b):
-    """One unattended pass over every `taskboard.auto` table: apply verdicts, start what is
-    approved, and list what only an orchestrator agent can do (start a desktop session,
-    revise a plan). Safe to repeat: nothing is offered twice."""
+    """One unattended pass: apply verdicts, start what is approved, and list what only an orchestrator
+    agent can do (start a desktop session, revise a plan). Safe to repeat: nothing is offered twice.
+    Everything that needs an orchestrator also goes into the event queue (design 011).
+    --hub: one pass for every registered orchestrator (project, scope) instead of the auto tables."""
+    global SCOPE
+    if not getattr(args, 'hub', False):
+        return tick_once(args, b)
+    out = {'tables': [], 'verdicts': [], 'started': [], 'needs_orchestrator': []}
+    outer = SCOPE
+    try:
+        for entry in sorted(read_state().get('orchestrators', {}).values(), key=lambda e: (e['project'], e.get('scope') or '')):
+            SCOPE = entry.get('scope') or None
+            try:
+                got = tick_once(argparse.Namespace(project=entry['project']), b)
+            except (RuntimeError, ValueError, OSError, subprocess.CalledProcessError) as error:
+                out.setdefault('tick_errors', {})[route_key(entry)] = str(error)[:200]
+                continue
+            for key, value in got.items():
+                if isinstance(value, list):
+                    out.setdefault(key, []).extend(v for v in value if key != 'tables' or v not in out['tables'])
+                elif isinstance(value, dict):
+                    out.setdefault(key, {}).update(value)
+    finally:
+        SCOPE = outer
+    return out
+
+
+def route_key(entry):
+    return store.route_key(entry['project'], entry.get('scope'))
+
+
+def tick_once(args, b):
     skipped = {}
     names = [table_of(args.project)[0]] if args.project else auto_tables(skipped)
     out = {'tables': names, 'verdicts': [], 'started': [], 'needs_orchestrator': []}
@@ -711,7 +784,7 @@ def cmd_tick(args, b):
         for task in ([] if is_linear(entry) else b.tasks(entry['collection'])):
             key = 'plan:' + task['id']
             if task.get('task_source') == 'linear' and task.get('task_status') == 'Backlog' and key not in seen:
-                out['needs_orchestrator'].append({'kind': 'plan', 'task': task['id'], 'name': task.get('name'),
+                out['needs_orchestrator'].append({'kind': 'plan', 'table': name, 'task': task['id'], 'name': task.get('name'),
                                                   'linear': task.get('linear_identifier')})
                 fresh.append(key)
         if is_linear(entry):
@@ -722,11 +795,12 @@ def cmd_tick(args, b):
                     out.setdefault('mirror_errors', {})[name] = str(error)[:200]
                 with state() as s:
                     s.setdefault('last_mirror', {})[name] = time.time()
-            last = read_state().get('last_linear_poll', {}).get(name, 0)
+            poll_key = '/'.join(filter(None, (name, SCOPE)))       # two scopes of one board poll on their own
+            last = read_state().get('last_linear_poll', {}).get(poll_key, 0)
             if time.time() - last < LINEAR_EVERY:
                 continue
             with state() as s:
-                s.setdefault('last_linear_poll', {})[name] = time.time()
+                s.setdefault('last_linear_poll', {})[poll_key] = time.time()
             try:
                 out['needs_orchestrator'] += linear_signals(name, board_for(name, b), seen, fresh)
             except (RuntimeError, ValueError, OSError) as error:
@@ -737,13 +811,21 @@ def cmd_tick(args, b):
         for r in rows:
             key = '%s:%s' % (r['task'], hashlib.sha256(r.get('feedback', '').encode()).hexdigest()[:12])
             if r.get('action') and key not in seen:
-                out['needs_orchestrator'].append({'kind': 'replan', 'task': r['task'], 'name': r['name'],
+                out['needs_orchestrator'].append({'kind': 'replan', 'table': name, 'task': r['task'], 'name': r['name'],
                                                   'feedback': r['feedback']})
                 fresh.append(key)
         out['started'] += cmd_dispatch(argparse.Namespace(project=name, runner=None), b)['started']
     for task, run in read_state().get('runs', {}).items():
-        if run['table'] in names and run.get('handoff') and not run.get('session'):
-            out['needs_orchestrator'].append({'kind': 'handoff', 'task': task, **run['handoff']})
+        if run['table'] in names and run.get('handoff') and not run.get('session') \
+                and (not SCOPE or run.get('scope') in (None, SCOPE)):
+            out['needs_orchestrator'].append({'kind': 'handoff', 'task': task, 'table': run['table'], **run['handoff']})
+    events = to_events(out['needs_orchestrator'], out['verdicts'])
+    try:
+        ids = board_store().enqueue(events)
+        for event, ident in zip(events, ids):
+            event['payload']['event'] = ident                 # the same dict as the needs_orchestrator item
+    except (RuntimeError, ValueError, OSError) as error:
+        out['queue_error'] = str(error)[:200]
     with state() as s:
         s['attention_seen'] = sorted(set(s.get('attention_seen', [])) | set(fresh))
         s['last_tick'] = {'at': time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'tables': names,
@@ -780,7 +862,8 @@ def cmd_watch(args, b):
     when an orchestrator agent is needed, so a waiting agent wakes only for real work.
     Only one watcher may run: a second one refuses to start instead of racing on dispatch."""
     STATE.parent.mkdir(parents=True, exist_ok=True)
-    lock = STATE.with_name('watch.%s.lock' % '.'.join(filter(None, (args.project or 'all', SCOPE))))
+    hub = getattr(args, 'hub', False)
+    lock = STATE.with_name('watch.%s.lock' % ('hub' if hub else '.'.join(filter(None, (args.project or 'all', SCOPE)))))
     guard = open(lock, 'w')
     try:
         fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -792,7 +875,7 @@ def cmd_watch(args, b):
         if ARGV is not None and code_fingerprint() != started_on:
             reload_watcher(args)
         try:
-            result = cmd_tick(argparse.Namespace(project=args.project), b)
+            result = cmd_tick(argparse.Namespace(project=args.project, hub=hub), b)
             failures = 0
             print('%s tick: %d verdicts, %d started, %d need orchestrator%s' % (
                 time.strftime('%H:%M:%S'), len(result['verdicts']), len(result['started']),
@@ -800,6 +883,16 @@ def cmd_watch(args, b):
                 ''.join('; sync %s failed: %s' % kv for kv in result.get('sync_errors', {}).items())
                 + ''.join('; %s skipped: %s' % kv for kv in result.get('skipped_tables', {}).items())),
                 file=sys.stderr, flush=True)
+            if hub and not result.get('queue_error'):
+                try:
+                    waiting = [e for e in board_store().take(peek=True) if e.get('session')]
+                except RuntimeError as error:
+                    waiting, result['queue_error'] = None, str(error)[:200]
+                if waiting:
+                    return {**result, 'events_waiting': len(waiting),
+                            'next': 'run `mstack events next` and deliver each group with SendMessage'}
+                if waiting is not None and not (args.exit_on_start and result['started']):
+                    result = {**result, 'needs_orchestrator': []}      # queued: delivered through `events next`
             if result['needs_orchestrator'] or (args.exit_on_start and result['started']):
                 return result
         except (RuntimeError, ValueError, OSError, subprocess.CalledProcessError) as error:
@@ -949,6 +1042,87 @@ def cmd_handover(args, b):
             'waiting_on_owner': waiting, 'issues': open_rows, 'prompt': '\n'.join(lines)}
 
 
+def cmd_orchestrators(args, b):
+    """The hub's routing table: which orchestrator session serves a (project, scope)."""
+    if args.action == 'list':
+        return {'orchestrators': sorted(read_state().get('orchestrators', {}).values(),
+                                        key=lambda e: (e['project'], e.get('scope') or ''))}
+    if not args.project:
+        raise ValueError('--project is required')
+    name, entry = table_of(args.project)
+    scope = args.scope_name
+    if scope:
+        scope_conf(project_settings(entry), scope)            # must be a scope in taskboard.orchestrators
+    key = store.route_key(name, scope)
+    with state() as s:
+        known = s.setdefault('orchestrators', {})
+        if args.action == 'remove':
+            return {'removed': known.pop(key, None)}
+        if not args.session:
+            raise ValueError('--session is required')
+        previous = (known.get(key) or {}).get('session')
+        known[key] = {'project': name, 'scope': scope, 'session': args.session, 'note': args.note,
+                      'at': time.strftime('%Y-%m-%dT%H:%M:%S%z')}
+    return {'registered': known[key], 'replaced': previous if previous != args.session else None}
+
+
+def event_line(e):
+    """One event as a line of the hub's message."""
+    p = e.get('payload') or {}
+    what = e.get('issue') or p.get('issue') or p.get('linear') or e.get('task')
+    detail = {'plan': lambda: 'owner asked for a plan%s' % (': ' + p['notes'][:300] if p.get('notes') else ''),
+              'replan': lambda: 'owner feedback on the plan: ' + (p.get('feedback') or '')[:400],
+              'forward': lambda: 'owner comment for worker `%s`: %s' % (p.get('session'), (p.get('text') or '')[:400]),
+              'stop': lambda: 'owner closed it (now %s); stop worker `%s`' % (p.get('now'), p.get('session')),
+              'handoff': lambda: 'approved, ready for a worker: start a %s session titled "%s" in %s '
+                                 '(brief: .mstack/cache/brief.md), then `board ack`' % (p.get('host'), p.get('title'), p.get('cwd')),
+              'verdict': lambda: 'verdict %s: %s → %s' % (p.get('verdict'), p.get('was'), p.get('now'))}
+    text = detail.get(e['kind'], lambda: json.dumps(p, ensure_ascii=False)[:300])()
+    resent = ' (resent, try %d)' % e['sends'] if (e.get('sends') or 0) > 1 else ''
+    return '- event %s [%s] %s: %s%s' % (e['id'], e['kind'], what, text, resent)
+
+
+def cmd_events(args, b):
+    """The event queue (design 011). next: hand out new events and overdue sent ones, grouped by the
+    session that should get them, each with a ready-to-send message; resolve: the receiving orchestrator
+    has acted on them."""
+    st = board_store()
+    if args.action == 'schema':
+        sql = store.SCHEMA.read_text()
+        if not args.apply:
+            return {'schema': str(store.SCHEMA), 'sql': sql,
+                    'apply': 'owner-approved setup step: mstack events schema --apply'}
+        st.sql(sql)
+        return {'applied': str(store.SCHEMA), 'database': store.PG['db']}
+    if args.action == 'resolve':
+        if not args.id:
+            raise ValueError('--id is required')
+        done = st.resolve(args.id, by=args.by or SCOPE or os.environ.get('MSTACK_AGENT'), note=args.note)
+        return {'resolved': done, 'not_found_or_done': [i for i in args.id if i not in done]}
+    if args.action == 'list':
+        return {'backend': st.backend, 'events': st.events(args.status)}
+    rows = st.take(peek=args.peek)
+    groups, unrouted = {}, []
+    for e in rows:
+        if not e.get('session'):
+            unrouted.append(e)
+            continue
+        g = groups.setdefault(e['session'], {'session': e['session'], 'routes': [], 'events': []})
+        route = store.route_key(e['board'], e.get('scope'))
+        if route not in g['routes']:
+            g['routes'].append(route)
+        g['events'].append(e)
+    for g in groups.values():
+        g['message'] = '\n'.join(['Events from the mstack hub for %s:' % ', '.join(g['routes'])]
+                                 + [event_line(e) for e in g['events']]
+                                 + ['After acting on each one: `%s/mstack events resolve --id <N>` '
+                                    '(unresolved events are resent after %d minutes).' % (STACK_ROOT, st.resend)])
+    return {'backend': st.backend, 'deliver': list(groups.values()),
+            'unrouted': [{'id': e['id'], 'route': store.route_key(e['board'], e.get('scope')), 'kind': e['kind'],
+                          'issue': e.get('issue')} for e in unrouted],
+            'hint': 'unrouted events wait for `mstack orchestrators register`' if unrouted else None}
+
+
 def cmd_status(args, b):
     name, entry = table_of(args.project)
     st = read_state()
@@ -1063,7 +1237,10 @@ def parser():
     s = sub.add_parser('work'); s.add_argument('--task', required=True); s.add_argument('--table', required=True)
     s.add_argument('--runner', required=True); s.add_argument('--tree', required=True)
     s = sub.add_parser('tick'); s.add_argument('--project')
+    s.add_argument('--hub', action='store_true', help='one pass per registered orchestrator (project, scope)')
     s = sub.add_parser('watch'); s.add_argument('--project'); s.add_argument('--interval', type=int, default=10)
+    s.add_argument('--hub', action='store_true', help='the hub watcher: tick every registered orchestrator, '
+                   'exit when the queue has events to deliver')
     s.add_argument('--max-ticks', type=int, default=0, help='stop after N ticks (0 = run until work appears)')
     s.add_argument('--exit-on-start', action='store_true', help='also exit when a CLI worker was started')
     s = sub.add_parser('ack'); s.add_argument('--task', required=True); s.add_argument('--session', required=True)
@@ -1095,6 +1272,17 @@ def parser():
     s.add_argument('--team', required=True); s.add_argument('--mode', choices=['pull', 'push', 'full'], default='pull')
     s.add_argument('--replace', action='store_true')
     s.add_argument('--app', help='link only this app (code from taskboard.apps); its own key file')
+    s = sub.add_parser('orchestrators', help='register|list|remove: which session serves a (project, scope)')
+    s.add_argument('action', choices=['register', 'list', 'remove']); s.add_argument('--project')
+    s.add_argument('--scope', dest='scope_name', help='scope from taskboard.orchestrators (omit: the whole board)')
+    s.add_argument('--session', help='Claude Desktop session id (local_…)'); s.add_argument('--note')
+    s = sub.add_parser('events', help='next|resolve|list|schema: the event hub queue')
+    s.add_argument('action', choices=['next', 'resolve', 'list', 'schema'])
+    s.add_argument('--id', action='append', default=[], help='event id to resolve (repeatable)')
+    s.add_argument('--note'); s.add_argument('--by', help='who resolved it (default: the scope or MSTACK_AGENT)')
+    s.add_argument('--peek', action='store_true', help='next: show without marking sent')
+    s.add_argument('--status', choices=['new', 'sent', 'resolved'], help='list: only this status')
+    s.add_argument('--apply', action='store_true', help='schema: run it against mstack_orchestrator (owner-approved)')
     return p
 
 
@@ -1104,8 +1292,9 @@ ARGV = None                               # real command line (never set when ma
 def main(argv=None, b=None):
     global SCOPE, ARGV
     p = parser()
-    for sp in p._subparsers._group_actions[0].choices.values():
-        sp.add_argument('--scope', help='orchestrator scope from taskboard.orchestrators')
+    for name, sp in p._subparsers._group_actions[0].choices.items():
+        if name != 'orchestrators':                           # it has its own --scope (the one to register)
+            sp.add_argument('--scope', help='orchestrator scope from taskboard.orchestrators')
     args = p.parse_args(argv)
     SCOPE = getattr(args, 'scope', None)
     if argv is None:

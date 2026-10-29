@@ -18,7 +18,8 @@ or its finished state), so nothing starts from old issues. The owner's comments 
 reactions are the verdicts, exactly as before; kind comes from existing labels only.
 
 Private mode (`taskboard.private: true`) makes Linear read-only for the board: the
-orchestrator's comments and status changes go to a local journal (`.mstack/journal.json`)
+orchestrator's comments and status changes go to a local journal (`.mstack/journal.json`, or
+Postgres orchestrator.journal with the Postgres store)
 instead of the issue, creating issues is refused, and Linear comments other than the
 orchestrator's earlier ones are ignored, so teammates see nothing and cannot trigger
 anything. The owner's words reach the board through `mstack board owner`, recorded in the
@@ -33,6 +34,7 @@ from pathlib import Path
 import uuid
 
 import linear
+import store
 from board import ASK, MARK
 
 STATE_TYPE = {'Backlog': 'backlog', 'Todo': 'unstarted', 'Awaiting Approval': 'unstarted',
@@ -87,9 +89,14 @@ def phase_of(comments):
 
 
 class Journal:
-    """Private mode's stand-in for issue comments: {issue id: [comment, ...]} in the project."""
+    """Private mode's stand-in for issue comments: {issue id: [comment, ...]} in the project.
+    With the Postgres store (design 011) the rows live in orchestrator.journal; the project's
+    journal.json is still written and is read whenever Postgres does not answer."""
     def __init__(self, project):
         self.path = Path(project)/'.mstack/journal.json'
+        self.pg = store.journal_backend(project)
+        self.dirty = self.path.with_suffix('.pg-dirty')
+        self.synced = self.path.with_suffix('.pg-synced')
 
     @contextlib.contextmanager
     def _locked(self):
@@ -101,15 +108,38 @@ class Journal:
             self.path.write_text(json.dumps(data, indent=1, ensure_ascii=False) + '\n')
             self.path.chmod(0o600)
 
+    def _file(self):
+        return json.loads(self.path.read_text()) if self.path.exists() else {}
+
+    def _pg(self, action):
+        """Run a Postgres action, pushing the file first if it may be ahead; False when Postgres is down."""
+        if not self.pg:
+            return False
+        try:
+            if self.dirty.exists() or not self.synced.exists():
+                self.pg.add_all(self._file())
+                self.dirty.unlink(missing_ok=True)
+                self.synced.touch()
+            action()
+            return True
+        except store.PG_ERRORS as error:
+            store.warn('journal in Postgres unavailable, using %s: %s' % (self.path, str(error)[:200]))
+            self.dirty.touch()
+            self.pg = None                         # this board instance stays on the file
+            return False
+
     def comments(self, issue):
-        data = json.loads(self.path.read_text()) if self.path.exists() else {}
-        return data.get(issue, [])
+        found = []
+        if self._pg(lambda: found.extend(self.pg.comments(issue))):
+            return found
+        return self._file().get(issue, [])
 
     def add(self, issue, body):
         now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
         comment = {'id': 'local-' + uuid.uuid4().hex[:12], 'body': body, 'createdAt': now, 'reactionData': []}
         with self._locked() as data:
             data.setdefault(issue, []).append(comment)
+        self._pg(lambda: self.pg.add_all({issue: [comment]}))
         return comment
 
 

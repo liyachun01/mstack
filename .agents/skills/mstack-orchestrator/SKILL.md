@@ -27,6 +27,8 @@ of the owner's (also refreshed every 5 minutes). It's an overview only and never
 3. Run `watch --project <slug>` **in the background**. It is a shell loop that polls Linear
    about every 30 s without model calls, and exits only when it needs you. Restart it after
    handling what it returns. Only one watcher can run per project.
+4. Register with the event hub: `/home/developer/workspace/mstack/mstack orchestrators register --project <slug>
+   [--scope <name>] --session <your session id>`. Re-run it whenever your session changes (handover).
 
 ## What `watch` returns (needs_orchestrator)
 - **`plan`:** the owner commented `/plan [notes]` on an issue.
@@ -41,6 +43,12 @@ of the owner's (also refreshed every 5 minutes). It's an overview only and never
   - Every worker is started by you, one level deep. Workers never start workers.
 - **`forward`:** the owner commented on work in progress. Send the text to that worker session (SendMessage to its session id), saying it came from Linear.
 - **`stop`:** the owner closed or canceled the issue. Stop that worker session (`stop_session`) and tell the owner.
+
+## Events (design 011)
+Everything that needs you is also an event in the hub queue. Each `needs_orchestrator` item carries its `event` id,
+and messages from the mstack hub list events as `event N [kind] ISSUE: …` (same kinds as above, plus `verdict`,
+for your information). After acting on one, resolve it: `/home/developer/workspace/mstack/mstack events resolve
+--id N`. An unresolved event is resent every few minutes, and a duplicate of one you've handled is just resolved.
 
 When a worker's turn ends you are woken: run `poll`. A finished worker has already posted its
 result with `done`; the owner's 👍 makes it Done, and a reply sends the notes back to the same worker.
@@ -68,8 +76,9 @@ When the project root is a folder of repos (e.g. {{mstack:CLIENT_C_SITE}}), one 
 ## Private boards (`taskboard.private: true`)
 Linear is read-only and your teammates see nothing. Use `--scope <name>` as usual.
 - **Nothing is written to Linear:** no comments, no status changes, no new issues. `propose`, `ask`, `note`,
-  `done`, `adopt` and status changes go to the project's local journal (`.mstack/journal.json`), and the board
-  reads its phases from there.
+  `done`, `adopt` and status changes go to the project's journal (Postgres `orchestrator.journal` with the
+  Postgres store, else `.mstack/journal.json`; the file is always kept as the fallback), and the board reads its
+  phases from there.
 - **The owner talks to you in this chat, not in Linear.** Pass their words to the board exactly:
   - "plan IRO-130 (notes)" → `owner --project <slug> --task IRO-130 "/plan notes"`
   - approving a plan or result ("👍", "ok", "go") → `owner --project <slug> --task <ISSUE> "👍"`
@@ -94,7 +103,8 @@ Suggest rotating to the owner when your chat has been compacted or turns are get
 4. Move workers *you* started out to top level (`detach_session`). Adopted chats are already top level.
 5. With the owner's OK, start the new session: title `<scope>` (or `<scope> 2`), `cwd` = repo, `use_worktree: false`,
    prompt = `prompt`. The owner files it in the scope's sidebar group.
-6. Tell the owner the new session has taken over. Archive yourself only when they agree, and never while you still
+6. The new session registers itself (`orchestrators register`, same project and scope), which replaces your route.
+   Tell the owner the new session has taken over. Archive yourself only when they agree, and never while you still
    have nested workers.
 
 Design and sync table: docs/design/010-LINEAR-SESSIONS.md.
