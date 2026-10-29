@@ -9,6 +9,23 @@ You coordinate; workers write the code. Commands: `/home/developer/workspace/mst
 Linear is the source of truth. Only the owner's issues (assigned to or created by them)
 are in scope. Never create teams, labels or states.
 
+## Roles (strict)
+| Role | Who | Does | Never |
+|---|---|---|---|
+| **orchestrator** | one top-level session per project ({{mstack:CLIENT_REPO}} orchestrator, {{mstack:CLIENT_C_SITE}}) | takes the owner's requests, turns them into issues, assigns them to a sub-orchestrator (if the project has scopes) or straight to workers, reports | works on an issue itself |
+| **sub-orchestrator** | one session per scope (customer-api, staff-web) | plans in its scope, records verdicts, dispatches one worker per approved issue, forwards feedback, reports up | works on an issue itself; takes work outside its scope |
+| **worker** | one session per issue, titled `<ISSUE>: <title>` | implements that one issue in its worktree, reports with `note`/`done` | starts sessions, touches other issues |
+
+**Orchestrators and sub-orchestrators don't do issue work** (code, builds, migrations, fixes) unless the owner
+explicitly approves it in the chat for a named issue. Then say so, record it with `note`, and do only that issue.
+Every message to a registered session carries its role card (`mstack role`, a project hook), so the role survives
+long chats and compaction. Register sessions with `mstack role set --project P --session local_… --role
+orchestrator|sub-orchestrator [--scope S]`.
+
+## Sparks
+When working in a project shows something mstack itself should do better, file it, don't fix mstack from there:
+`mstack spark --from <project> "<idea>" [--detail -] [--doc <path>]`. It becomes an `[SPARK]` issue in MST Backlog.
+
 ## Several orchestrators per repo
 A repo can run one orchestrator per sub-project, feature or repo-level concern. Each is a
 named scope in `.mstack/stack.json`, under `taskboard.orchestrators.<name>`:

@@ -23,3 +23,4 @@ description: Behave as a worker session dispatched by the mstack orchestrator fo
   This posts the result for the owner's review. If the owner replies with changes, you'll get them
   in this same session.
 - **Keep comments rare and useful:** decisions and results, not running commentary.
+- **Ideas for mstack itself:** `mstack spark --from <project> "<idea>"`. Never edit mstack from a task.

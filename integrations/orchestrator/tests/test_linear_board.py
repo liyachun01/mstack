@@ -315,7 +315,8 @@ class LinearBoardFlow(unittest.TestCase):
         self.assertEqual(self.fake.state_of(old), 'unstarted')
         self.assertEqual(oct((self.repo / '.mstack/journal.json').stat().st_mode & 0o777), '0o600')
         out = io.StringIO()
-        with contextlib.redirect_stderr(out), contextlib.redirect_stdout(io.StringIO()):
+        with contextlib.redirect_stderr(out), contextlib.redirect_stdout(io.StringIO()), \
+                patch.object(sys, 'stdin', io.StringIO('p')):       # never the runner's own stdin
             self.assertEqual(cli.main(['plan', '--project', 'repo', '--title', 'New', '--plan', '-'],
                                       cli.anyboard.Board(call=None)), 1)
         self.assertIn('private board', out.getvalue())

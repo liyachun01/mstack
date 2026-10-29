@@ -75,7 +75,9 @@ class SyncTests(unittest.TestCase):
             return ['taskboard.private = true']
         with patch.object(sync, 'MIGRATIONS', sync.MIGRATIONS + [(2, 'private by default', add_flag)]), \
                 patch.object(sync, 'VERSION', 2):
-            self.assertEqual(self.sync()['changes'], ['config: taskboard.private = true'])
+            changes = self.sync()['changes']
+            self.assertEqual([c for c in changes if c.startswith('config:')], ['config: taskboard.private = true'])
+            self.assertIn('.claude/settings.local.json: role-card hook added', changes)   # now it has a board
             self.assertTrue(json.loads((self.repo/'.mstack/stack.json').read_text())['taskboard']['private'])
             self.assertEqual(self.sync()['changes'], [])
 

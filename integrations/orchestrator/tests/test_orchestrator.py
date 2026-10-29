@@ -495,6 +495,25 @@ class OrchestratorTests(unittest.TestCase):
                 patch.object(cli.os, 'execv', side_effect=AssertionError('re-exec from a test')):
             self.assertEqual(cli.main(['watch', '--interval', '0', '--max-ticks', '1'], self.b), 0)
 
+    def test_spark_files_a_backlog_issue_on_mstacks_board(self):
+        import spark
+        posted = []
+        class Link:
+            def team(self): return {'id': 'team-mst'}
+            def me(self): return 'me'
+            def state_id(self, status): return 's-' + status
+            def post(self, query, v):
+                posted.append(v['input'])
+                return {'issueCreate': {'issue': {'id': 'x', 'identifier': 'MST-99'}}}
+        with patch.dict(spark.os.environ, {'CLAUDE_CODE_HOST_SESSION_ID': 'local_api'}):
+            out = spark.file_spark('{{mstack:CLIENT_REPO}}', 'Orchestrators forget their role', 'details', ['docs/a.md'], Link())
+        self.assertEqual(out['issue'], 'MST-99')
+        made = posted[0]
+        self.assertEqual((made['title'], made['stateId'], made['assigneeId']),
+                         ('[SPARK] Orchestrators forget their role', 's-Backlog', 'me'))
+        self.assertIn('**From:** {{mstack:CLIENT_REPO}}, session `local_api`', made['description'])
+        self.assertIn('`docs/a.md`', made['description'])
+
     def test_watch_exits_only_with_work(self):
         self.configure(auto=True, workers=['claude-desktop'])
         with patch.object(cli.time, 'sleep'), contextlib.redirect_stderr(io.StringIO()):

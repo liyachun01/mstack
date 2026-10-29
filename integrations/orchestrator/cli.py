@@ -525,6 +525,7 @@ def cmd_dispatch(args, b):
         app = (settings.get('apps') or {}).get(task.get('task_app') or '')
         work_dir = tree/app['path'] if app else tree
         run = {'table': name, 'runner': runner, 'tree': str(tree), 'cwd': str(work_dir), 'pid': None,
+               'issue': task.get('linear_identifier'),
                'mcp': wiring['servers']}
         row = {'task': task['id'], 'name': task.get('name'), 'runner': runner,
                'tools': wiring['tools'], 'skipped_tools': wiring['skipped']}
@@ -672,6 +673,7 @@ def cmd_adopt(args, b):
     with state() as s:
         s.setdefault('runs', {})[task['id']] = {'table': name, 'scope': SCOPE, 'runner': 'claude-desktop', 'pid': None,
                                                 'session': args.session, 'tree': args.tree, 'cwd': args.tree,
+                                                'issue': task.get('linear_identifier'),
                                                 'adopted': True}
     remember(task['id'], name, task.get('linear_identifier'))
     b.say(task['id'], 'Tracked by the %s orchestrator: session `%s`%s (status → %s).'

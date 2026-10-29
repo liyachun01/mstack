@@ -389,6 +389,12 @@ def main(argv=None):
     if arguments[:1] == ['sync']:
         import sync
         return sync.main(arguments[1:])
+    if arguments[:1] == ['role']:
+        sys.path.insert(0, str(STACK_ROOT/'integrations/agents'))
+        import roles
+        return roles.main(arguments[1:])
+    if arguments[:1] == ['spark']:
+        os.execv(sys.executable, [sys.executable, str(STACK_ROOT/'integrations/orchestrator/spark.py'), *arguments[1:]])
     if arguments[:1] == ['hydrate']:
         import hydrate
         return hydrate.main(arguments[1:])
@@ -402,6 +408,8 @@ def main(argv=None):
     sub.add_parser('board', help='Orchestrator toolbelt for the shared Anytype task board')
     sub.add_parser('plugin', help='List/validate joint plugins (agent, board, link, memory, compress, gateway, docs)')
     sub.add_parser('skills', help='Link mstack skills into a repo (local, gitignored with local visibility)')
+    sub.add_parser('role', help='Role cards: remind each coordinator, orchestrator and worker session of its job')
+    sub.add_parser('spark', help='Report an idea for mstack from any project (an MST issue in Backlog)')
     sub.add_parser('hydrate', help='Fill private names into this checkout; --check verifies none are committed')
     sub.add_parser('sync', help='Bring projects that use mstack up to date with this mstack (skills, ignores, config)')
     sub.add_parser('tenant', help='Register/list project tenants in shared tool runtimes')
