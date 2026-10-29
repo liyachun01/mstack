@@ -1,5 +1,14 @@
 # mstack agent instructions
 
+## mstack itself vs this installation — 2026-10-29
+
+This repo holds both **mstack (the product)**: `integrations/`, `.agents/skills/`, `infra/` definitions, `docs/`
+(design and guides), CLIs. It also holds **this machine's runtime records**: receipts, qualifications, dated notes,
+proposals and handovers. Keep them apart (docs/design/012-PRODUCT-VS-RUNTIME.md):
+- New records (receipts, dated notes, proposals, status pages) go to `runtime/`, never to `infra/` or `docs/`.
+- Product code never reads runtime records.
+- The dated sections below are runtime history. MST-22 moves them to `runtime/journal/` and `runtime/AGENTS.md`.
+
 ## {{mstack:CLIENT_REPO}} orchestrators — 2026-10-29
 
 Linear is the task source of truth (`docs/design/010-LINEAR-SESSIONS.md`). {{mstack:CLIENT_REPO}} has three

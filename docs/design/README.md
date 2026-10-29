@@ -28,3 +28,5 @@ For changing live status, use [the canonical handover](../HANDOVER.md).
    `/plan` triggers), a flat orchestrator → worker session layout, and the four mstack skills.
 11. [Event hub](011-EVENT-HUB.md) (planned): Windmill polls Linear into a Postgres event queue, and one small
    mstack hub chat delivers each event to the right project orchestrator.
+12. [Product vs runtime](012-PRODUCT-VS-RUNTIME.md): what is mstack itself and what is this installation's
+   records, the `runtime/` folder, and the MST-22 migration.
