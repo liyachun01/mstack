@@ -38,6 +38,12 @@ def file_spark(source, title, detail='', docs=(), link=None):
     made = link.post(linear_board.CREATE, {'input': {
         'teamId': link.team()['id'], 'title': '[SPARK] ' + title.strip()[:180], 'description': '\n'.join(body),
         'assigneeId': link.me(), 'priority': 4, 'stateId': link.state_id('Backlog')}})['issueCreate']['issue']
+    try:                                   # so `mstack board note/done --task MST-n` find it on mstack's board
+        import cli
+        name = json.loads((STACK_ROOT/'.mstack/stack.json').read_text())['taskboard']['table']
+        cli.remember(made['id'], name, made['identifier'])
+    except (ImportError, OSError, KeyError, ValueError):
+        pass
     return {'issue': made['identifier'], 'id': made['id'], 'from': source}
 
 
