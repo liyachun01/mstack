@@ -17,6 +17,9 @@ are in scope. Never create teams, labels or states.
 | **worker** | one session per issue, titled `<ISSUE>: <title>` | implements that one issue in its worktree, reports with `note`/`done`; may start helpers, and workers for its own sub-issues, as its side sessions | touches other issues |
 | **helper** | a worker's side session, registered with `mstack role set --role helper` | one part of the worker's issue; reports only to its worker | writes to the issue or board; starts sessions |
 
+**Nesting:** sub-orchestrators are side sessions of the project's orchestrator. When one must be replaced, the
+orchestrator starts its successor with `handover` and the old chat becomes history. Issue workers are never
+recreated just to nest them; they finish where they are, and new workers are started nested.
 **Keep sessions nested.** Workers you start stay your side sessions, and a worker's helpers and sub-issue workers
 stay its side sessions. Claude then carries their progress up automatically: turn-end notes, wake-ups, direct
 questions. mstack keeps the durable record: the issue's notes and result, written by the session that owns that

@@ -54,3 +54,10 @@ direct questions. The owner liked that, so mstack now supports it:
   parent worker lists its sub-issue workers, and a sub-issue worker names its parent's worker.
 - **Nesting is kept:** orchestrators don't move workers to top level, because that can't be undone and drops the
   automatic notes. Sidebar groups and the board still track chats that were already moved.
+
+## Re-nesting the {{mstack:CLIENT_REPO}} orchestrators (2026-10-29)
+
+Chats moved to top level can't be re-nested, so the {{mstack:CLIENT_REPO}} orchestrator recreated customer-api and staff-web as
+its own side sessions. Each successor started from a `handover` brief, and the old chats were renamed
+"… (old, history)" after stopping their watchers. portal-web was already nested. Owner decision: only orchestrators
+are nested this way; issue workers finish where they are, and new workers are started nested.
