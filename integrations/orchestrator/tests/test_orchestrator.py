@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -637,6 +638,214 @@ class OrchestratorTests(unittest.TestCase):
         with contextlib.redirect_stderr(out), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(cli.main(['done', '--task', a], self.b), 1)
         self.assertIn('has no worker on the board', out.getvalue())
+
+    # ---- CLI workers: DeepSeek Harness (`dsh`) through a fake binary, like `echo` (MST-57) ----------------------
+    def fake_dsh(self, **env):
+        """Put a fake `dsh` first on PATH; returns the file its argv lines go to."""
+        bin_dir = self.repo.parent / 'bin'
+        bin_dir.mkdir(exist_ok=True)
+        fake = bin_dir / 'dsh'
+        fake.write_text('#!/bin/sh\nexec "%s" "%s" "$@"\n' % (sys.executable, Path(__file__).with_name('fake_dsh.py')))
+        fake.chmod(0o755)
+        argv_log = self.repo.parent / 'dsh-argv.jsonl'
+        values = {'PATH': '%s:%s' % (bin_dir, os.environ['PATH']), 'FAKE_DSH_ARGV': str(argv_log), **env}
+        patcher = patch.dict(os.environ, values)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return argv_log
+
+    def dsh_task(self, **env):
+        argv_log = self.fake_dsh(**env)
+        self.configure(workers=['dsh'], joints={'compress': 'headroom'})
+        self.register_headroom()
+        a = self.approved('dsh')
+        row = self.run_cli('dispatch', '--project', 'market')['started'][0]
+        self.assertEqual((row['runner'], row['tools']), ('dsh', ['mstack_headroom']))
+        return a, self.repo / '.mstack/worktrees' / a[-8:], argv_log
+
+    def work(self, a, tree, *extra):
+        return self.run_cli('work', '--task', a, '--table', 'market', '--runner', 'dsh', '--tree', str(tree), *extra)
+
+    def calls(self, argv_log):
+        return [json.loads(line) for line in argv_log.read_text().splitlines()]
+
+    def test_dsh_worker_records_session_then_resumes_with_a_forwarded_comment(self):
+        a, tree, argv_log = self.dsh_task()
+        result = self.work(a, tree)
+        session = result['session']
+        self.assertTrue(session.startswith('session-'))
+        self.assertEqual((result['exit'], result['commits'], result['turns'], result['completed']), (0, 1, 1, True))
+        self.assertEqual(result['committed'], 1)                    # the sandboxed host can't: `work` commits
+        log = subprocess.run(['git', '-C', str(tree), 'log', '-1', '--format=%an|%s'], capture_output=True, text=True)
+        self.assertEqual(log.stdout.strip(), 'mstack dsh worker|dsh: Fake dsh finished: Task: Add cart')
+        self.assertEqual(json.loads(cli.STATE.read_text())['runs'][a]['report']['kind'], 'done')
+        self.assertIn('Fake dsh finished: Task:', self.b.threads[a][-1]['text'])     # summary from the final event
+        self.assertEqual(self.b.objects[a]['task_status'], 'In Review')
+        run = json.loads(cli.STATE.read_text())['runs'][a]
+        self.assertEqual((run['session'], run['native_session'], run['live']), ('dsh:' + session, session, False))
+        self.assertEqual(run['usage'], {'inputTokens': 100, 'outputTokens': 20, 'cacheReadTokens': 900})
+        brief = (tree / '.mstack/cache/brief.md').read_text()
+        self.assertIn('do not run `git commit` or `mstack board`', brief)
+        self.assertNotIn(' done --task ', brief)
+        first = self.calls(argv_log)[0]
+        self.assertEqual((first[:2], first[-2]), (['--profile', 'headless'], '--json'))   # argv[0] is not logged
+        self.assertNotIn('--session-id', first)
+        patch_file = Path(first[first.index('--patch') + 1])
+        self.assertEqual(patch_file.parent, tree / '.mstack/cache')
+        self.assertIn('"serverName": "mstack_headroom"', patch_file.read_text())
+        self.assertTrue(Path(run['log']).with_suffix('.stream.log').read_text().count('"type": "session"'))
+        # The owner comments after the run ended: queued, and a resumed turn is spawned at once.
+        self.spawned.clear()
+        delivered = self.run_cli('forward', '--task', a, 'Rename the module please')['delivered']
+        self.assertIn('resumed dsh session ' + session, delivered)
+        self.assertEqual(self.spawned[0][-1], '--resume')
+        result = self.work(a, tree, '--resume')
+        last = self.calls(argv_log)[-1]
+        self.assertEqual(last[last.index('--session-id') + 1], session)
+        self.assertIn('Rename the module please', last[-1])
+        self.assertIn('do not run `git commit`', last[-1])
+        self.assertEqual((result['session'], result['commits']), (session, 2))
+        self.assertNotIn('queued', json.loads(cli.STATE.read_text())['runs'][a])
+
+    def test_dsh_comment_during_a_turn_becomes_the_next_turn_of_the_same_session(self):
+        a, tree, argv_log = self.dsh_task(FAKE_DSH_QUEUE=str(cli.STATE))
+        result = self.work(a, tree)
+        self.assertEqual(result['turns'], 2)
+        second = self.calls(argv_log)[1]
+        self.assertEqual(second[second.index('--session-id') + 1], result['session'])
+        self.assertIn('Also add a test please', second[-1])
+        asks = [m for m in self.b.threads[a] if m['text'].startswith(board.ASK)]
+        self.assertEqual(len(asks), 2)                           # the plan ask and one review ask, not two
+
+    def test_dsh_worker_that_reported_done_itself_is_not_reported_twice(self):
+        a, tree, _ = self.dsh_task(FAKE_DSH_DONE=str(cli.STATE))
+        before = len(self.b.threads[a])
+        result = self.work(a, tree)
+        self.assertEqual(result['finish'], 'skipped: the worker already reported done')
+        self.assertEqual(len(self.b.threads[a]), before)
+
+    def test_dsh_refused_action_is_reported_as_a_blocker(self):
+        a, tree, _ = self.dsh_task(FAKE_DSH_BLOCKED='1')
+        result = self.work(a, tree)
+        self.assertTrue(result['completed'])
+        self.assertIn('no approval channel', result['blocked'][0])
+        self.assertIn('git commit -m x', result['blocked'][0])
+        ask = self.b.threads[a][-1]['text']
+        self.assertIn('Blocked (the sandbox refused these', ask)
+        self.assertEqual(self.b.objects[a]['task_status'], 'In Review')
+
+    def test_dsh_sigterm_exits_0_but_counts_as_stopped(self):
+        a, tree, _ = self.dsh_task(FAKE_DSH_TERM=str(cli.STATE))
+        before = len(self.b.threads[a])
+        result = self.work(a, tree)
+        self.assertEqual((result['exit'], result['completed'], result['finish']), (0, False, 'skipped: stopped'))
+        self.assertEqual(result['committed'], 0)                   # an interrupted turn is not committed
+        self.assertEqual(len(self.b.threads[a]), before)
+        self.assertEqual(self.b.objects[a]['task_status'], 'In Progress')
+
+    def test_dsh_turn_without_turn_end_is_reported_not_finished(self):
+        a, tree, _ = self.dsh_task()
+        with patch.object(cli.runners.Stream, 'completed', return_value=False):
+            result = self.work(a, tree)
+        self.assertEqual(result['finish'], 'skipped: turn did not complete')
+        self.assertIn('turn did not complete', self.b.threads[a][-1]['text'])
+        self.assertFalse(self.b.threads[a][-1]['text'].startswith(board.ASK))
+        self.assertEqual(self.b.objects[a]['task_status'], 'In Progress')
+
+    def test_back_from_review_dispatch_resumes_the_dsh_session(self):
+        a, tree, _ = self.dsh_task()
+        session = self.work(a, tree)['session']
+        self.b.owner(a, 'Please rename the module')
+        self.assertEqual(self.run_cli('poll')[0]['now'], 'Todo')
+        self.spawned.clear()
+        self.run_cli('dispatch', '--project', 'market')
+        self.assertEqual(self.spawned[0][-1], '--resume')
+        self.assertEqual(json.loads(cli.STATE.read_text())['runs'][a]['native_session'], session)
+
+    def sleeper(self, task):
+        """A process that looks like `cli.py work --task <task>` (what stop_cli checks), in its own group."""
+        proc = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', str(Path(cli.__file__)),
+                                 'work', '--task', task], start_new_session=True)
+        self.addCleanup(lambda: proc.poll() is None and proc.kill())
+        return proc
+
+    def test_board_stop_and_hub_delivery_for_cli_workers(self):
+        a, tree, _ = self.dsh_task()
+        self.work(a, tree)
+        proc = self.sleeper(a)
+        with cli.state() as s:
+            s['runs'][a].update(pid=proc.pid, live=True)
+        # While it runs, a forwarded comment waits for the next turn; nothing new is spawned.
+        self.spawned.clear()
+        left, done = cli.deliver_to_cli([{'kind': 'forward', 'table': 'market', 'task': a, 'text': 'one more thing'},
+                                         {'kind': 'plan', 'table': 'market', 'task': 'other'}], self.b)
+        self.assertEqual([i['kind'] for i in left], ['plan'])
+        self.assertIn('queued for the running dsh worker', done[0]['result'])
+        self.assertIn('Your comment went to the CLI worker', self.b.threads[a][-1]['text'])
+        self.assertEqual(self.spawned, [])
+        # A pid that is not this task's worker is never signalled.
+        other = self.sleeper('someone-else')
+        with cli.state() as s:
+            s['runs'][a].update(pid=other.pid, live=True)
+        self.assertIn('no longer this worker', cli.stop_cli(a))
+        self.assertIsNone(other.poll())
+        with cli.state() as s:
+            s['runs'][a].update(pid=proc.pid, live=True)
+            del s['runs'][a]['stopped']
+        # The owner closed the issue: the hub stops the process group.
+        left, done = cli.deliver_to_cli([{'kind': 'stop', 'table': 'market', 'task': a, 'now': 'Canceled'}], self.b)
+        self.assertEqual(left, [])
+        self.assertIn('stopped dsh worker (pid %d)' % proc.pid, done[0]['result'])
+        self.assertEqual(proc.wait(timeout=10), -15)
+        run = json.loads(cli.STATE.read_text())['runs'][a]
+        self.assertTrue(run['stopped'])
+        self.assertEqual(run['queued'], [])
+        self.assertIn('not delivered', self.run_cli('forward', '--task', a, 'too late')['delivered'])
+        self.assertIn('was not running', self.run_cli('stop', '--task', a)['stopped'])
+        self.assertIn('Worker stopped', self.b.threads[a][-1]['text'])
+
+    def test_stop_refuses_desktop_workers(self):
+        self.configure(workers=['claude-desktop'])
+        a = self.approved('claude-desktop')
+        self.run_cli('dispatch', '--project', 'market')
+        with self.assertRaises(ValueError):
+            cli.stop_cli(a)
+
+
+class DshStreamTests(unittest.TestCase):
+    """runners.Stream on event lines as dsh 0.2.0-rc.2 printed them in MST-56 (runs 05-ask-wt and 07-sigterm)."""
+    ASK = ['{"type": "session", "sessionId": "session-9515c3e0", "cwd": "/w/repo-wt"}',
+           '{"type": "status", "phase": "turn_start", "turn": 1}',
+           '{"type": "tool_call", "callId": "c2", "tool": "bash", "input": {"command": "echo run5 > /w/outside.txt", '
+           '"sandbox_permissions": "danger-full-access"}}',
+           '{"type": "tool_result", "callId": "c2", "status": "error", "result": "Error: sandbox escalation to '
+           '\\"danger-full-access\\" requires approval, but no approval channel is available"}',
+           '{"type": "status", "phase": "step_end", "turn": 1, "step": 2, "usage": {"inputTokens": 152, "outputTokens": 190}}',
+           '{"type": "status", "phase": "turn_end", "turn": 1, "reason": {"kind": "completed"}}',
+           '{"type": "final", "text": "Attempt 2 was refused."}']
+    TERM = ['{"type": "session", "sessionId": "session-ba54efcc", "cwd": "/w/repo"}',
+            '{"type": "status", "phase": "turn_start", "turn": 1}',
+            '{"type": "tool_call", "callId": "c1", "tool": "bash", "input": {"command": "sleep 60"}}',
+            '{"type": "final", "text": ""}']
+
+    def stream(self, lines, exit_code=0):
+        stream = cli.runners.Stream('dsh')
+        found = [x for x in map(stream.feed, lines) if x]
+        stream.exit = exit_code
+        return stream, found
+
+    def test_refused_escalation_is_a_blocker_in_a_completed_turn(self):
+        stream, found = self.stream(self.ASK)
+        self.assertEqual(found, ['session-9515c3e0'])
+        self.assertTrue(stream.completed())
+        self.assertEqual(stream.usage, {'inputTokens': 152, 'outputTokens': 190})
+        self.assertIn('bash `echo run5 > /w/outside.txt`: Error: sandbox escalation', stream.blocked[0])
+        self.assertIn('Attempt 2 was refused.\n\nBlocked', stream.summary())
+
+    def test_sigterm_run_exits_0_without_turn_end(self):
+        stream, _ = self.stream(self.TERM, exit_code=0)
+        self.assertEqual((stream.ended, stream.completed(), stream.final), (None, False, None))
+
 
 class BridgeRetryTests(unittest.TestCase):
     def test_429_is_retried_other_errors_are_not(self):

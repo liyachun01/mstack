@@ -35,6 +35,13 @@ description: Behave as a worker session dispatched by the mstack orchestrator fo
     default medium). Medium and big need `--doc <path>` (in your worktree or the repo) and, unless the board is
     private, an issue description of at most 800 characters that links the doc. Small: `--size small`.
     `--force` only when the owner agrees; it is noted on the issue.
+- **Headless CLI workers** (`dsh`, `opencode`: you were started with the brief as your only prompt, no chat):
+  - Your sandbox refuses `git commit` in a worktree and `mstack board`, so **don't run either**. When your turn ends,
+    mstack commits your changes on the task branch and posts your final answer for review.
+  - End every turn with a short summary: what changed, what's left, and anything the owner must decide.
+  - You can't ask mid-run, and nobody reads your output live. Decide within the approved plan. An action the sandbox
+    refuses (it has no approval channel) is listed to the owner as a blocker; don't try to get around it.
+  - An owner comment arrives later as a new turn of the same session.
 - **Ideas for mstack itself:** `mstack spark --from <project> "<idea>"`. Never edit mstack from a task.
 - **Helpers and sub-issues:**
   - For a part of your issue, you may start a **helper** as your side session (one level; it never starts its own).

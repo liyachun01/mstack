@@ -30,6 +30,14 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(argv[1:], [plugin['dir'] + '/run.py', '--cwd=/w', 'do it'])
         self.assertTrue(registry.available(plugin))
 
+    def test_dsh_manifest_renders_resume_and_mcp_lists(self):
+        dsh = registry.discover()['dsh']
+        self.assertEqual((dsh['mcp_style'], dsh['joint']), ('dsh-patch', 'agent'))
+        resume = registry.fill(dsh['resume'], {'session': 's1'})
+        argv = registry.render(dsh, mcp=['--patch', '/p.yml'], resume=resume, brief='go')
+        self.assertEqual(argv, ['dsh', '--profile', 'headless', '--patch', '/p.yml', '--session-id', 's1', '--json', 'go'])
+        self.assertEqual(registry.render(dsh, brief='go'), ['dsh', '--profile', 'headless', '--json', 'go'])
+
     def test_cannot_shadow_builtin(self):
         self.add('codex', joint='agent', status='implemented', transport='argv', command=['x'])
         with self.assertRaises(ValueError):

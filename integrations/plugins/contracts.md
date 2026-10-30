@@ -14,14 +14,18 @@ contract kit (`tests/test_compress_contract.py`). The other joints are specified
 ## agent — a host that works on one task
 | Op | In | Out |
 |---|---|---|
-| (argv) start | `{brief, cwd, notify}` filled into `command` | process exit; mstack runs `finish` |
+| (argv) start | `{brief, cwd, notify}` filled into `command` | process exit; mstack runs `finish` (skipped if the host ran `done`) |
+| (argv) resume | `{session}` filled into `resume`, at `{resume}`; the new turn's prompt as `{brief}` | as start |
+| (argv) stream | NDJSON lines, read per manifest `stream` | session id (recorded as `<host>:<id>`), final text |
 | (handoff) launch spec | `{host, via, cwd, title, prompt}` | the orchestrator/owner starts it |
 | (server) `start` | `{brief, cwd, title}` | `{session_id}` |
 | (server) `status` | `{session_id}` | `{state: running|idle|done|failed}` |
 
 Every host must: start in `cwd`, read the brief, see the task binding
 (`MSTACK_TASK` or `.mstack/cache/current-task`), and report only through
-`mstack board note` / `done`. Capability `notify`: it can mirror turns.
+`mstack board note` / `done`. Capability `notify`: it can mirror turns; `resume`: it continues a session by id
+(owner comments become new turns); `json-events`: it prints the `stream` events (a turn counts as finished only on
+an end event); `sandboxed`: it can't commit or call `mstack board`, so `work` commits and reports after each turn.
 
 ## board — the source of truth for tasks
 `ensure_table(project)` → table handle (Anytype: a collection of the shared task type), `tasks(table)`, `get(task)`, `body(task)`,

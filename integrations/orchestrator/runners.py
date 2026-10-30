@@ -46,13 +46,131 @@ def codex_mcp_args(servers):
     return args
 
 
-def command(runner, brief, worktree, project=None, servers=()):
-    """argv for one non-interactive spawn session; the brief is the whole instruction."""
+def dsh_patch(servers, cache):
+    """Per-run `--patch` overlay for DeepSeek Harness: one dsh-mcp-client row per stdio server, written into the
+    worktree's .mstack/cache/ (never ~/.dsh). JSON is valid YAML, so no YAML writer is needed. The stdio row keys
+    (command/args) mirror the streamable-http rows in infra/harnesses/deepseek; qualification confirms them (doc 015)."""
+    if not servers:
+        return []
+    rows = [{'id': 'mstack-' + s['name'], 'name': '@deepseek-ai/dsh-mcp-client',
+             'config': {'serverName': s['name'], 'transport': 'stdio', 'command': s['command'][0],
+                        'args': s['command'][1:], 'failOnStartupError': False, 'reconnect': {'enabled': False}}}
+            for s in servers]
+    path = Path(cache)/'dsh-mcp.patch.yml'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('# Written by mstack for this run only (mcp_style: dsh-patch).\n'
+                    + json.dumps([{'insert': rows}], indent=2) + '\n')
+    return ['--patch', str(path)]
+
+
+def command(runner, brief, worktree, project=None, servers=(), session=None, cache=None):
+    """argv for one non-interactive spawn session; the brief is the whole instruction. With `session`, a host
+    that has `resume` arguments continues that session and `brief` is the new turn's prompt."""
     host = hosts(project).get(runner)
     if not host or host['kind'] != 'spawn':
         raise ValueError('Not a spawn host: ' + runner)
-    mcp = codex_mcp_args(servers) if host.get('mcp_style') == 'codex-config' else []
-    return registry.render(host, mcp=mcp, brief=brief, cwd=worktree, notify=NOTIFY)
+    style = host.get('mcp_style')
+    mcp = codex_mcp_args(servers) if style == 'codex-config' else \
+        dsh_patch(servers, cache or Path(worktree)/'.mstack/cache') if style == 'dsh-patch' else []
+    if session and not host.get('resume'):
+        raise ValueError('%s cannot resume a session' % runner)
+    resume = registry.fill(host['resume'], {'session': session}) if session else []
+    return registry.render(host, mcp=mcp, resume=resume, brief=brief, cwd=worktree, notify=NOTIFY)
+
+
+STREAM = {'kind_keys': ['type', 'event', 'kind'], 'session_events': ['session'],
+          'session_keys': ['sessionId', 'session_id', 'id', 'session.id'], 'final_events': ['final'],
+          'text_keys': ['text', 'content', 'message'], 'error_events': ['error'],
+          'end_events': [{'type': 'status', 'phase': 'turn_end'}], 'end_reason_keys': ['reason.kind'],
+          'completed_reasons': ['completed'], 'blocked_events': ['tool_result'], 'result_keys': ['result', 'error'],
+          'blocked_patterns': [], 'usage_keys': ['usage']}
+
+
+def can_resume(runner, project=None):
+    return bool((hosts(project).get(runner) or {}).get('resume'))
+
+
+def sandboxed(runner, project=None):
+    """The host can't `git commit` in a worktree or call `mstack board` (dsh workspace-write, MST-56):
+    `work` commits and reports for it after each turn."""
+    return 'sandboxed' in ((hosts(project).get(runner) or {}).get('capabilities') or [])
+
+
+class Stream:
+    """Reads a host's NDJSON event stream (manifest `stream`), line by line: the session id, how the turn ended,
+    the final text, actions the host refused (sandbox, no approval channel), errors and token usage. Lines that
+    aren't JSON objects (stderr, banners) are kept as plain output. Field names come from the manifest, so a harness
+    that renames an event needs a manifest edit, not code.
+
+    A host with a stream finished its turn only when an end event arrives: dsh exits 0 after SIGTERM too, with an
+    empty `final` and no `turn_end` (MST-56). Without a stream, the exit code decides."""
+    def __init__(self, runner, project=None):
+        host = hosts(project).get(runner) or {}
+        self.on = 'stream' in host
+        self.conf = {**STREAM, **(host.get('stream') or {})}
+        self.session, self.final, self.errors, self.plain, self.exit = None, None, [], [], None
+        self.ended, self.blocked, self.usage, self.calls = None, [], {}, {}
+
+    def _get(self, event, keys):
+        for key in keys:
+            value = event
+            for part in key.split('.'):
+                value = value.get(part) if isinstance(value, dict) else None
+            if isinstance(value, (str, int)) and str(value):
+                return str(value)
+        return None
+
+    def feed(self, line):
+        """One output line; returns the session id when this line first reveals it."""
+        try:
+            event = json.loads(line) if self.on else None
+        except ValueError:
+            event = None
+        if not isinstance(event, dict):
+            if line.strip():
+                self.plain.append(line.rstrip())
+            return None
+        conf = self.conf
+        for key in conf['usage_keys']:
+            if isinstance(event.get(key), dict):
+                for name, n in event[key].items():
+                    if isinstance(n, int):
+                        self.usage[name] = self.usage.get(name, 0) + n
+        if any(all(event.get(k) == v for k, v in match.items()) for match in conf['end_events']):
+            self.ended = self._get(event, conf['end_reason_keys']) or 'ended'
+            return None
+        kind = self._get(event, conf['kind_keys'])
+        if kind in conf['final_events']:
+            self.final = self._get(event, conf['text_keys']) or self.final
+        elif kind in conf['error_events']:
+            self.errors.append(self._get(event, conf['text_keys']) or json.dumps(event)[:300])
+        elif kind in conf['blocked_events']:
+            outcome = self._get(event, conf['result_keys']) or ''
+            if any(p.lower() in outcome.lower() for p in conf['blocked_patterns']):
+                what = event.get('tool') or self.calls.get(event.get('callId'), '')
+                self.blocked.append(('%s: ' % what if what else '') + ' '.join(outcome.split())[:300])
+        elif kind == 'tool_call' and event.get('callId'):
+            command = (event.get('input') or {}).get('command') if isinstance(event.get('input'), dict) else None
+            self.calls[event['callId']] = '%s `%s`' % (event.get('tool'), str(command)[:120]) if command else event.get('tool')
+        elif kind in conf['session_events'] and not self.session:
+            self.session = self._get(event, conf['session_keys'])
+            return self.session
+        return None
+
+    def completed(self):
+        """The turn ran to its end: an end event with a completed reason, or (no stream) exit code 0."""
+        if self.on:
+            return self.ended in self.conf['completed_reasons']
+        return self.exit == 0
+
+    def summary(self):
+        """What the run said last: its final text, else its errors, else the tail of its plain output; then the
+        actions the host refused, as blockers for the owner."""
+        text = self.final or '\n'.join(self.errors or self.plain)
+        if self.blocked:
+            text += ('\n\nBlocked (the sandbox refused these and there is no approval channel; the owner decides):\n'
+                     + '\n'.join('- ' + b for b in dict.fromkeys(self.blocked)))
+        return text
 
 
 def handoff(runner, title, worktree, brief, project=None):

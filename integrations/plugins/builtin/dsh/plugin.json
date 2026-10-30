@@ -1,0 +1,80 @@
+{
+  "$schema": "../../schemas/plugin.schema.json",
+  "name": "dsh",
+  "version": "0.1.0",
+  "joint": "agent",
+  "status": "implemented",
+  "transport": "argv",
+  "summary": "DeepSeek Harness headless: one task per process, NDJSON events, resumable by session id (qualified on 0.2.0-rc.2, MST-56)",
+  "command": [
+    "dsh",
+    "--profile",
+    "headless",
+    "{mcp}",
+    "{resume}",
+    "--json",
+    "{brief}"
+  ],
+  "resume": [
+    "--session-id",
+    "{session}"
+  ],
+  "stream": {
+    "kind_keys": [
+      "type"
+    ],
+    "session_events": [
+      "session"
+    ],
+    "session_keys": [
+      "sessionId"
+    ],
+    "final_events": [
+      "final"
+    ],
+    "text_keys": [
+      "text"
+    ],
+    "error_events": [
+      "error"
+    ],
+    "end_events": [
+      {
+        "type": "status",
+        "phase": "turn_end"
+      }
+    ],
+    "end_reason_keys": [
+      "reason.kind"
+    ],
+    "completed_reasons": [
+      "completed"
+    ],
+    "blocked_events": [
+      "tool_result"
+    ],
+    "result_keys": [
+      "result"
+    ],
+    "blocked_patterns": [
+      "requires approval",
+      "no approval channel",
+      "denied under workspace-write",
+      "Permission denied"
+    ],
+    "usage_keys": [
+      "usage"
+    ]
+  },
+  "requires": {
+    "binaries": [
+      "dsh"
+    ]
+  },
+  "capabilities": [
+    "resume",
+    "json-events",
+    "sandboxed"
+  ],
+  "mcp_style": "dsh-patch"
+}

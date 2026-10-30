@@ -64,7 +64,7 @@
       "items": {
         "type": "string"
       },
-      "description": "argv template. Placeholders: {python} {brief} {cwd} {notify} {plugin_dir}; an argument that is exactly {mcp} expands to the host's per-run MCP arguments."
+      "description": "argv template. Placeholders: {python} {brief} {cwd} {notify} {plugin_dir}; an argument that is exactly {mcp} expands to the host's per-run MCP arguments, and exactly {resume} to the filled `resume` arguments on a resumed turn (else nothing)."
     },
     "entry": {
       "type": "string",
@@ -113,7 +113,7 @@
       "items": {
         "type": "string"
       },
-      "description": "Optional contract features, e.g. agent: notify, resume; board: reactions; memory.long: hybrid-search."
+      "description": "Optional contract features, e.g. agent: notify, resume, json-events, sandboxed (the host can't commit or call `mstack board`; `work` commits and reports after each turn); board: reactions; memory.long: hybrid-search."
     },
     "expose": {
       "type": "array",
@@ -161,9 +161,116 @@
       "enum": [
         "codex-config",
         "mcp-json",
+        "dsh-patch",
         "none"
       ],
-      "description": "agent only: how this host accepts per-run MCP servers. codex-config: -c mcp_servers.* via the {mcp} argv placeholder. mcp-json: an untracked .mcp.json in the worktree, enabled in its local settings. none: not supported."
+      "description": "agent only: how this host accepts per-run MCP servers. codex-config: -c mcp_servers.* via the {mcp} argv placeholder. mcp-json: an untracked .mcp.json in the worktree, enabled in its local settings. dsh-patch: a per-run overlay file in the worktree's .mstack/cache/, passed as `--patch <file>` via {mcp}. none: not supported."
+    },
+    "resume": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      },
+      "description": "agent (argv) only: arguments that continue an earlier session, filled in at {resume}. Placeholder: {session} (the harness's own session id, read from `stream`)."
+    },
+    "stream": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "agent (argv) only: the host prints one JSON event per line (NDJSON). mstack reads the session id and the final text from it. Key lists are tried in order, so a renamed field only needs a manifest edit.",
+      "properties": {
+        "kind_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "fields that name an event's kind (default [\"type\", \"event\", \"kind\"])"
+        },
+        "session_events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "event kinds that carry the session id (default [\"session\"])"
+        },
+        "session_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "fields holding the session id, dotted for nesting (default [\"session_id\", \"sessionId\", \"id\", \"session.id\"])"
+        },
+        "final_events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "event kinds with the run's final answer (default [\"final\"])"
+        },
+        "text_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "fields holding text (default [\"text\", \"content\", \"message\"])"
+        },
+        "error_events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "event kinds that report an error (default [\"error\"])"
+        },
+        "end_events": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "description": "events that end a turn, each a set of field values to match (default [{\"type\": \"status\", \"phase\": \"turn_end\"}]). A host with a stream counts a turn as finished only when one of these arrives, never from its exit code."
+        },
+        "end_reason_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "fields of the end event naming why the turn ended (default [\"reason.kind\"])"
+        },
+        "completed_reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "end reasons that mean the turn completed (default [\"completed\"])"
+        },
+        "blocked_events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "event kinds that report a tool's outcome (default [\"tool_result\"])"
+        },
+        "result_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "fields of those events holding the outcome text (default [\"result\", \"error\"])"
+        },
+        "blocked_patterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "case-insensitive substrings of an outcome that mean the host refused the action (sandbox, no approval channel); reported to the owner as blockers"
+        },
+        "usage_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "fields holding per-request token usage, summed per turn (default [\"usage\"])"
+        }
+      }
     }
   },
   "allOf": [
