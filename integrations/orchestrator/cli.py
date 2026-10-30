@@ -773,7 +773,18 @@ def private_boards():
 
 
 def status_table_pass(full=False, limit=None):
-    """One pass: refresh stale Linear issue tables, then upsert the rows into "My tasks"."""
+    """One pass: refresh stale Linear issue tables, then upsert the rows into "My tasks". Only one pass runs at a
+    time (hub watcher, a manual sync): another one is skipped, never run in parallel, so a row is never created twice."""
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    with open(STATE.with_name('status-table.lock'), 'w') as guard:
+        try:
+            fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return {'skipped': 'another status-table pass is running'}
+        return _status_table_pass(full, limit)
+
+
+def _status_table_pass(full, limit):
     out = {}
     for name, entry in sorted(read_state().get('tables', {}).items()):
         if is_linear(entry):
@@ -800,7 +811,7 @@ def status_table_pass(full=False, limit=None):
 
 
 def status_table_if_due(out):
-    """The hub watcher's step: a pass every status_table.EVERY seconds (BACKLOG_EVERY while rows wait), at most
+    """The hub watcher's step (only `tick --hub` calls it; per-scope watchers never do): a pass every status_table.EVERY seconds (BACKLOG_EVERY while rows wait), at most
     BATCH rows each, failures recorded, never fatal. This keeps the table current with no manual runs."""
     if not status_table_on():
         return

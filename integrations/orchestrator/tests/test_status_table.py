@@ -199,7 +199,7 @@ class Upsert(unittest.TestCase):
 class HubStep(unittest.TestCase):
     """Through the CLI: `status-table sync`, the hub tick step, its schedule and the off switch."""
     F = flow.LinearBoardFlow
-    setUp, cli = F.setUp, F.cli
+    setUp, cli, auto = F.setUp, F.cli, F.auto
 
     def wire(self, issues):
         self.any = FakeAnytype()
@@ -261,6 +261,31 @@ class HubStep(unittest.TestCase):
                 passes = [self.cli('tick', '--hub')['status_table'] for _ in range(3)]
         self.assertEqual([(p['updated'], p['pending']) for p in passes], [(2, 3), (2, 1), (1, 0)])
         self.assertEqual(self.cli('status-table', 'show')['rows'], 5)
+
+    def test_only_the_hub_watcher_runs_the_pass(self):
+        self.wire([issue('repo', 'MST-7')])
+        self.auto()
+        with patch.object(cli, 'status_table_on', lambda: True), patch.object(st, 'EVERY', 0), \
+                patch.object(cli, 'LINEAR_EVERY', 0):
+            self.assertNotIn('status_table', self.cli('tick'))                       # a per-project watcher
+            self.assertNotIn('status_table', self.cli('tick', '--project', 'repo'))
+            self.assertEqual(self.any.calls, [])
+            self.assertEqual(self.cli('tick', '--hub')['status_table']['created'], 1)
+
+    def test_a_second_pass_while_one_runs_is_skipped_not_doubled(self):
+        self.wire([issue('repo', 'MST-7')])
+        inner = []
+
+        def call(method, path, body=None):                    # a manual sync starts in the middle of the hub's pass
+            if method == 'POST' and path.startswith('objects') and not inner:
+                inner.append(self.cli('status-table', 'sync'))
+            return self.any(method, path, body)
+        with patch.object(cli, 'STATUS_CALL', call):
+            outer = self.cli('status-table', 'sync')
+        self.assertEqual(inner, [{'skipped': 'another status-table pass is running'}])
+        self.assertEqual(outer['created'], 1)
+        rows = [o for o in self.any.objects.values() if o.get('type') == st.TYPE['key']]
+        self.assertEqual(len(rows), 1)
 
     def test_stale_boards_are_mirrored_before_the_pass(self):
         self.wire([])

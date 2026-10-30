@@ -77,6 +77,9 @@ Nobody runs it by hand: the table follows the work by itself.
   most 40 rows; while rows are still waiting (the first build of ~131 rows, the hourly rewrite) the next pass comes
   15 seconds later, so neither stalls event delivery. The watcher reloads itself when mstack's code changes, so the
   step starts on its own after merge.
+- **One writer:** only the hub watcher runs the step (`tick --hub`; the per-scope watchers return before it), and
+  every pass holds `.mstack/evidence/status-table.lock`. A pass that finds it taken (a manual `sync` during the
+  hub's pass) is skipped, not run in parallel, so a row is never created twice.
 - **Failures** (Anytype closed, Postgres down) show as `status_table_error` in the tick output and on the watcher's
   tick line and never stop the watcher; the next try is a minute later. Rows written before a failure are
   remembered, so a retry never builds a second "My tasks".
