@@ -108,12 +108,29 @@ def parent_of(project, scope, orchs):
     return ''
 
 
-def desired(issues, board_state, private, now=None, roles=None):
+def desired(issues, board_state, private, now=None, roles=None, boards=None):
     """(rows, takes, retire): the rows the table should show; for issue rows that became session rows, the old key
     each takes over; and old issue rows its sessions replace with nothing to take them over (to remove).
     `private` maps a board to True when its rows must carry no Linear link (private boards, or boards whose config
-    can't be read). `roles` maps a board to its project's role registry ({session: {role, scope, task, worker}})."""
+    can't be read). `roles` maps a board to its project's role registry ({session: {role, scope, task, worker}}).
+    `boards`, when given, are the boards shown: rows of any other board (retired or unregistered) are left out, and
+    the ones the table still holds are retired."""
     now = time.time() if now is None else now
+    dropped = set()
+    if boards is not None:
+        boards = set(boards)
+        issues = [i for i in issues if i.get('board') in boards]
+        roles = {p: r for p, r in (roles or {}).items() if p in boards}
+        runs = board_state.get('runs', {})
+        dead = {k for k, r in runs.items() if r.get('table') not in boards}
+        dropped |= {'session/' + runs[k]['session'] for k in dead if runs[k].get('session')}
+        dropped |= {'session/' + c['session'] for k in dead for c in board_state.get('related', {}).get(k, [])
+                    if c.get('session')}
+        dropped |= {'%s/%s' % (r.get('table'), r.get('issue')) for k, r in runs.items() if k in dead}
+        board_state = {**board_state, 'runs': {k: r for k, r in runs.items() if k not in dead},
+                       'related': {k: v for k, v in board_state.get('related', {}).items() if k not in dead},
+                       'orchestrators': {k: o for k, o in board_state.get('orchestrators', {}).items()
+                                         if o.get('project') in boards}}
     roles = roles or {}
     seen = board_state.get('sessions_seen') or {}
     known_rows = (board_state.get(STATE_KEY) or {}).get('rows', {})
@@ -199,7 +216,9 @@ def desired(issues, board_state, private, now=None, roles=None):
         props, name = issue_props(issue['board'], issue['identifier'])
         props['task_scope'] = scopes.get(key) or issue.get('scopes') or ''
         rows[key] = {'name': name, 'properties': {k: v for k, v in props.items() if v not in (None, '')}}
-    retire = sorted(k for k in known_rows if k in with_session and k not in takes.values())
+    retire = sorted(k for k in known_rows if (k in with_session and k not in takes.values())
+                    or (k not in rows and (k in dropped or (boards is not None and not k.startswith('session/')
+                                                            and k.split('/')[0] not in boards))))
     return rows, takes, retire
 
 

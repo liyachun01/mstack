@@ -808,6 +808,12 @@ def private_boards():
     return out
 
 
+def shown_boards():
+    """The boards "My tasks" shows: registered Linear boards. Anytype-backed tables (test-market) are retired from
+    automation, and an unregistered board has no entry at all."""
+    return {name for name, entry in read_state().get('tables', {}).items() if is_linear(entry)}
+
+
 def status_table_pass(full=False, limit=None):
     """One pass: refresh stale Linear issue tables, then upsert the rows into "My tasks". Only one pass runs at a
     time (hub watcher, a manual sync): another one is skipped, never run in parallel, so a row is never created twice."""
@@ -841,7 +847,8 @@ def _status_table_pass(full, limit):
     known = current.get(status_table.STATE_KEY) or {}
     full = full or time.time() - known.get('last_full', 0) >= status_table.FULL_EVERY
     table = status_table.StatusTable(STATUS_CALL or anyboard.macctl)
-    rows, takes, retire = status_table.desired(issues, current, private_boards(), roles=project_roles())
+    rows, takes, retire = status_table.desired(issues, current, private_boards(), roles=project_roles(),
+                                               boards=shown_boards())
     try:
         known, counts = table.sync(rows, known, full, limit, takes, retire)
         counts['ctas'] = take_ctas(table, known, rows)

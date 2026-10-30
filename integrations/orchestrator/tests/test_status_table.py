@@ -146,6 +146,20 @@ class Rows(unittest.TestCase):
                          {'linear_identifier': 'CAN-9', 'task_project': '{{mstack:CLIENT_REPO}}', 'task_scope': 'staff-web',
                           'task_status': 'Todo', 'linear_updated_at': '2026-10-30T01:00:00Z'})
 
+    def test_rows_of_retired_or_unregistered_boards_are_left_out_and_retired(self):
+        state = dict(self.STATE, runs={**self.STATE['runs'], 't5': {'table': 'test-market', 'issue': 'TM-1',
+                                                                     'session': 'local_tm'}},
+                     status_table={'rows': {'session/local_tm': {'id': 'o1'}, 'test-market/TM-2': {'id': 'o2'},
+                                            'session/local_w': {'id': 'o3'}}})
+        issues = self.ISSUES + [issue('test-market', 'TM-2')]
+        rows, _, retire = st.desired(issues, state, {'mstack': False, '{{mstack:CLIENT_REPO}}': True}, NOW, self.ROLES,
+                                     boards={'mstack', '{{mstack:CLIENT_REPO}}'})
+        self.assertFalse([k for k in rows if 'tm' in k.lower() or k.startswith('test-market')])
+        self.assertEqual(retire, ['session/local_tm', 'test-market/TM-2'])
+        everything, _, kept = st.desired(issues, state, {}, NOW, self.ROLES)     # no filter: as before
+        self.assertIn('session/local_tm', everything)
+        self.assertEqual(kept, [])
+
     def test_an_old_issue_row_becomes_its_newest_workers_row(self):
         state = dict(self.STATE, **{st.STATE_KEY: {'rows': {'{{mstack:CLIENT_REPO}}/IRO-1': {'id': 'o1', 'hash': 'h'},
                                                             'mstack/MST-40': {'id': 'o2', 'hash': 'h'},

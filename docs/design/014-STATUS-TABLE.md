@@ -31,7 +31,10 @@ Linear ──(mirror, every 5 min per board)──▶ Postgres mstack_orchestrat
   last update. Board state adds the sessions: workers (`runs`), earlier chats on an issue (`related`), orchestrators
   (`orchestrators` and each project's role registry, which also lists helpers), their reports (`runs[…].report`,
   written by `board done`/`note`) and their app state (`sessions_seen`, from the hub chat). `tables` says which boards
-  are private (each project's `taskboard.private`). Before each pass, any Linear board whose
+  are private (each project's `taskboard.private`) and which boards are shown: only registered Linear boards. Rows of
+  a retired (Anytype-backed, such as test-market) or unregistered board are left out, and any the table still holds
+  are archived (MST-46). The old per-project collections were archived on 2026-10-30, so "My tasks" is the channel's
+  only table. Before each pass, any Linear board whose
   issue table is older than 5 minutes is mirrored first, so boards without a registered orchestrator (mstack itself)
   stay current too.
 - **Sink:** a new collection "My tasks" in the board's existing channel, whose rows are objects of the existing
