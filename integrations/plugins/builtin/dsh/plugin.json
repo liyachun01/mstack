@@ -5,9 +5,10 @@
   "joint": "agent",
   "status": "implemented",
   "transport": "argv",
-  "summary": "DeepSeek Harness headless: one task per process, NDJSON events, resumable by session id (qualified on 0.2.0-rc.2, MST-56)",
+  "summary": "DeepSeek Harness headless via dsh_launch.py (qualified settings, MST-56): one task per process, NDJSON events, resumable",
   "command": [
-    "dsh",
+    "{python}",
+    "{stack}/integrations/agents/dsh_launch.py",
     "--profile",
     "headless",
     "{mcp}",

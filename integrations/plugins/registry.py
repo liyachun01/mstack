@@ -92,7 +92,7 @@ def fill(template, values, lists=None):
 
 
 def render(plugin, mcp=(), resume=(), **values):
-    return fill(plugin['command'], {'python': sys.executable, 'plugin_dir': plugin['dir'], **values},
+    return fill(plugin['command'], {'python': sys.executable, 'plugin_dir': plugin['dir'], 'stack': STACK_ROOT, **values},
                 {'mcp': mcp, 'resume': resume})
 
 
