@@ -40,6 +40,8 @@ class RoleCardTests(unittest.TestCase):
         self.assertIn('repo **orchestrator** (top level)', text)
         self.assertIn('You never work on an issue yourself', text)
         self.assertIn('work with no issue goes to a side chat', text)
+        self.assertIn('**After every merge**', text)                                          # MST-47
+        self.assertIn('board merged --project repo --task <ISSUE>', text)
         self.assertIn('**customer-api**: apps API ({{mstack:CLIENT_ORG_A_SHORT}}/IRO), session `local_api`', text)
         self.assertIn('**staff-web**: apps * ({{mstack:CLIENT_ORG_B}}/CAN), no session registered', text)
 
@@ -48,6 +50,7 @@ class RoleCardTests(unittest.TestCase):
         self.assertIn('**customer-api** sub-orchestrator', text)
         self.assertIn('You never work on an issue yourself', text)
         self.assertIn('Your orchestrator is `local_top`', text)
+        self.assertIn('board merged --project repo --scope customer-api --task <ISSUE>', text)
         self.assertIn('board owner --project repo --scope customer-api', text)
         self.assertIn('`local_w`', text)
 

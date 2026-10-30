@@ -89,6 +89,9 @@ ME = '''query { viewer { id } }'''
 CREATE = '''mutation($input: IssueCreateInput!) { issueCreate(input: $input) { issue { id identifier } } }'''
 UPDATE = '''mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }'''
 COMMENT = '''mutation($input: CommentCreateInput!) { commentCreate(input: $input) { comment { id } } }'''
+ATTACHMENTS = '''query($id: String!) { issue(id: $id) { attachments(first: 100) { nodes { url } } } }'''
+ATTACH = '''mutation($issueId: String!, $url: String!, $title: String) {
+  attachmentLinkURL(issueId: $issueId, url: $url, title: $title) { success } }'''
 
 
 def phase_of(comments):
@@ -417,6 +420,18 @@ class LinearBoard:
         else:
             link.post(COMMENT, {'input': {'issueId': issue['id'], 'body': body}})
         self.forget(task)
+
+    def add_resource(self, task, url, title):
+        """Link a URL under the issue's Resources (a Linear link attachment) unless it is there already.
+        True when added; False when it was there or the board is private (Linear stays read-only)."""
+        if self.journal:
+            return False
+        issue, link = self._issue(task)
+        have = link.post(ATTACHMENTS, {'id': issue['id']})['issue']['attachments']['nodes']
+        if any(a['url'] == url for a in have):
+            return False
+        link.post(ATTACH, {'issueId': issue['id'], 'url': url, 'title': title})
+        return True
 
     def owner_says(self, task, text):
         """Private boards: record the owner's words (given in the orchestrator chat) on the issue's thread."""

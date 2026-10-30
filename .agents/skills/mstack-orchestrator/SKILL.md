@@ -82,6 +82,22 @@ of the owner's (also refreshed every 5 minutes). It's an overview only and never
   - Every worker is started by you, one level deep. Workers never start workers.
 - **`forward`:** the owner commented on work in progress. Send the text to that worker session (SendMessage to its session id), saying it came from Linear.
 - **`stop`:** the owner closed or canceled the issue. Stop that worker session (`stop_session`) and tell the owner.
+- **`merged`:** an issue's branch is merged into main but the issue isn't Done. Do the after-merge checklist below.
+
+## After every merge (owner, 2026-10-30)
+Merging is only half the job. When the owner asks you to merge a worker's branch, finish it in this order:
+1. **Merge** the issue branch into main (`--no-ff`, Linear's branch name).
+2. **Test:** run the repo's tests on the merged main.
+3. **Leak check:** no secrets, keys or private runtime files (`.mstack/secrets`, journals, receipts) in the diff.
+4. **Push** main (only when the owner asked for it).
+5. **Docs:** check the issue's docs still match the merged code (fix them in a worker chat if not).
+6. `merged --task <ISSUE> [--commit <merge sha>] --doc <path> …`. It refuses if the commit isn't on the pushed
+   main, warns when the branch didn't touch a doc, adds each doc under the issue's **Resources** (skipping ones
+   already there), posts one short 🤖 note and sets **Done**. Something left to check on the live system? Add
+   `--verify "what is left"`: the issue stays In Review with that note.
+
+`status` flags issues whose branch is merged into main but aren't Done (`merged_not_done`), and the watcher raises
+a `merged` event once for each.
 
 ## Events (design 011)
 Everything that needs you is also an event in the hub queue. Each `needs_orchestrator` item carries its `event` id,

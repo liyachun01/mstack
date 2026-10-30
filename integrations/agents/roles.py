@@ -107,6 +107,12 @@ NO_WORK = ('**You never work on an issue yourself, and do no other real work her
            'piece of work in this chat ("do YEL-12 here yourself"). Then say so, record it with `note` when there\'s '
            'an issue, and do only that. When unsure, ask the owner.')
 
+AFTER_MERGE = ('**After every merge** (owner, 2026-10-30), in this order: merge → run the tests → check for leaked '
+               'secrets or private runtime files → push → `%s --task <ISSUE> --doc <path> …` (adds the docs as the '
+               'issue\'s Resources, posts one note and sets Done; `--verify "what is left"` keeps it In Review). '
+               'Check the docs still match the merged code first. `status` lists issues whose branch is merged but '
+               'which are not Done.')
+
 
 def card(project, session):
     """The role card for a session, or None if it has no mstack role in this project."""
@@ -144,7 +150,8 @@ def card(project, session):
 
     me = roles.get(session)
     if me and me.get('role') == 'orchestrator':
-        lines = ['## Your mstack role: %s **orchestrator** (top level)' % name, RULES['orchestrator'], NO_WORK]
+        lines = ['## Your mstack role: %s **orchestrator** (top level)' % name, RULES['orchestrator'], NO_WORK,
+                 AFTER_MERGE % run('merged')]
         others = {s: c for s, c in scopes.items() if s != me.get('scope')}
         if others:
             lines += ['You never start worker sessions or run `dispatch`; that is your sub-orchestrators\' job '
@@ -160,6 +167,7 @@ def card(project, session):
     elif me and me.get('role') == 'sub-orchestrator':
         scope = me.get('scope')
         lines = ['## Your mstack role: **%s** sub-orchestrator (%s)' % (scope, name), RULES['sub-orchestrator'], NO_WORK,
+                 AFTER_MERGE % (run('merged') + ' --scope ' + scope),
                  scope_line(scope, scopes.get(scope, {}), board, subs), *board_duty(scope),
                  'If the app refuses `start_session` because your turn began with another session\'s message, offer '
                  'the worker as a proposal card (initiation `own_initiative`) for the owner to start, and tell your '
