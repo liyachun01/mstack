@@ -13,7 +13,7 @@ Choose per task, record the choice on the issue, and never switch the owner's gl
 |---|---|---|
 | Claude Desktop, official login | default app profile (`~/Library/Application Support/Claude`) | in use |
 | Claude Desktop → Magpie → DeepSeek | third-party profile in `Claude-3p/configLibrary`, gateway `127.0.0.1:3425` | profile kept, Magpie running; see `infra/magpie/README.md` |
-| DeepSeek Harness (`dsh`) | `~/.local/bin/dsh`, profile under `infra/harnesses/deepseek` | installed; retained profile never started |
+| DeepSeek Harness (`dsh`) headless | `dsh` worker runner (`integrations/plugins/builtin/dsh`): `dsh --profile headless --json`, resumable by session id | runner written (MST-57); usable **after qualification** (doc 015 step 1, MST-56). The retained web profile is never used for workers |
 | OpenCode | `integrations/plugins/builtin/opencode` runner (`opencode run`) | runner written; binary not installed |
 | Llama.app (local) | `http://127.0.0.1:9931/v1` on the Mac | app installed; no model weights yet |
 
@@ -31,8 +31,11 @@ Check that a route is up before using it, read-only:
 
 ## Routing an mstack issue
 - An issue's worker host comes from its plan (`--agent`) and `taskboard.workers`. Desktop hosts
-  (`claude-desktop`, `codex-desktop`) open a session; CLI hosts (`opencode`, later `dsh`) run headless in the
+  (`claude-desktop`, `codex-desktop`) open a session; CLI hosts (`dsh`, `opencode`) run headless in the
   task worktree and report with `note`/`done` like any worker.
+- `dsh` (DeepSeek V4 Flash by default) only once qualified: until the owner has approved doc 015 step 1's result,
+  don't put `dsh` in `taskboard.workers` or a plan's `--agent`. Then: `--agent dsh`, first plan line
+  `Model: DeepSeek V4 Flash (dsh headless)`. Its session shows in "My tasks" as `dsh:<id>`, linked to its run log.
 - Put the model in the plan's first line, e.g. `Model: DeepSeek (via OpenCode)`, so the owner approves it with the plan.
 - If the chosen route isn't available, say which one is missing and propose the next best. Don't
   quietly fall back to another model.

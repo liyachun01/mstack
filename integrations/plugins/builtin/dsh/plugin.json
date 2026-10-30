@@ -1,0 +1,40 @@
+{
+  "$schema": "../../schemas/plugin.schema.json",
+  "name": "dsh",
+  "version": "0.1.0",
+  "joint": "agent",
+  "status": "implemented",
+  "transport": "argv",
+  "summary": "DeepSeek Harness headless: one task per process, NDJSON events, resumable by session id (qualification pending: doc 015)",
+  "command": [
+    "dsh",
+    "--profile",
+    "headless",
+    "{mcp}",
+    "{resume}",
+    "--json",
+    "{brief}"
+  ],
+  "resume": [
+    "--session-id",
+    "{session}"
+  ],
+  "stream": {
+    "kind_keys": ["type", "event", "kind"],
+    "session_events": ["session"],
+    "session_keys": ["session_id", "sessionId", "id", "session.id"],
+    "final_events": ["final"],
+    "text_keys": ["text", "content", "message"],
+    "error_events": ["error"]
+  },
+  "requires": {
+    "binaries": [
+      "dsh"
+    ]
+  },
+  "capabilities": [
+    "resume",
+    "json-events"
+  ],
+  "mcp_style": "dsh-patch"
+}

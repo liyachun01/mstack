@@ -35,6 +35,11 @@ description: Behave as a worker session dispatched by the mstack orchestrator fo
     default medium). Medium and big need `--doc <path>` (in your worktree or the repo) and, unless the board is
     private, an issue description of at most 800 characters that links the doc. Small: `--size small`.
     `--force` only when the owner agrees; it is noted on the issue.
+- **Headless CLI workers** (`dsh`, `opencode`: you were started with the brief as your only prompt, no chat):
+  you can't ask mid-run and nobody reads your output live. Decide within the approved plan; anything that needs the
+  owner goes in `board note` (or in your `done` summary as "left open"). Report with `note`/`done` exactly as above;
+  if you don't run `done`, mstack posts your final answer as the review summary when your process exits. An owner
+  comment arrives later as a new turn of the same session.
 - **Ideas for mstack itself:** `mstack spark --from <project> "<idea>"`. Never edit mstack from a task.
 - **Helpers and sub-issues:**
   - For a part of your issue, you may start a **helper** as your side session (one level; it never starts its own).

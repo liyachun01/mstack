@@ -64,7 +64,7 @@
       "items": {
         "type": "string"
       },
-      "description": "argv template. Placeholders: {python} {brief} {cwd} {notify} {plugin_dir}; an argument that is exactly {mcp} expands to the host's per-run MCP arguments."
+      "description": "argv template. Placeholders: {python} {brief} {cwd} {notify} {plugin_dir}; an argument that is exactly {mcp} expands to the host's per-run MCP arguments, and exactly {resume} to the filled `resume` arguments on a resumed turn (else nothing)."
     },
     "entry": {
       "type": "string",
@@ -161,9 +161,67 @@
       "enum": [
         "codex-config",
         "mcp-json",
+        "dsh-patch",
         "none"
       ],
-      "description": "agent only: how this host accepts per-run MCP servers. codex-config: -c mcp_servers.* via the {mcp} argv placeholder. mcp-json: an untracked .mcp.json in the worktree, enabled in its local settings. none: not supported."
+      "description": "agent only: how this host accepts per-run MCP servers. codex-config: -c mcp_servers.* via the {mcp} argv placeholder. mcp-json: an untracked .mcp.json in the worktree, enabled in its local settings. dsh-patch: a per-run overlay file in the worktree's .mstack/cache/, passed as `--patch <file>` via {mcp}. none: not supported."
+    },
+    "resume": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      },
+      "description": "agent (argv) only: arguments that continue an earlier session, filled in at {resume}. Placeholder: {session} (the harness's own session id, read from `stream`)."
+    },
+    "stream": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "agent (argv) only: the host prints one JSON event per line (NDJSON). mstack reads the session id and the final text from it. Key lists are tried in order, so a renamed field only needs a manifest edit.",
+      "properties": {
+        "kind_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "fields that name an event's kind (default [\"type\", \"event\", \"kind\"])"
+        },
+        "session_events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "event kinds that carry the session id (default [\"session\"])"
+        },
+        "session_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "fields holding the session id, dotted for nesting (default [\"session_id\", \"sessionId\", \"id\", \"session.id\"])"
+        },
+        "final_events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "event kinds with the run's final answer (default [\"final\"])"
+        },
+        "text_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "fields holding text (default [\"text\", \"content\", \"message\"])"
+        },
+        "error_events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "event kinds that report an error (default [\"error\"])"
+        }
+      }
     }
   },
   "allOf": [

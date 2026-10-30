@@ -8,7 +8,7 @@ observations, and each project's role registry. Sink: one collection "My tasks" 
 Rows: one per session (orchestrator, worker, helper), keyed `session/<id>`; worker and helper rows also carry their
 issue. An issue with no session keeps an issue row, keyed `<board>/<issue>`. Every row says where it comes from
 (`item_source`: `<workspace>/<team>`, `session` or `hub`) with a link to it (`source_url`: a session's chat link,
-else the Linear issue URL) and its scope (`—` when none applies). An issue's Linear
+a CLI worker's run log, else the Linear issue URL) and its scope (`—` when none applies). An issue's Linear
 parent is shown as `parent_issue` and as the "Parent Task" relation to the parent's row; a shown issue's parent is
 always shown too.
 
@@ -76,8 +76,13 @@ def status_of(issue):
     return OF_TYPE.get(kind, 'Backlog')
 
 
+HARNESS_AGENT = {'dsh': 'deepseek'}             # CLI harness → the model family it runs (opencode stays other)
+
+
 def agent_of(runner):
     runner = (runner or 'claude').lower()
+    if runner in HARNESS_AGENT:
+        return HARNESS_AGENT[runner]
     for name in ('claude', 'codex', 'deepseek'):
         if name in runner:
             return name
@@ -191,13 +196,19 @@ def desired(issues, board_state, sources, now=None, roles=None, boards=None):
                 return scope
         return NO_SCOPE
 
-    def add(session, props, name, kind, agent, parent, report):
+    def add(session, props, name, kind, agent, parent, report, run=None):
         # Owner rules (2026-10-30): archived/deleted only when observed so. Idle when last seen not running a turn
         # and its issue isn't waiting for review; every other session (never observed, running, just acked) is active.
+        # A spawned CLI session (`<harness>:<id>`, MST-57) is never observed by the hub: its run says whether its
+        # process is live, a stopped one is archived, and its link is the run log.
         state = (seen.get(session) or {}).get('state')
+        cli = bool(run and run.get('log') and ':' in session)
+        if cli:
+            state = 'archived' if run.get('stopped') else 'active' if run.get('live') else 'idle'
         if state not in ('archived', 'deleted'):
             state = 'idle' if state == 'idle' and props.get('task_status') != 'In Review' else 'active'
-        props = {**props, 'source_url': (seen.get(session) or {}).get('link') or CHAT_LINK % session,
+        link = 'file://' + run['log'] if cli else (seen.get(session) or {}).get('link') or CHAT_LINK % session
+        props = {**props, 'source_url': link,
                  'agent_session': session, 'session_type': kind, 'session_agent': agent,
                  'session_parent': parent, 'session_state': state, 'session_report': short(report),
                  'session_action': (actions.get(session) or {}).get('text')}
@@ -228,7 +239,8 @@ def desired(issues, board_state, sources, now=None, roles=None, boards=None):
             ({'task_project': run.get('table'), 'item_source': 'session'}, 'Worker %s' % session)
         props['task_scope'] = scope_of(run.get('table'), run.get('issue'), scope)
         report = (run.get('report') or {}).get('text') or ''
-        add(session, props, name, 'worker', agent_of(run.get('runner')), parent_of(run.get('table'), scope, orchs), report)
+        add(session, props, name, 'worker', agent_of(run.get('runner')), parent_of(run.get('table'), scope, orchs), report,
+            run)
         if run.get('issue'):
             key = '%s/%s' % (run['table'], run['issue'])
             if (run.get('dispatched_at') or '') >= (newest_for_issue.get(key, ('', ''))[0]):

@@ -1,6 +1,7 @@
 # 015 — Multi-harness workers: DeepSeek Harness first, OpenCode second (MST-54, 2026-10-30)
 
-Status: investigation and plan. Nothing was installed, started, logged in or called. Every setup step below is a
+Status: investigation and plan; steps 2–3 built in MST-57 (see "Phase-1 steps 2–3 as built"). Nothing was
+installed, started, logged in or called. Every setup step below is a
 proposal that goes through `.agents/skills/mcp-stack-setup-guard/SKILL.md` with the owner's explicit OK.
 
 ## Goal
@@ -113,7 +114,7 @@ approvals in dsh don't qualify, or when a UI needs a session server.
 
 ### Runner plugin per harness
 
-`integrations/plugins/builtin/dsh/plugin.json` (sketch, not added yet):
+`integrations/plugins/builtin/dsh/plugin.json` (the MST-54 sketch; the built manifest adds `{resume}` and a `stream` block, see "as built" below):
 
 ```json
 {"name": "dsh", "joint": "agent", "transport": "argv", "status": "planned",
@@ -205,6 +206,44 @@ Each setup step (★) is its own setup-guard proposal and needs the owner's OK b
    mid-run).
 4. **First real issue** on DeepSeek: a small, low-risk mstack issue with `--agent dsh`, the owner reviews as usual.
 5. **Then decide** phase 2: OpenCode (install ★) if dsh approvals or resume fall short, and the session-UI pilot.
+
+## Phase-1 steps 2–3 as built (MST-57, 2026-10-30)
+
+Code and skills only; no `dsh` was run and no model was called. Everything is tested with a fake `dsh`
+(`integrations/orchestrator/tests/fake_dsh.py`), the way `echo` is.
+
+| Gap / item | What mstack does now | Where |
+|---|---|---|
+| Manifest | `integrations/plugins/builtin/dsh/plugin.json`: `dsh --profile headless {mcp} {resume} --json {brief}`, `resume: ["--session-id", "{session}"]`, a `stream` block naming the event fields, capabilities `resume`, `json-events`. Schema gained `resume`, `stream` and `mcp_style: dsh-patch`. | plugin schema, `registry.render` |
+| `mcp_style: dsh-patch` | `runners.dsh_patch` writes `.mstack/cache/dsh-mcp.patch.yml` in the worktree (one `@deepseek-ai/dsh-mcp-client` stdio row per selected worker MCP server, JSON written as YAML) and passes `--patch <file>`. Never touches `~/.dsh`. | `runners.py` |
+| 1. Session id | `work` reads the stream line by line (`runners.Stream`); the first `session` event sets `run.session = "dsh:<id>"` and `run.native_session` while the process still runs. Non-JSON lines are kept as plain output. The raw stream is kept beside the run log (`<log>.stream.log`, secrets redacted). | `cli.py work` |
+| 2. Forward | `board forward --task X "text"` and the hub: the comment is queued on the run. While `work` is live it becomes the next turn of the same session when the current one ends; otherwise a `work --resume` is spawned at once. A review reply (In Review → Todo) makes the next `dispatch` resume the recorded session with the updated brief. | `forward_to_cli`, `cmd_dispatch` |
+| 3. Stop | `board stop --task X` and the hub: SIGTERM to the `work` process group after an identity check (`/proc/<pid>/cmdline` is `cli.py work … <task>`); the run is marked stopped, its queue dropped, nothing resumes it. Desktop workers are refused (they use `stop_session`). | `stop_cli` |
+| 4. Double report | `board done` stamps its report with `ts`; `work` skips `finish()` when a `done` report is newer than the start of the last turn. Otherwise the review summary is the `final` event's text (else errors, else plain output). | `cmd_work` |
+| Hub | `tick` carries out `forward`/`stop` for CLI runs itself (`deliver_to_cli`) and lists them as `cli_workers`; they no longer become orchestrator events. Desktop runs are unchanged. | `tick_once` |
+| My tasks | Spawned sessions get worker rows: `session_agent` `deepseek` for `dsh` (`HARNESS_AGENT`), link `file://<run log>`, state from the run (live → active, ended → idle unless In Review, stopped → archived). `sessions observe --complete` never marks a `<host>:<id>` session deleted; CTAs on them are refused with a pointer to `forward`/`stop`. | `status_table.py`, `cmd_sessions` |
+| Skills | `mstack-orchestrator` (CLI workers' forward/stop), `mstack-models` (dsh row: after qualification), `mstack-worker` (headless workers can't ask mid-run). | `.agents/skills` |
+
+### Assumptions to confirm in qualification (MST-56)
+
+Each is a manifest or one-line change if wrong:
+- **Event names and fields:** kind in `type` (or `event`/`kind`); session id in `session_id`/`sessionId`/`id`/
+  `session.id` of a `session` event; final text in `text`/`content`/`message` of a `final` event; `error` events.
+  All of it is the manifest's `stream` block.
+- **Flag order:** `--patch` and `--session-id` before `--json`, task text last.
+- **Overlay rows for stdio MCP:** `config.transport: stdio`, `command`, `args` (the HTTP rows in
+  `infra/harnesses/deepseek` are the only verified shape). `failOnStartupError: false`, so a missing tenant
+  doesn't kill the run.
+- **Headless "ask":** mstack doesn't answer permission requests. If headless denies or aborts, the worker's
+  `final`/`error` text becomes the review summary and the owner sees it; no code depends on which.
+- **Resume:** `--session-id` from the same cwd after the earlier process exited. mstack never resumes a live session.
+- **SIGTERM:** reaches `dsh` through the process group; a drain longer than the owner's patience isn't handled.
+- **Environment:** the manifest calls `dsh` on PATH. Pinning `DSH_HOME`, the worker key file and OTel off belongs to
+  the step-1 setup (a headless mode in `deepseek_launch.py`, or a wrapper the manifest calls); then only the
+  manifest's `command[0]` changes.
+
+Left for later: the hub chat can't act on "My tasks" CTAs for CLI sessions (continue = `forward`, archive = `stop`
+could be wired); the run-log link is a `file://` path on the VM, so it opens only where that path exists.
 
 Out of scope for phase 1: ChatGPT/Codex workers (the `codex` manifest exists; the CLI is uninstalled), the
 orchestrator itself on DeepSeek, and any UI install.

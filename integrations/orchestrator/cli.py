@@ -12,6 +12,9 @@ plan and who works; these commands do the deterministic parts:
   ack      record that the host session for a handoff was started
   dispatch start one worker per approved task, each in its own git worktree:
            CLI hosts are spawned; desktop hosts get a launch spec (handoff)
+  work     (spawned by dispatch) run a CLI worker's turns; --resume continues its session with queued comments
+  forward  pass an owner comment to a CLI worker: queued, or a resumed turn when its process has ended
+  stop     stop a CLI worker's process (desktop sessions are stopped with the host's own tool)
   done     a worker in any host reports its task ready for review
   note     reverse path: a session or worker updates the issue
   merged   after merge and push: docs as the issue's Resources, one note, Done (or In Review with --verify)
@@ -31,6 +34,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -511,8 +515,8 @@ def wire_mcp(repo, tree, runner, servers):
         return [], []
     style = runners.mcp_style(runner, repo)
     names = [s['name'] for s in servers]
-    if style == 'codex-config':
-        return names, []          # passed as -c overrides on the run itself
+    if style in ('codex-config', 'dsh-patch'):
+        return names, []          # passed on the run itself (-c overrides, or a --patch overlay in .mstack/cache)
     if style != 'mcp-json':
         return [], ['%s does not accept per-run MCP servers' % runner]
     if git(repo, 'ls-files', '--', '.mcp.json', check=False):
@@ -694,17 +698,25 @@ def cmd_dispatch(args, b):
         if runners.kind(runner, repo) == 'spawn':
             log = repo/'.mstack/cache/runs'/(short + '.log')
             log.parent.mkdir(parents=True, exist_ok=True)
-            run['pid'] = row['pid'] = spawn([sys.executable, str(HERE/'cli.py'), 'work', '--task', task['id'],
-                                            '--table', name, '--runner', runner, '--tree', str(tree)], log)
+            before = runs.get(task['id']) or {}
+            # Back from review on the same resumable host: continue its session (the brief now has the owner's notes).
+            again = before.get('native_session') and before.get('runner') == runner and runners.can_resume(runner, repo)
+            if again:
+                run.update({k: before[k] for k in ('session', 'native_session')})
             run['log'] = str(log)
-            where = 'Dispatched to **%s**' % runner
+            with state() as s:                 # recorded before the process can read it
+                s.setdefault('runs', {})[task['id']] = run
+            run['pid'] = row['pid'] = spawn([sys.executable, str(HERE/'cli.py'), 'work', '--task', task['id'],
+                                            '--table', name, '--runner', runner, '--tree', str(tree)]
+                                           + (['--resume'] if again else []), log)
+            where = 'Dispatched to **%s**%s' % (runner, ' (resuming its session)' if again else '')
         else:
             row['handoff'] = run['handoff'] = runners.handoff(runner, session_title(task), work_dir, brief, repo)
             where = 'Handed to **%s**' % runner
         b.set(task['id'], task_status='In Progress', task_agent=runner, agent_session=runner + ' · ' + str(tree))
         b.say(task['id'], '%s in worktree `%s` (branch task/%s).' % (where, tree, short))
-        with state() as s:
-            s.setdefault('runs', {})[task['id']] = run
+        with state() as s:                     # a spawned worker may already have recorded its session: keep it
+            s.setdefault('runs', {})[task['id']] = {**s['runs'].get(task['id'], {}), **run} if 'log' in run else run
         started.append(row)
         room -= 1
     return {'table': name, 'started': started, 'already_running': len(busy)}
@@ -1008,7 +1020,9 @@ def cmd_sessions(args, b):
         for c in work['ctas']:
             live = [w for w, i in info.items() if i.get('parent') == c['session']
                     and (seen.get(w) or {}).get('state') not in ('archived', 'deleted')]
-            if c['type'] == 'orchestrator' and c['cta'] in ('archive', 'delete') and live:
+            if ':' in c['session']:                   # a spawned CLI worker (`dsh:<id>`) has no chat to act on
+                refused.append(cta_done(c['session'], 'refused: CLI worker; use `mstack board forward` or `board stop`'))
+            elif c['type'] == 'orchestrator' and c['cta'] in ('archive', 'delete') and live:
                 refused.append(cta_done(c['session'], 'refused: this orchestrator still has %d active worker(s)' % len(live)))
             else:
                 ready.append({k: c.get(k) for k in ('session', 'cta', 'name', 'type')})
@@ -1036,7 +1050,8 @@ def cmd_sessions(args, b):
             gone = []
             if args.complete:                       # a full listing: our sessions missing from it were deleted
                 for ident in (st.get(key) or {}).get('sessions') or {}:
-                    if ident not in listed_ids and ident != args.hub_session:
+                    # CLI workers (`dsh:<id>`) are never in the app's list; their run says if they live.
+                    if ident not in listed_ids and ident != args.hub_session and ':' not in ident:
                         seen[ident] = {**seen.get(ident, {}), 'state': 'deleted', 'at': stamp}
                         gone.append(ident)
             st['sessions_observed'] = {'at': time.time(), 'asked': time.time()}
@@ -1331,6 +1346,9 @@ def tick_once(args, b):
             # Send the prompt to the existing session (SendMessage), then `ack --task … --session …`.
             out['needs_orchestrator'].append({'kind': 'resume', 'task': task, 'table': run['table'],
                                               'issue': run.get('issue'), **run['resume']})
+    out['needs_orchestrator'], handled = deliver_to_cli(out['needs_orchestrator'], b)
+    if handled:
+        out['cli_workers'] = handled
     events = to_events(out['needs_orchestrator'], out['verdicts'])
     try:
         ids = board_store().enqueue(events)
@@ -1439,23 +1457,181 @@ def rate_note(now_limited, logged):
                    for name, until in sorted(fresh.items()))
 
 
+def cli_run(run):
+    """A run of a spawned CLI host (dispatch gave it a run log), as opposed to a desktop or adopted session."""
+    return bool(run) and 'log' in run and not run.get('handoff') and not run.get('adopted')
+
+
+def take_queued(task):
+    """The owner comments waiting for a CLI worker, as the next turn's prompt; None (and the run marked not live)
+    when there are none. One lock, so a comment can't slip in between the check and the end of the run."""
+    with state() as s:
+        run = s.get('runs', {}).get(task) or {}
+        queued = run.pop('queued', [])
+        if not queued or run.get('stopped'):
+            run['live'] = False
+            return None
+    return ('The owner commented on your issue (from Linear). Act on it, then report with `mstack board note` or '
+            '`mstack board done` as before:\n\n' + '\n\n'.join('- ' + q['text'] for q in queued))
+
+
+def run_turn(argv, work_dir, env, stream, out_file):
+    """One host process; its output is parsed line by line (session id as soon as it appears) and kept beside the
+    run log. Same process group as `work`, so `board stop` ends both."""
+    proc = subprocess.Popen(argv, cwd=work_dir, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            stdin=subprocess.DEVNULL, text=True)
+    with open(out_file, 'a') as keep, proc.stdout:
+        for line in proc.stdout:
+            keep.write(SECRET.sub('[redacted]', line))
+            found = stream.feed(line)
+            if found:
+                yield found
+    proc.wait()
+    stream.exit = proc.returncode
+
+
 def cmd_work(args, b):
-    """Detached CLI worker: one non-interactive agent session, then report back for review."""
+    """Detached CLI worker: one or more turns of one non-interactive agent session, then report back for review.
+    A host with a JSON event stream (manifest `stream`) gets its session id recorded on the run, so "My tasks"
+    shows it. Owner comments forwarded while it runs wait in the run's queue and become the next turn of the same
+    session (manifest `resume`); `--resume` starts with that queue (or, back from review, with the updated brief).
+    The review ask is skipped when the worker already ran `board done` itself during the last turn."""
     b = board_of_task(args.task, b)
     tree = Path(args.tree)
     brief = (tree/'.mstack/cache/brief.md').read_text()
+    repo = Path(table_of(args.table)[1]['path'])
     env = dict(os.environ, MSTACK_TASK=args.task, MSTACK_AGENT=args.runner)
     if args.runner == 'codex':
         env['MSTACK_CODEX_NOTIFY'] = '1'
-    run = read_state().get('runs', {}).get(args.task, {})
+    with state() as s:
+        run = s.setdefault('runs', {}).setdefault(args.task, {})
+        run.update(live=True, pid=os.getpid())
+        run.pop('stopped', None)
+        run = dict(run)
     work_dir = Path(run.get('cwd') or tree)
-    done = subprocess.run(runners.command(args.runner, brief, work_dir, Path(table_of(args.table)[1]['path']),
-                                          run.get('mcp', [])),
-                          cwd=work_dir, env=env,
-                          capture_output=True, text=True)
-    output = SECRET.sub('[redacted]', (done.stdout + done.stderr).strip())
-    commits = finish(b, args.task, tree, args.runner, output, done.returncode)
-    return {'task': args.task, 'exit': done.returncode, 'commits': commits, 'output_tail': output[-4000:]}
+    native = run.get('native_session')
+    prompt = brief
+    if args.resume:
+        if not native:
+            raise ValueError('Task %s has no recorded session to resume' % args.task)
+        prompt = take_queued(args.task) or ('The owner replied to your review; their notes are in the updated brief '
+                                            'below. Continue the same task.\n\n' + brief)
+        with state() as s:
+            s['runs'][args.task]['live'] = True
+    out_file = Path(run['log']).with_suffix('.stream.log') if run.get('log') else tree/'.mstack/cache/run.stream.log'
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    turns, stream = [], None
+    while prompt is not None:
+        started = time.time()
+        stream = runners.Stream(args.runner, repo)
+        argv = runners.command(args.runner, prompt, work_dir, repo, run.get('mcp', []),
+                               session=native if (args.resume or turns) else None, cache=tree/'.mstack/cache')
+        for found in run_turn(argv, work_dir, env, stream, out_file):
+            native = native or found
+            with state() as s:
+                s['runs'][args.task].update(session='%s:%s' % (args.runner, native), native_session=native)
+        turns.append(stream.exit)
+        prompt = take_queued(args.task) if native and runners.can_resume(args.runner, repo) else None
+        if prompt is None:
+            with state() as s:
+                s['runs'][args.task]['live'] = False
+    output = SECRET.sub('[redacted]', stream.summary().strip())
+    report = (read_state().get('runs', {}).get(args.task) or {}).get('report') or {}
+    result = {'task': args.task, 'exit': turns[-1], 'turns': len(turns), 'session': native, 'output_tail': output[-4000:]}
+    if (read_state().get('runs', {}).get(args.task) or {}).get('stopped'):
+        return {**result, 'finish': 'skipped: stopped'}
+    if report.get('kind') == 'done' and report.get('ts', 0) >= started:
+        return {**result, 'finish': 'skipped: the worker already reported done'}
+    result['commits'] = finish(b, args.task, tree, args.runner, output, turns[-1])
+    return result
+
+
+def forward_to_cli(task, text):
+    """An owner comment for a CLI worker. It is queued on the run; while the worker's process runs, it becomes the
+    next turn when the current one ends. Otherwise a resumed turn starts now (`work --resume`)."""
+    stamp = time.strftime('%Y-%m-%dT%H:%M:%S%z')
+    with state() as s:
+        run = s.get('runs', {}).get(task)
+        if not cli_run(run):
+            raise ValueError('Task %s has no CLI worker' % task)
+        if run.get('stopped'):
+            return 'not delivered: the worker was stopped'
+        run.setdefault('queued', []).append({'text': SECRET.sub('[redacted]', text)[:4000], 'at': stamp})
+        if run.get('live') and alive(run.get('pid')):
+            return 'queued for the running %s worker (next turn)' % run['runner']
+        run = dict(run)
+    repo = Path(read_state()['tables'][run['table']]['path'])
+    if not run.get('native_session') or not runners.can_resume(run['runner'], repo):
+        return 'queued: %s recorded no resumable session; dispatch it again to act on it' % run['runner']
+    pid = spawn([sys.executable, str(HERE/'cli.py'), 'work', '--task', task, '--table', run['table'],
+                 '--runner', run['runner'], '--tree', run['tree'], '--resume'], run['log'])
+    with state() as s:
+        s['runs'][task].update(pid=pid, live=True)
+    return 'resumed %s session %s (pid %d)' % (run['runner'], run['native_session'], pid)
+
+
+def our_worker(pid, task):
+    """Identity check before a signal: the pid is still a `cli.py work` process for this task (Linux /proc)."""
+    try:
+        argv = Path('/proc/%d/cmdline' % pid).read_bytes().split(b'\0')
+    except OSError:
+        return False
+    return b'work' in argv and task.encode() in argv and any(a.endswith(b'cli.py') for a in argv)
+
+
+def stop_cli(task):
+    """End a CLI worker: SIGTERM to its process group (`work` and the host), after an identity check. The run is
+    marked stopped either way, so queued comments are dropped and nothing resumes it."""
+    with state() as s:
+        run = s.get('runs', {}).get(task)
+        if not cli_run(run):
+            raise ValueError('Task %s has no CLI worker (desktop sessions are stopped with stop_session)' % task)
+        pid = run.get('pid')
+        live = run.get('live') and alive(pid)
+        if live and not our_worker(pid, task):
+            live = None
+        run.update(stopped=time.strftime('%Y-%m-%dT%H:%M:%S%z'), live=False, queued=[])
+    if live:
+        os.killpg(pid, signal.SIGTERM)
+        return 'stopped %s worker (pid %d)' % (run['runner'], pid)
+    if live is None:
+        return 'pid %d is no longer this worker; nothing signalled' % pid
+    return 'the %s worker was not running' % run['runner']
+
+
+def cmd_forward(args, b):
+    key = run_key(args.task)
+    text = (sys.stdin.read() if args.text == '-' else args.text).strip()
+    return {'task': key, 'delivered': forward_to_cli(key, text)}
+
+
+def cmd_stop(args, b):
+    key = run_key(args.task)
+    done = stop_cli(key)
+    board_of_task(key, b).say(key, 'Worker stopped: %s.%s' % (done, ' ' + args.reason if args.reason else ''))
+    return {'task': key, 'stopped': done}
+
+
+def deliver_to_cli(items, b):
+    """The hub's part for CLI workers: `forward` and `stop` items whose worker is a spawned CLI run are carried out
+    here (resume or queue; SIGTERM) instead of going to the orchestrator chat. Returns (left for the
+    orchestrator, done here)."""
+    runs = read_state().get('runs', {})
+    left, done = [], []
+    for item in items:
+        if item['kind'] not in ('forward', 'stop') or not cli_run(runs.get(item.get('task'))):
+            left.append(item)
+            continue
+        try:
+            if item['kind'] == 'forward':
+                result = forward_to_cli(item['task'], item.get('text') or '')
+                board_for(item['table'], b).say(item['task'], 'Your comment went to the CLI worker: %s.' % result)
+            else:
+                result = stop_cli(item['task'])          # linear_signals already told the owner it stopped
+        except (ValueError, OSError) as error:
+            result = 'failed: %s' % str(error)[:200]
+        done.append({'kind': item['kind'], 'task': item['task'], 'issue': item.get('issue'), 'result': result})
+    return left, done
 
 
 def cmd_done(args, b):
@@ -1561,7 +1737,7 @@ def record_report(key, kind, text):
     with state() as s:
         run = s.get('runs', {}).get(key)
         if run is not None:
-            run['report'] = {'kind': kind, 'at': time.strftime('%Y-%m-%dT%H:%M:%S%z'),
+            run['report'] = {'kind': kind, 'at': time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'ts': time.time(),
                              'text': SECRET.sub('[redacted]', text)[:2000]}
 
 
@@ -1908,6 +2084,11 @@ def parser():
     s.add_argument('--runner', help='agent plugin name (built-in or the project\'s own)')
     s = sub.add_parser('work'); s.add_argument('--task', required=True); s.add_argument('--table', required=True)
     s.add_argument('--runner', required=True); s.add_argument('--tree', required=True)
+    s.add_argument('--resume', action='store_true', help='continue the recorded session with the queued comments')
+    s = sub.add_parser('forward', help='pass an owner comment to a CLI worker (queued, or resumes its session)')
+    s.add_argument('--task', required=True, help='issue id or IRO-123'); s.add_argument('text', help='text or - for stdin')
+    s = sub.add_parser('stop', help='stop a CLI worker (SIGTERM to its process group) and note it on the issue')
+    s.add_argument('--task', required=True, help='issue id or IRO-123'); s.add_argument('--reason')
     s = sub.add_parser('tick'); s.add_argument('--project')
     s.add_argument('--hub', action='store_true', help='one pass per registered orchestrator (project, scope)')
     s = sub.add_parser('watch'); s.add_argument('--project'); s.add_argument('--interval', type=int, default=10)

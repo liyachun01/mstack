@@ -82,6 +82,12 @@ of the owner's (also refreshed every 5 minutes). It's an overview only and never
   - Every worker is started by you, one level deep. Workers never start workers.
 - **`forward`:** the owner commented on work in progress. Send the text to that worker session (SendMessage to its session id), saying it came from Linear.
 - **`stop`:** the owner closed or canceled the issue. Stop that worker session (`stop_session`) and tell the owner.
+- **CLI workers (`dsh`, `opencode`, `echo`: spawn hosts):** there is no chat to message or stop. The watcher/hub
+  already handles their `forward` and `stop` itself (the tick's `cli_workers` lists what it did): a comment is
+  queued and becomes the worker's next turn of the same session (a resumed `work` when its process has ended);
+  a closed issue sends SIGTERM to its process group. You don't get those events. By hand:
+  `forward --task <ISSUE> "<text>"` and `stop --task <ISSUE> [--reason …]`. A review reply on a resumable CLI
+  worker makes the next `dispatch` resume its session instead of starting a new one.
 - **`merged`:** an issue's branch is merged into main but the issue isn't Done. Do the after-merge checklist below.
 
 ## After every merge (owner, 2026-10-30)

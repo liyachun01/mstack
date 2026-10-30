@@ -91,9 +91,9 @@ def fill(template, values, lists=None):
     return out
 
 
-def render(plugin, mcp=(), **values):
+def render(plugin, mcp=(), resume=(), **values):
     return fill(plugin['command'], {'python': sys.executable, 'plugin_dir': plugin['dir'], **values},
-                {'mcp': mcp})
+                {'mcp': mcp, 'resume': resume})
 
 
 def selected(project, cfg=None):

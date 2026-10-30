@@ -115,6 +115,19 @@ class Rows(unittest.TestCase):
     def rows(self, state=None, issues=None):
         return st.desired(issues or self.ISSUES, state or self.STATE, self.BOARDS, NOW, self.ROLES)
 
+    def test_spawned_cli_session_row_links_its_run_log(self):
+        dsh = {'table': 'mstack', 'issue': 'MST-40', 'runner': 'dsh', 'session': 'dsh:fake-1', 'native_session': 'fake-1',
+               'log': '/w/.mstack/cache/runs/mst-40.log', 'live': True, 'dispatched_at': '2026-10-30T11:00:00+0800'}
+        state = {**self.STATE, 'runs': {'t9': dsh}, 'sessions_seen': {'dsh:fake-1': {'state': 'deleted'}}}
+        props = self.rows(state)[0]['session/dsh:fake-1']['properties']
+        self.assertEqual((props['session_agent'], props['session_state'], props['source_url']),
+                         ('deepseek', 'active', 'file:///w/.mstack/cache/runs/mst-40.log'))
+        ended = self.rows({**state, 'runs': {'t9': {**dsh, 'live': False}}})[0]['session/dsh:fake-1']['properties']
+        self.assertEqual(ended['session_state'], 'active')         # MST-40 waits for review: shown active
+        stopped = self.rows({**state, 'runs': {'t9': {**dsh, 'stopped': 'x'}}})[0]['session/dsh:fake-1']['properties']
+        self.assertEqual(stopped['session_state'], 'archived')
+        self.assertEqual([st.agent_of(r) for r in ('dsh', 'opencode', 'codex', None)], ['deepseek', 'other', 'codex', 'claude'])
+
     def test_one_row_per_session_with_its_issue(self):
         rows, _, _ = self.rows()
         self.assertEqual(sorted(rows), ['session/local_api', 'session/local_help', 'session/local_morch', 'session/local_new',
