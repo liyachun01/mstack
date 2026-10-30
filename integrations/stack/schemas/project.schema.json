@@ -2272,9 +2272,18 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "path": {"type": "string", "description": "repo folder relative to the project root"},
-              "base": {"type": "string", "description": "branch new task branches start from (default: origin/HEAD)"},
-              "role": {"type": "string", "description": "what the repo is, for briefs"}
+              "path": {
+                "type": "string",
+                "description": "repo folder relative to the project root"
+              },
+              "base": {
+                "type": "string",
+                "description": "branch new task branches start from (default: origin/HEAD)"
+              },
+              "role": {
+                "type": "string",
+                "description": "what the repo is, for briefs"
+              }
             }
           }
         },
@@ -2324,8 +2333,68 @@
                   "type": "string",
                   "pattern": "^[A-Z][A-Z0-9]*-[0-9]+$"
                 }
+              },
+              "never_done": {
+                "type": "boolean",
+                "description": "MST-60: mstack never sets Linear Done here; the consumer (product owner, iOS) closes the issue. Landed work stays In Progress, live on Preview (merged --verify) is In Review."
+              },
+              "landing": {
+                "type": "string",
+                "minLength": 1,
+                "description": "MST-60: the integration branch work lands on (e.g. clientapp-dev-sb); `board merged` checks origin/<landing> instead of main."
+              },
+              "linear_status": {
+                "type": "object",
+                "description": "MST-60: board phase → Linear status name overrides (null leaves Linear as it is). Private boards default to Todo/In Progress/In Review → In Progress.",
+                "propertyNames": {
+                  "enum": [
+                    "Backlog",
+                    "Todo",
+                    "Awaiting Approval",
+                    "In Progress",
+                    "In Review",
+                    "Done",
+                    "Canceled"
+                  ]
+                },
+                "additionalProperties": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
               }
             }
+          }
+        },
+        "never_done": {
+          "type": "boolean",
+          "description": "MST-60: mstack never sets Linear Done here; the consumer (product owner, iOS) closes the issue. Landed work stays In Progress, live on Preview (merged --verify) is In Review."
+        },
+        "landing": {
+          "type": "string",
+          "minLength": 1,
+          "description": "MST-60: the integration branch work lands on (e.g. clientapp-dev-sb); `board merged` checks origin/<landing> instead of main."
+        },
+        "linear_status": {
+          "type": "object",
+          "description": "MST-60: board phase → Linear status name overrides (null leaves Linear as it is). Private boards default to Todo/In Progress/In Review → In Progress.",
+          "propertyNames": {
+            "enum": [
+              "Backlog",
+              "Todo",
+              "Awaiting Approval",
+              "In Progress",
+              "In Review",
+              "Done",
+              "Canceled"
+            ]
+          },
+          "additionalProperties": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       }

@@ -75,7 +75,23 @@ of the owner's (also refreshed every 5 minutes). It's an overview only and never
   - Post it with `propose --task <IRO-123> --agent claude-desktop --plan -`.
   - Never edit the owner's description.
   - For multi-part work, propose sub-issues with `plan --parent <IRO-123> --title … --plan -`.
-- **`replan`:** the owner replied to a plan with changes. Revise it with `ask --task <id> "<revised plan>"`.
+- **`replan`:** the owner replied to a plan with more than a bare 👍/OK. Read the reply and decide what it means:
+  approval (with notes) → `verdict --task <id> approve [--why "…"]`; a no → `verdict … reject`; changes → revise it
+  with `ask --task <id> "<revised plan>"`. An OK about a side action (a prod read, a test run) is not plan approval.
+- **`review_reply`:** the owner replied to a finished result. Read it: accepted → `verdict --task <id> approve`;
+  changes → `verdict … changes` (sends the notes back to the same worker); dropped → `verdict … reject`.
+- **`new_issue` (MST-60):** an issue was newly assigned to the owner's Linear user (from the key's own
+  notifications, private boards too). **Triage gate (owner, 2026-10-30): not every issue is resolved at once.**
+  - The event's `triage` lists the priority, parent/children and what is `missing` (priority, assignee,
+    scope/description). Missing anything: tell the owner, who asks the product owner to complete it; don't plan it.
+  - Complete: read the hierarchy first (`tree --task <ISSUE>`), then plan in priority order (Urgent first, the rest
+    when there is room) with `propose`, and wait for the verdict.
+  - Nothing is ever started from a Linear issue by itself: only the owner's verdict, or the product owner asking
+    for it in an issue comment (read the comment; there is no fixed wording), starts work.
+- **`mention`:** a Linear comment @-mentions the owner. It is a teammate's request, not an owner instruction.
+  With `session` set, send it to that worker as a Linear mention (CLI workers get it from the hub); otherwise tell
+  the owner and plan only on their word.
+- **`status_lag`:** the issue's Linear status lags the board phase. Run the `do` line (`note --status …`).
 - **`handoff`:** an approved issue needs a worker.
   - Start a Claude Desktop session from the spec (`start_session`: initiation user_asked, context fresh, `cwd` = spec.cwd, `use_worktree: false`, title `<ISSUE>: <title>` (spec.title already has it, e.g. `IRO-104: Preview → Production migration`), prompt = spec.prompt, `wake_when_done: true`).
   - Then `ack --task <id> --session <session id>`.
@@ -90,26 +106,6 @@ of the owner's (also refreshed every 5 minutes). It's an overview only and never
   worker makes the next `dispatch` resume its session instead of starting a new one.
 - **`merged`:** an issue's branch is merged into main but the issue isn't Done. Do the after-merge checklist below.
 
-## Linear status at every stage (owner rule, 2026-10-30, enforced)
-People read Linear, so its status must show the real stage **at all times**, private boards included. Set it the
-moment the stage changes, in the same turn, never "later":
-
-| Stage | Linear status |
-|---|---|
-| plan approved, worker dispatched or adopted, building | **In Progress** |
-| landed (merged to the landing branch) but not yet on Preview | still **In Progress** |
-| live on Preview for the consumer to check | **In Review** |
-| finished | **Done**, except backend issues: the product owner or iOS closes those |
-| delayed or blocked | keep the status, record why (note on public boards, journal on private ones) |
-
-- **Public boards:** `note --status`, `done` and `merged` set it.
-- **Private boards:** mstack doesn't write to Linear yet (MST-60 adds it). Set the issue's status yourself with the
-  Linear connector at the same moment: the **status field only**, never comments, titles or other fields. A team
-  without the state (e.g. CAN has no In Review) gets its nearest state.
-- **Before ending every turn:** check that each issue you touched shows its real stage in Linear, and fix any that
-  lag. `status` and the hub's lag flags (MST-60) help; until then, compare by hand.
-- Tell your workers the same rule: they report the stage change to you at once, and you set it.
-
 ## After every merge (owner, 2026-10-30)
 Merging is only half the job. When the owner asks you to merge a worker's branch, finish it in this order:
 1. **Merge** the issue branch into main (`--no-ff`, Linear's branch name).
@@ -120,7 +116,23 @@ Merging is only half the job. When the owner asks you to merge a worker's branch
 6. `merged --task <ISSUE> [--commit <merge sha>] --doc <path> …`. It refuses if the commit isn't on the pushed
    main, warns when the branch didn't touch a doc, adds each doc under the issue's **Resources** (skipping ones
    already there), posts one short 🤖 note and sets **Done**. Something left to check on the live system? Add
-   `--verify "what is left"`: the issue stays In Review with that note.
+   `--verify "what is left"`: the issue stays In Review with that note. A scope with `landing` (e.g. customer-api
+   → `clientapp-dev-sb`) is checked against `origin/<landing>`, not main (`--branch` overrides).
+
+## Linear status at every stage (owner rule, 2026-10-30, MST-60)
+Linear's status must say where the work is, private boards included (there only the **status field** is
+written, never comments). The board pushes it at each step; never set it by hand in Linear:
+- plan proposed, waiting for the owner → unchanged (Todo or the team's planning state);
+- plan approved, worker dispatched or adopted and building, result waiting for review → **In Progress**;
+- landed on the integration branch but not on Preview → still **In Progress** (`merged` on a `never_done` scope);
+- live on Preview or staging for the consumer → **In Review** (`merged --verify "…"`);
+- **Done** only on scopes without `never_done`; backend scopes (`never_done: true`) leave it to the consumer.
+A team without a state (CAN has no In Review) gets its nearest state; the command output's `linear_status` and
+the state's `linear_state_map` show the mapping. Delayed or blocked: keep the status, note why on the board.
+`adopt` keeps the issue's real stage (`--stage planning|building|preview|blocked --reason …`; by default read from
+the Linear state), so a draft plan or a Preview issue is never forced to In Progress. Before ending every turn,
+check that each issue you touched shows its real stage in Linear; tell your workers the same rule.
+Scope config: `never_done`, `landing`, `linear_status` (phase → state overrides) in `taskboard.orchestrators.<scope>`.
 
 `status` flags issues whose branch is merged into main but aren't Done (`merged_not_done`), and the watcher raises
 a `merged` event once for each.
@@ -132,14 +144,15 @@ for your information). After acting on one, resolve it: `/home/developer/workspa
 --id N`. An unresolved event is resent every few minutes, and a duplicate of one you've handled is just resolved.
 
 When a worker's turn ends you are woken: run `poll`. A finished worker has already posted its
-result with `done`; the owner's 👍 makes it Done, and a reply sends the notes back to the same worker.
+result with `done`; the owner's 👍 makes it Done, and a reply is yours to read (`review_reply`).
 
 ## Board tools added from sparks (2026-10-29)
-- **Verdicts:**
-  - "Approve", "go" or "do it", optionally followed by instructions, approve the plan, and the instructions travel
-    to the worker as notes.
-  - 👍 followed by more text also approves, unless the text hedges ("but", "actually", "instead", "wait", a
-    question). Then it's feedback.
+- **Verdicts (owner, 2026-10-30: no fixed phrasing):** only a bare signal is applied automatically: a 👍 / 👎
+  reaction, or a latest reply that is nothing but "👍", "ok", "lgtm, go ahead" or "👎" (earlier replies travel as
+  notes). Any reply with content reaches you as `replan` / `review_reply`; read it and record your reading with
+  `verdict --task <ISSUE> approve|reject|changes [--why "…"]`. The whole reply travels to the worker as notes.
+  On private boards, record the owner's OK for a side action with `owner --side --task <ISSUE> "…"`: it stays on
+  the thread and is never a verdict. `owner` prints how the next poll will read what it recorded.
 - **Adopted workers:** an approved plan for an issue that already has an adopted session produces a `resume` item.
   Send the prompt to that session with SendMessage, then `ack --task <ISSUE> --session <id>`.
 - **`done` and `ack`** accept the Linear name (IRO-123). `done` works for adopted sessions with no recorded worktree.

@@ -75,7 +75,8 @@ state (`.mstack/evidence/taskboard-test.json`) and private journals. That's why 
 - `mstack orchestrators register --project P [--scope S] --session ID` (also `list`, `remove`). Routes are
   `project/scope`; an event for a scope with no route falls back to the board's unscoped route.
 - `tick` turns every `needs_orchestrator` item, and every verdict it applied, into an event, and adds the event id to
-  the item (`event`). Kinds: `plan`, `replan`, `forward`, `stop`, `handoff`, `resume`, `verdict`. Items were already
+  the item (`event`). Kinds: `plan`, `replan`, `forward`, `stop`, `handoff`, `resume`, `verdict`, and since MST-60
+  `new_issue`, `mention`, `status_lag`, `review_reply` (design 010, "Linear triggers"). Items were already
   raised once by the watcher's seen-keys; handoffs and resumes repeat until acked, so each carries a dedupe key per
   dispatch. Verdicts are information only: `events next` resolves them as it hands them out.
   An event's scope is the tick's `--scope`, else the scope that planned, adopted or dispatched the task.

@@ -216,6 +216,34 @@ def add_resources(b, table, task, docs):
     return [d for d in docs if b.add_resource(task, base + d, d)]
 
 
+def set_status(b, task, status, linear=..., **props):
+    """Board phase; on a Linear board also its Linear status (`linear`: an explicit target, None to leave Linear).
+    A phase change ends a recorded block (adopt --stage blocked)."""
+    unblock(task)
+    if hasattr(b, 'linear_target'):
+        b.set(task, task_status=status, linear=linear, **props)
+    else:
+        b.set(task, task_status=status, **props)
+
+
+def unblock(task):
+    if task in read_state().get('blocked', {}):
+        with state() as s:
+            s['blocked'].pop(task, None)
+
+
+def pushed(b):
+    """Linear status changes this board made, for the command's output; a mapped one is also recorded in the
+    state (`linear_state_map`), so a team missing a state shows which state stands in for it (MST-53)."""
+    moves = getattr(b, 'pushed', None) or []
+    mapped = getattr(b, 'mapped', None) or {}
+    if mapped:
+        with state() as s:
+            for (team, wanted), got in mapped.items():
+                s.setdefault('linear_state_map', {}).setdefault(team, {})[wanted] = got
+    return ['%s → %s%s' % (m['issue'], m['linear'], ' (for %s)' % m['wanted'] if m['mapped'] else '') for m in moves]
+
+
 def main_branch(repo):
     """The repo's main branch: what origin/HEAD points at, else main or master."""
     head = git(repo, 'symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD', check=False)
@@ -434,33 +462,62 @@ def poll_board(name, base):
             continue
         remember(task['id'], name)
         verdict, text, ask = anyboard.decide(b.messages(task['id']))
-        if verdict in ('approved', 'rejected') or (verdict == 'feedback' and status == 'In Review'):   # it will move
+        if verdict in ('approved', 'rejected'):       # it will move
             b, current = recheck(name, base, task['id'])
             if current.get('task_status') != status:
                 continue                              # applied meanwhile by another watcher
             verdict, text, ask = anyboard.decide(b.messages(task['id']))
         row = {'table': name, 'task': task['id'], 'name': task.get('name'), 'was': status, 'verdict': verdict,
                'ask': ask, 'scope': scope_of_task(task['id'])}     # the board-wide hub poll routes by the task's scope
-        if verdict == 'approved':
-            row['now'] = 'Todo' if status == 'Awaiting Approval' else 'Done'
-            b.set(task['id'], task_status=row['now'])
-            b.say(task['id'], {'Todo': 'Approved, queued for a worker.',
-                               'Done': 'Accepted. Branch is ready to merge.'}[row['now']])
-        elif verdict == 'rejected':
-            row['now'] = 'Canceled' if status == 'Awaiting Approval' else 'Todo'
-            b.set(task['id'], task_status=row['now'])
-            b.say(task['id'], 'Dropped.' if row['now'] == 'Canceled' else 'Sent back to the worker.')
+        if verdict in ('approved', 'rejected'):
+            row['now'] = apply_verdict(b, task['id'], status, verdict)
         elif verdict == 'feedback':
+            # A reply with content: the orchestrator reads it and decides (MST-60), nothing moves on wording.
             row['feedback'] = text
-            if status == 'In Review':
-                # Change requests on finished work go straight back to the worker with the notes.
-                row['now'] = 'Todo'
-                b.set(task['id'], task_status='Todo')
-                b.say(task['id'], 'Got it, sending your notes back to the worker.')
-            else:
-                row['action'] = 'orchestrator: revise the plan, then `ask` again'
+            row['action'] = ('orchestrator: read the reply and decide: `board verdict --task <id> approve|reject%s`%s'
+                             % ('|changes' if status == 'In Review' else '',
+                                ', or revise the plan and `ask` again' if status == 'Awaiting Approval' else ''))
         if verdict != 'pending':
             out.append(row)
+    return out
+
+
+VERDICTS = {('Awaiting Approval', 'approve'): ('Todo', 'Approved, queued for a worker.'),
+            ('Awaiting Approval', 'reject'): ('Canceled', 'Dropped.'),
+            ('In Review', 'approve'): ('Done', 'Accepted. Branch is ready to merge.'),
+            ('In Review', 'reject'): ('Todo', 'Sent back to the worker.'),
+            ('In Review', 'changes'): ('Todo', 'Got it, sending your notes back to the worker.')}
+
+
+def apply_verdict(b, task, status, verdict):
+    """Move a pending task on by the owner's verdict (approve, reject, or changes on a result); returns the new phase."""
+    verdict = {'approved': 'approve', 'rejected': 'reject'}.get(verdict, verdict)
+    if (status, verdict) not in VERDICTS:
+        raise ValueError('no %r verdict for a task in %s' % (verdict, status))
+    now, text = VERDICTS[(status, verdict)]
+    # Private: accepted is not landed yet, so Linear stays In Progress until `merged`.
+    set_status(b, task, now, linear=None if now == 'Done' and getattr(b, 'journal', None) else ...)
+    b.say(task, text)
+    return now
+
+
+def cmd_verdict(args, b):
+    """The orchestrator's reading of an owner reply the watcher left to it (MST-60): approve, reject, or (on a
+    finished result) changes. The reply itself stays on the thread and travels to the worker as notes."""
+    b = board_of_task(run_key(args.task), b)
+    task = b.fresh(args.task) if hasattr(b, 'fresh') else b.get(args.task)
+    status = task.get('task_status')
+    if status not in PENDING:
+        raise ValueError('%s is %s: nothing waits for a verdict' % (args.task, status))
+    ident = task.get('id') or args.task
+    _, text, _ = anyboard.decide(b.messages(ident))
+    now = apply_verdict(b, ident, status, args.verdict)
+    if args.why:
+        b.say(ident, 'Read the reply as %s: %s' % (args.verdict, SECRET.sub('[redacted]', args.why)[:400]))
+    out = {'task': ident, 'issue': task.get('linear_identifier'), 'was': status, 'now': now, 'notes': text}
+    moves = pushed(b)
+    if moves:
+        out['linear_status'] = moves
     return out
 
 
@@ -644,6 +701,7 @@ def finish(b, task_id, tree, who, summary, exit_code=None):
     b.say(task_id, '**%s** %s on branch `%s`: %d commit(s), %s.\n\n%s\n\nReact 👍 to accept, or reply with changes.'
           % (who, ended, branch, len(commits), stat,
              SECRET.sub('[redacted]', summary)[-1200:] or '(no summary)'), ask=True)
+    unblock(current.get('id') or task_id)
     b.set(task_id, task_status='In Review', agent_run_count=(current.get('agent_run_count') or 0) + 1)
     return len(commits)
 
@@ -799,6 +857,8 @@ def linear_signals(name, lb, seen, fresh):
                         'session': run.get('session'), 'now': task['task_status']})
             lb.say(task['id'], 'Stopped: you closed this issue in Linear (status → %s).' % task['task_status'])
             fresh.append('stop:' + task['id'])
+    out += linear_triggers(name, lb, tasks, runs, seen, fresh)
+    out += status_lags(name, lb, tasks, seen, fresh)
     # Branches merged into main whose issue is still open: remind the orchestrator once (after-merge follow-up).
     repo = Path(read_state()['tables'][name]['path'])
     for task in merged_not_done(repo, [t for t in tasks if t.get('managed')]):
@@ -1136,8 +1196,7 @@ def cmd_adopt(args, b):
             sessions.append({'session': args.session, 'tree': args.tree, 'scope': SCOPE, 'note': args.related})
         remember(task['id'], name, task.get('linear_identifier'))
         return {'task': task['id'], 'issue': task.get('linear_identifier'), 'scope': SCOPE, 'related': args.related}
-    # A session is already on it: In Progress unless the issue is closed (never "Todo", which would dispatch a second worker).
-    status = {'completed': 'Done', 'canceled': 'Canceled', 'duplicate': 'Canceled'}.get(task.get('linear_state_type'), 'In Progress')
+    status, linear = adopt_stage(task, args.stage)
     with state() as s:
         s.setdefault('runs', {})[task['id']] = {'table': name, 'scope': SCOPE, 'runner': 'claude-desktop', 'pid': None,
                                                 'session': args.session, 'tree': args.tree, 'cwd': args.tree,
@@ -1146,9 +1205,135 @@ def cmd_adopt(args, b):
                                                 'adopted': True}
         mark_active(s, args.session)
     remember(task['id'], name, task.get('linear_identifier'))
-    b.say(task['id'], 'Tracked by the %s orchestrator: session `%s`%s (status → %s).'
-          % (SCOPE or name, args.session, ' in `%s`' % args.tree if args.tree else '', status))
-    return {'task': task['id'], 'issue': task.get('linear_identifier'), 'scope': SCOPE, 'status': status}
+    reason = ': %s' % SECRET.sub('[redacted]', args.reason)[:300] if args.reason else ''
+    b.say(task['id'], 'Tracked by the %s orchestrator: session `%s`%s (status → %s)%s%s'
+          % (SCOPE or name, args.session, ' in `%s`' % args.tree if args.tree else '', status,
+             ' %s' % args.stage if args.stage in ('blocked', 'planning', 'preview') else '', reason or '.'))
+    with state() as s:
+        if args.stage == 'blocked':
+            s.setdefault('blocked', {})[task['id']] = args.reason or 'blocked'
+        else:
+            s.get('blocked', {}).pop(task['id'], None)
+    if linear and hasattr(b, 'push_status'):
+        b.push_status(task['id'], b.linear_target(status) if linear is ... else linear)   # the note records the phase
+    out = {'task': task['id'], 'issue': task.get('linear_identifier'), 'scope': SCOPE, 'status': status}
+    moves = pushed(b)
+    if moves:
+        out['linear_status'] = moves
+    return out
+
+
+ADOPT_STAGES = {'planning': ('Awaiting Approval', None),   # a draft plan waiting on the owner: Linear unchanged
+                'building': ('In Progress', ...),          # the phase's own Linear status (In Progress)
+                'preview': ('In Review', 'In Review'),     # live on Preview for the consumer
+                'blocked': ('In Progress', None)}          # keep Linear as it is; the reason is recorded
+
+
+def adopt_stage(task, stage=None):
+    """(board phase, Linear target) for an adopted issue: its real stage, never a forced In Progress (customer-api,
+    MST-60). Never "Todo", which would dispatch a second worker. Without --stage: closed stays closed, a managed issue
+    keeps its open phase, a Linear "…review…" state is on Preview, anything else is being built."""
+    closed = {'completed': 'Done', 'canceled': 'Canceled', 'duplicate': 'Canceled'}.get(task.get('linear_state_type'))
+    if stage:
+        return ADOPT_STAGES[stage]
+    if closed:
+        return closed, None
+    if task.get('managed') and task.get('task_status') in ('Awaiting Approval', 'In Progress', 'In Review'):
+        return task['task_status'], None
+    if 'review' in (task.get('linear_state') or '').lower():
+        return ADOPT_STAGES['preview']
+    return ADOPT_STAGES['building']
+
+
+TRIGGER_LOOKBACK = 86400  # seconds of Linear notifications read back (the hub's seen-keys drop repeats)
+
+
+def notify_since(name):
+    """Where a board's trigger read starts: never before the board's first read (old notifications start
+    nothing), at most a day back, and the same value for every scope in the hour so they share one read.
+    None on the very first read, which only records the baseline."""
+    base = read_state().get('notify_since', {}).get(name)
+    if base is None:
+        with state() as s:
+            s.setdefault('notify_since', {})[name] = time.time()
+        return None
+    start = max(base, (time.time() - TRIGGER_LOOKBACK) // 3600 * 3600)
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(start))
+
+
+def linear_triggers(name, lb, tasks, runs, seen, fresh):
+    """Linear-side triggers (MST-60): a new issue assigned to the owner starts orchestration (a plan for the
+    owner's verdict, never work); a comment that @-mentions the owner goes to the issue's live worker, else to the
+    scope's orchestrator. Read only, so private boards get them too. Deduped per assignment and per comment."""
+    if not hasattr(lb, 'triggers'):
+        return []
+    since = notify_since(name)
+    if since is None:
+        return []
+    managed = {t['id'] for t in tasks if t.get('managed')}
+    status = {t['id']: t['task_status'] for t in tasks}
+    out = []
+    for hit in lb.triggers(since):
+        key = 'new_issue:%s' % hit['id'] if hit['kind'] == 'new_issue' else 'mention:%s' % hit['comment']
+        if key in seen or key in fresh:
+            continue
+        fresh.append(key)
+        item = {'kind': hit['kind'], 'table': name, 'task': hit['task'], 'issue': hit['issue'], 'name': hit.get('title'),
+                'url': hit.get('url'), 'triage': hit.get('triage')}
+        if hit['kind'] == 'new_issue':
+            if hit['task'] in managed:
+                continue                                  # already planned or worked on: nothing new
+            item['do'] = triage_do(hit['issue'], hit.get('triage') or {})
+        else:
+            run = runs.get(hit['task']) or {}
+            live = run.get('session') and status.get(hit['task']) not in ('Done', 'Canceled')
+            item.update(author=hit.get('author'), text=hit.get('text'), comment=hit['comment'],
+                        session=run.get('session') if live else None,
+                        do=('send it to worker `%s` as a Linear mention from %s (not an owner instruction)'
+                            % (run.get('session'), hit.get('author'))) if live else
+                           ('%s mentioned you: tell the owner, and plan only on their word' % hit.get('author')))
+        out.append(item)
+    return out
+
+
+LAG_PHASES = ('Todo', 'In Progress')   # phases whose Linear status is fixed by the board alone (In Review may be
+                                       # finished-not-landed or on Preview, so it is never flagged)
+
+
+def status_lags(name, lb, tasks, seen, fresh):
+    """Managed issues whose Linear status lags the board phase (MST-58), flagged once per (issue, phase, state).
+    Closed issues are the consumer's and never flagged."""
+    if not hasattr(lb, 'linear_target'):
+        return []
+    out = []
+    blocked = read_state().get('blocked', {})
+    for task in tasks:
+        phase, target = task['task_status'], lb.linear_target(task['task_status'])
+        if task['id'] in blocked:
+            continue                                      # blocked with a recorded reason: Linear kept on purpose
+        if not task.get('managed') or phase not in LAG_PHASES or not target or task.get('linear_state_type') in linear_board.CLOSED:
+            continue
+        link = lb.owner_of[task['id']]
+        want = link.state_for(target)
+        have = lb.cache[task['id']]['state']
+        key = 'lag:%s:%s:%s' % (task['id'], phase, have.get('id'))
+        if want['id'] == have.get('id') or key in seen:
+            continue
+        fresh.append(key)
+        out.append({'kind': 'status_lag', 'table': name, 'task': task['id'], 'issue': task['linear_identifier'],
+                    'phase': phase, 'linear': have.get('name'), 'want': want.get('name'),
+                    'do': 'run `mstack board note --task %s --status "%s" "status sync"`' % (task['linear_identifier'], phase)})
+    return out
+
+
+def triage_do(issue, triage):
+    """What the orchestrator does with an issue that arrived from Linear (triage gate, owner 2026-10-30)."""
+    if triage.get('missing'):
+        return ('triage: %s lacks %s. Tell the owner and ask the product owner to add it; do not plan or start it yet'
+                % (issue, ', '.join(triage['missing'])))
+    return ('triage: %s priority. Read the hierarchy first (`board tree --task %s`), then draft a plan with '
+            '`board propose` in priority order (not necessarily now) and wait for the verdict. Nothing starts unless '
+            'the owner, or the product owner in an issue comment, asks for it.' % (triage.get('priority'), issue))
 
 
 def scope_of_task(task):
@@ -1336,8 +1521,9 @@ def tick_once(args, b):
             for r in rows:
                 key = '%s:%s' % (r['task'], hashlib.sha256(r.get('feedback', '').encode()).hexdigest()[:12])
                 if r.get('action') and key not in seen:
-                    out['needs_orchestrator'].append({'kind': 'replan', 'table': name, 'task': r['task'], 'name': r['name'],
-                                                      'feedback': r['feedback'], 'scope': r.get('scope')})
+                    kind = 'replan' if r['was'] == 'Awaiting Approval' else 'review_reply'
+                    out['needs_orchestrator'].append({'kind': kind, 'table': name, 'task': r['task'], 'name': r['name'],
+                                                      'feedback': r['feedback'], 'scope': r.get('scope'), 'do': r['action']})
                     fresh.append(key)
             out['started'] += cmd_dispatch(argparse.Namespace(project=name, runner=None), b)['started']
         except linear.RateLimited as error:         # never a failed tick: the board waits out the backoff
@@ -1658,17 +1844,21 @@ def cmd_stop(args, b):
 
 
 def deliver_to_cli(items, b):
-    """The hub's part for CLI workers: `forward` and `stop` items whose worker is a spawned CLI run are carried out
+    """The hub's part for CLI workers: `forward`, `stop` and worker `mention` items whose worker is a spawned CLI run are carried out
     here (resume or queue; SIGTERM) instead of going to the orchestrator chat. Returns (left for the
     orchestrator, done here)."""
     runs = read_state().get('runs', {})
     left, done = [], []
     for item in items:
-        if item['kind'] not in ('forward', 'stop') or not cli_run(runs.get(item.get('task'))):
+        cli_mention = item['kind'] == 'mention' and item.get('session')
+        if (item['kind'] not in ('forward', 'stop') and not cli_mention) or not cli_run(runs.get(item.get('task'))):
             left.append(item)
             continue
         try:
-            if item['kind'] == 'forward':
+            if cli_mention:
+                result = forward_to_cli(item['task'], 'Linear mention from %s (a teammate, not the owner): %s'
+                                        % (item.get('author'), item.get('text') or ''))
+            elif item['kind'] == 'forward':
                 result = forward_to_cli(item['task'], item.get('text') or '')
                 board_for(item['table'], b).say(item['task'], 'Your comment went to the CLI worker: %s.' % result)
             else:
@@ -1698,8 +1888,12 @@ def cmd_done(args, b):
     commits = finish(b, key, tree, run.get('runner') or 'worker', summary)
     added = add_resources(b, table_of_task(key), key, args.doc)
     record_report(key, 'done', summary)
-    return {'task': key, 'status': 'In Review', 'commits': commits, 'size': size, 'forced': bool(missing),
-            'resources_added': added}
+    out = {'task': key, 'status': 'In Review', 'commits': commits, 'size': size, 'forced': bool(missing),
+           'resources_added': added}
+    moves = pushed(b)
+    if moves:
+        out['linear_status'] = moves
+    return out
 
 
 def cmd_note(args, b):
@@ -1710,13 +1904,15 @@ def cmd_note(args, b):
     added = add_resources(b, table_of_task(args.task), args.task, args.doc)
     record_report(run_key(args.task), 'note', text)
     if args.status:
-        b.set(args.task, task_status=args.status)
+        set_status(b, b.get(args.task).get('id') or args.task, args.status)
     return {'task': args.task, 'posted': True, 'status': args.status, 'resources_added': added}
 
 
 def cmd_merged(args, b):
-    """After merge and push: check the commit is on the pushed main, add the docs as the issue's Resources, post
-    one short note, and set Done (or keep In Review with --verify "what is left")."""
+    """After merge and push: check the commit is on the pushed main (or the scope's `landing` branch, MST-60), add
+    the docs as the issue's Resources, post one short note, and set Done (or keep In Review with --verify "what is
+    left"). Linear: --verify (live on Preview for the consumer) is In Review; landed on a `never_done` scope stays
+    In Progress (the consumer closes it); otherwise Done."""
     key = run_key(args.task)
     run = read_state().get('runs', {}).get(key) or {}
     if args.project:
@@ -1731,7 +1927,7 @@ def cmd_merged(args, b):
         b = board_of_task(key, b)
     repo = Path(entry['path'])
     task = b.get(args.task)
-    main = main_branch(repo)
+    main = args.branch or getattr(b, 'landing', None) or main_branch(repo)
     remote = 'origin/' + main
     branch = task.get('branch') or run.get('branch')
     tip = git(repo, 'rev-parse', '--verify', '--quiet', 'refs/heads/%s^{commit}' % branch, check=False) if branch else ''
@@ -1770,10 +1966,18 @@ def cmd_merged(args, b):
     if args.verify:
         text += ' Still to verify: %s' % SECRET.sub('[redacted]', args.verify)[:600]
     b.say(args.task, text + doc_links(table, args.doc))
-    if not getattr(b, 'journal', None):
-        b.set(args.task, task_status=status)          # private boards: the note above already records the phase
+    linear = 'In Review' if args.verify else ('In Progress' if getattr(b, 'never_done', False) else 'Done')
+    if getattr(b, 'journal', None):
+        b.push_status(args.task, linear)              # private boards: the note above already records the phase
+    else:
+        set_status(b, args.task, status, linear=linear)
     record_report(key, 'merged', text)
-    return {'task': args.task, 'commit': commit, 'status': status, 'resources_added': added, 'warnings': warnings}
+    out = {'task': args.task, 'commit': commit, 'branch': main, 'status': status, 'resources_added': added,
+           'warnings': warnings}
+    moves = pushed(b)
+    if moves:
+        out['linear_status'] = moves
+    return out
 
 
 def record_report(key, kind, text):
@@ -1793,9 +1997,14 @@ def cmd_owner(args, b):
     if not hasattr(lb, 'owner_says'):
         raise ValueError('%s is not a Linear board' % name)
     text = (sys.stdin.read() if args.text == '-' else args.text).strip()
+    if getattr(args, 'side', False):
+        text = anyboard.SIDE + ' ' + text
     task = lb.get(args.task)
     lb.owner_says(task['id'], text)
-    return {'task': task['id'], 'issue': task.get('linear_identifier'), 'recorded': text[:200]}
+    out = {'task': task['id'], 'issue': task.get('linear_identifier'), 'recorded': text[:200]}
+    if not text.startswith(anyboard.SIDE) and task.get('task_status') in PENDING:
+        out['verdict'] = anyboard.decide(lb.messages(task['id']))[0]   # what the next poll will read it as
+    return out
 
 
 def cmd_inhand(args, b):
@@ -1949,13 +2158,17 @@ def event_line(e):
     p = e.get('payload') or {}
     what = e.get('issue') or p.get('issue') or p.get('linear') or e.get('task')
     detail = {'plan': lambda: 'owner asked for a plan%s' % (': ' + p['notes'][:300] if p.get('notes') else ''),
-              'replan': lambda: 'owner feedback on the plan: ' + (p.get('feedback') or '')[:400],
+              'replan': lambda: 'owner replied to the plan (read it and decide: verdict, or revise and ask): ' + (p.get('feedback') or '')[:400],
+              'review_reply': lambda: 'owner replied to the result (read it and decide: verdict approve|reject|changes): ' + (p.get('feedback') or '')[:400],
               'forward': lambda: 'owner comment for worker `%s`: %s' % (p.get('session'), (p.get('text') or '')[:400]),
               'stop': lambda: 'owner closed it (now %s); stop worker `%s`' % (p.get('now'), p.get('session')),
               'handoff': lambda: 'approved, ready for a worker: start a %s session titled "%s" in %s '
                                  '(brief: .mstack/cache/brief.md), then `board ack`' % (p.get('host'), p.get('title'), p.get('cwd')),
               'resume': lambda: 'approved plan for adopted chat `%s`: send it the prompt, then `board ack`' % p.get('session'),
               'verdict': lambda: 'verdict %s: %s → %s' % (p.get('verdict'), p.get('was'), p.get('now')),
+              'status_lag': lambda: 'Linear says %s but the board is %s (want %s): %s' % (p.get('linear'), p.get('phase'), p.get('want'), p.get('do')),
+              'new_issue': lambda: '"%s" assigned to you in Linear (%s): %s' % (p.get('name'), p.get('url'), p.get('do')),
+              'mention': lambda: '%s mentioned you: %s; %s' % (p.get('author'), (p.get('text') or '')[:400], p.get('do')),
               'merged': lambda: 'branch `%s` is merged into main but the issue is %s: %s' % (p.get('branch'), p.get('status'), p.get('do'))}
     text = detail.get(e['kind'], lambda: json.dumps(p, ensure_ascii=False)[:300])()
     resent = ' (resent, try %d)' % e['sends'] if (e.get('sends') or 0) > 1 else ''
@@ -2159,10 +2372,17 @@ def parser():
     s.add_argument('--commit', help='the merge commit (default: the tip of the issue branch)')
     s.add_argument('--doc', action='append', default=[], help='repo doc path to add as a Resource (taskboard.docs_url)')
     s.add_argument('--verify', help='what is still to check after merge: keeps the issue In Review')
+    s.add_argument('--branch', help="the branch it landed on (default: the scope's taskboard landing branch, else main)")
     s = sub.add_parser('status'); s.add_argument('--project', required=True)
     s = sub.add_parser('owner', help='private boards: record what the owner said in chat (/plan …, 👍, a reply)')
     s.add_argument('--project', required=True); s.add_argument('--task', required=True, help='issue id or IRO-123')
     s.add_argument('text', help='text or - for stdin')
+    s.add_argument('--side', action='store_true',
+                   help="the owner's OK or answer for a side action (not the plan): kept on the thread, never a verdict")
+    s = sub.add_parser('verdict', help="record the orchestrator's reading of an owner reply: approve, reject or changes")
+    s.add_argument('--task', required=True, help='issue id or IRO-123')
+    s.add_argument('verdict', choices=['approve', 'reject', 'changes'])
+    s.add_argument('--why', help='one line on how the reply was read (posted on the thread)')
     s = sub.add_parser('handover', help='brief for a fresh orchestrator session taking over this board or scope')
     s.add_argument('--project', required=True)
     s.add_argument('--messages', type=int, default=2, help='latest messages to include per open issue')
@@ -2178,6 +2398,10 @@ def parser():
     s.add_argument('--project', required=True); s.add_argument('--task', required=True, help='issue id or IRO-123')
     s.add_argument('--session', required=True); s.add_argument('--tree', help='its worktree, if it has its own')
     s.add_argument('--related', metavar='NOTE', help='list the session with the issue (e.g. "obsolete") instead of as its worker')
+    s.add_argument('--stage', choices=sorted(ADOPT_STAGES),
+                   help='its real stage (default: kept from the board, else read from Linear): planning = draft plan waiting '
+                        'on the owner, preview = live on Preview, blocked = keep Linear as is (give --reason)')
+    s.add_argument('--reason', help='why it is blocked or waiting (recorded on the board)')
     s = sub.add_parser('sync'); s.add_argument('--project', required=True)
     s = sub.add_parser('link'); s.add_argument('--project', required=True); s.add_argument('--entry', required=True)
     s.add_argument('--team', required=True); s.add_argument('--mode', choices=['pull', 'push', 'full'], default='pull')

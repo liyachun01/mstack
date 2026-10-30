@@ -10,9 +10,10 @@ description: Behave as a worker session dispatched by the mstack orchestrator fo
 - **Multi-repo workspace:** your folder holds one worktree per repo (brief section "Workspace"). Need another repo?
   Run `mstack board worktree --task <ISSUE> --repo <name>`. Never edit the repos at the project root.
 - **Linear status is always current (owner rule):** the moment your stage changes, report it so the issue's
-  Linear status shows it: building → In Progress (`note --status "In Progress"`), landed but not on Preview →
-  still In Progress, on Preview → In Review (`done`), blocked → keep the status and say why with `note`. On a
-  private board your orchestrator sets Linear, so tell it at once (turn-end reply) whenever the stage changes.
+  Linear status shows it: building → In Progress (`note --status "In Progress"`), finished → `done` (still In
+  Progress until it lands), landed but not on Preview → still In Progress, on Preview → In Review (your
+  orchestrator's `merged --verify`), blocked → keep the status and say why with `note`. The board pushes the status,
+  private boards included (status field only, MST-60); never edit it in Linear yourself.
 - **Your worktree:** you are on its own branch, named after the Linear issue. Work and commit only here.
   Never touch the main checkout or other worktrees. Never merge, push, or change global settings or team files.
 - **Conventions:** follow the repo's AGENTS.md / CLAUDE.md, and use its own tools (e.g. Serena, Graphify)

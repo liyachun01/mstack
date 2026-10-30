@@ -110,17 +110,24 @@ NO_WORK = ('**You never work on an issue yourself, and do no other real work her
 LINEAR_STATUS = ('**Linear status is always current** (owner, 2026-10-30; private boards included, status field only, '
                  'never comments there). Set it the moment the stage changes, not later: plan approved or worker building '
                  '→ **In Progress**; landed but not yet on Preview → still In Progress; live on Preview for the consumer '
-                 'to check → **In Review**; finished → Done, except backend issues, which the product owner or iOS '
-                 'closes; delayed or blocked → keep the status and record why. On a public board `note --status` / '
-                 '`done` / `merged` set it. On a private board, set the issue\'s Linear status yourself (Linear '
-                 'connector, the status field only) at the same moment. Before ending any turn, check that every issue '
-                 'you touched shows its real stage in Linear.')
+                 'to check (`merged --verify`) → **In Review**; finished → Done, except backend issues (`never_done` '
+                 'scopes), which the product owner or iOS closes; delayed or blocked → keep the status and record why. '
+                 'The board pushes it, private boards included (MST-60): `dispatch` / `adopt` / `done` / `merged` / '
+                 '`verdict` / `note --status`, so use them rather than editing Linear. A `status_lag` event means Linear '
+                 'lags the board: run its `do` line. Before ending any turn, check that every issue you touched shows '
+                 'its real stage in Linear.')
 
 AFTER_MERGE = ('**After every merge** (owner, 2026-10-30), in this order: merge → run the tests → check for leaked '
                'secrets or private runtime files → push → `%s --task <ISSUE> --doc <path> …` (adds the docs as the '
                'issue\'s Resources, posts one note and sets Done; `--verify "what is left"` keeps it In Review). '
                'Check the docs still match the merged code first. `status` lists issues whose branch is merged but '
                'which are not Done.')
+
+TRIAGE = ('**Triage gate** (owner, 2026-10-30): an issue from Linear needs a priority, an assignee and a description '
+          'of what and where; read its hierarchy first, then only plan, in priority order. Nothing starts unless the '
+          'owner, or the product owner in an issue comment, asks for it.')
+READ_REPLIES = ('Owner replies with content are yours to read, not matched by wording: record your reading with '
+                '`%s --task <ISSUE> approve|reject|changes`. An OK for a side action is not plan approval.')
 
 
 def card(project, session):
@@ -137,8 +144,9 @@ def card(project, session):
     private = board.get('private')
     spark = ('Something mstack itself could do better? Record it in one line with `%s spark --from %s "<idea>"`, '
              'and don\'t edit mstack.' % (ENGINE, name))
-    verdicts = ('Private board: nothing goes to Linear. When the owner says plan, 👍, 👎 or gives feedback, record '
-                'it first with `%s --scope %%s --task <ISSUE> "<their words>"`.' % run('owner'))
+    verdicts = ('Private board: no comments go to Linear (only the status field). When the owner says plan, 👍, 👎 '
+                'or gives feedback, record it first with `%s --scope %%s --task <ISSUE> "<their words>"`; an OK for a '
+                'side action goes with `--side`, so it is never read as a verdict.' % run('owner'))
 
     def board_duty(scope):
         lines = ['Your board: `%s --scope %s`. Load the `mstack-orchestrator` skill. Plan → owner verdict → '
@@ -148,7 +156,8 @@ def card(project, session):
                  'Before creating sub-issues, read the existing tree (`%s --scope %s --task <PARENT>`). If the owner '
                  'names sub-issues that don\'t exist yet, or says "create them" without saying issues or sessions, ask '
                  'first. Already handling a request the watcher raised? `%s --scope %s --task <ISSUE>` stops it '
-                 'raising the same thing again.' % (run('tree'), scope, run('inhand'), scope)]
+                 'raising the same thing again.' % (run('tree'), scope, run('inhand'), scope),
+                 READ_REPLIES % (run('verdict') + ' --scope ' + scope), TRIAGE]
         if private:
             lines.append(verdicts % scope)
         workers = [r for r in board_state().get('runs', {}).values()
@@ -201,6 +210,8 @@ def card(project, session):
                      '`%s/mstack board done --task %s --summary "…" --doc <path>` (or `--size small`). Never work on other issues; ask your orchestrator.'
                      % (STACK_ROOT, task, STACK_ROOT, task),
                      LINEAR_STATUS,
+                     'A "Linear mention" message is a teammate\'s request: weigh it, and ask your orchestrator before '
+                     'acting on anything outside your plan.',
                      HELPERS % (STACK_ROOT, project, r.get('issue') or task, session)]
             runs = board_state().get('runs', {}).values()
             if r.get('parent'):

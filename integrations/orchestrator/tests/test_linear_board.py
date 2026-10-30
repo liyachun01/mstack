@@ -19,7 +19,7 @@ ME = 'user-me'
 
 class FakeLinear:
     def __init__(self):
-        self.issues, self.labels, self.n, self.attachments = {}, [], 0, {}
+        self.issues, self.labels, self.n, self.attachments, self.notes = {}, [], 0, {}, []
         self.states = [{'id': 's-' + t, 'type': t, 'name': t.title(), 'position': i} for i, t in
                        enumerate(['backlog', 'unstarted', 'started', 'completed', 'canceled'])]
 
@@ -29,6 +29,9 @@ class FakeLinear:
                 'inverseRelations': {'nodes': i.get('blockedBy', [])}, 'comments': {'nodes': i['comments']}}
 
     def post(self, query, v):
+        if 'notifications(' in query:
+            return {'viewer': {'id': ME}, 'notifications': {'nodes': [n for n in self.notes
+                    if n['createdAt'] > v['since'] and n['type'] in v['types']]}}
         if 'viewer' in query:
             return {'viewer': {'id': ME}}
         if 'teams(' in query:
@@ -82,6 +85,21 @@ class FakeLinear:
         c.append({'id': 'c%d' % len(c), 'body': body, 'createdAt': '2026-%04d' % len(c),
                   'reactionData': [{'emoji': e, 'userIds': [ME]} for e in reactions]})
         return c[-1]
+
+    def notify(self, kind, issue, body=None, author=('u-po', 'Product Owner'), at='2099-01-01T00:00:00Z', assignee=ME):
+        """A notification for the key's user (MST-60): issueAssignedToYou or issueCommentMention."""
+        i = self.issues[issue]
+        i['assignee'] = {'id': assignee}
+        n = {'id': 'n%d' % len(self.notes), 'type': kind, 'createdAt': at, 'actor': {'id': author[0], 'name': author[1]},
+             'issue': {'id': issue, 'identifier': i['identifier'], 'title': i['title'], 'url': i['url'],
+                       'description': i['description'], 'priority': i['priority'], 'parent': None,
+                       'children': {'nodes': []}, 'team': {'key': 'MST'}, 'assignee': i['assignee']}, 'comment': None}
+        if body is not None:
+            c = self.comment(issue, body)
+            n['comment'] = {'id': c['id'] + issue[-4:], 'body': body, 'createdAt': at,
+                            'user': {'id': author[0], 'name': author[1]}}
+        self.notes.append(n)
+        return n
 
     def labels_of(self, issue):
         return sorted(l['name'] for l in self.labels if l['id'] in self.issues[issue]['labelIds'])
@@ -324,9 +342,9 @@ class LinearBoardFlow(unittest.TestCase):
         thread = self.cli('thread', '--project', 'repo', '--task', 'MST-500')
         self.assertEqual(thread['status'], 'In Review')
         self.assertTrue(any('finished' in m['text'] for m in thread['messages']))
-        # Linear saw nothing: only the teammate's comment, and the original state.
+        # Linear saw no comment, only the status field (MST-60): a finished worker is still In Progress there.
         self.assertEqual([c['body'] for c in self.fake.issues[old]['comments']], ['/plan from a teammate'])
-        self.assertEqual(self.fake.state_of(old), 'unstarted')
+        self.assertEqual(self.fake.state_of(old), 'started')
         self.assertEqual(oct((self.repo / '.mstack/journal.json').stat().st_mode & 0o777), '0o600')
         out = io.StringIO()
         with contextlib.redirect_stderr(out), contextlib.redirect_stdout(io.StringIO()), \
@@ -334,6 +352,53 @@ class LinearBoardFlow(unittest.TestCase):
             self.assertEqual(cli.main(['plan', '--project', 'repo', '--title', 'New', '--plan', '-'],
                                       cli.anyboard.Board(call=None)), 1)
         self.assertIn('private board', out.getvalue())
+
+    # ---- MST-60: Linear triggers ----
+    def test_new_issue_assigned_to_the_owner_starts_orchestration_once(self):
+        self.auto()
+        old = self.old_issue(n=950)
+        self.fake.notify('issueAssignedToYou', old, at='2000-01-01T00:00:00Z')      # before the first read: history
+        self.assertEqual(self.tick()['needs_orchestrator'], [])                     # first read: baseline only
+        self.assertEqual(self.tick()['needs_orchestrator'], [])
+        new = self.old_issue(n=951)
+        self.fake.notify('issueAssignedToYou', new)
+        tick = self.tick()
+        need = tick['needs_orchestrator']
+        self.assertEqual([(n['kind'], n['issue']) for n in need], [('new_issue', 'MST-951')])
+        self.assertIn('board propose', need[0]['do'])                               # complete: plan, never start
+        self.assertIn('Nothing starts unless', need[0]['do'])
+        self.assertEqual((need[0]['triage']['priority'], need[0]['triage']['missing']), ('Medium', []))
+        thin = self.old_issue(n=952, description='fix it')
+        self.fake.issues[thin]['priority'] = 0
+        self.fake.notify('issueAssignedToYou', thin)
+        gate = self.tick()['needs_orchestrator'][0]                                  # triage gate (owner, 2026-10-30)
+        self.assertEqual(gate['triage']['missing'], ['priority', 'scope/description'])
+        self.assertIn('do not plan or start it yet', gate['do'])
+        self.assertEqual(self.tick()['needs_orchestrator'], [])                     # deduped per assignment
+        self.assertEqual(self.cli('status', '--project', 'repo')['tasks'][-1]['status'], 'Backlog')   # nothing started
+        self.fake.notify('issueAssignedToYou', new, assignee='someone-else')       # reassigned away: nothing
+        self.assertEqual(self.tick()['needs_orchestrator'], [])
+
+    def test_mention_goes_to_the_live_worker_else_the_scope_orchestrator(self):
+        cfg = json.loads((self.repo / '.mstack/stack.json').read_text()); cfg['taskboard']['private'] = True
+        (self.repo / '.mstack/stack.json').write_text(json.dumps(cfg))
+        self.scoped(**{'api': {'apps': ['*'], 'exclude': ['MST-961']}, 'portal': {'apps': ['*'], 'focus': ['MST-961']}})
+        self.auto()
+        busy, idle = self.old_issue(n=960, state='s-started'), self.old_issue(n=961)
+        self.cli('adopt', '--project', 'repo', '--scope', 'api', '--task', 'MST-960', '--session', 'local_w')
+        tick = lambda scope: self.cli('tick', '--project', 'repo', '--scope', scope)['needs_orchestrator']
+        with patch.object(cli, 'LINEAR_EVERY', 0), patch.object(cli, 'MIRROR_EVERY', 10 ** 9):
+            tick('api')                                                             # baseline
+            self.fake.notify('issueCommentMention', busy, body='@me can you check the ETA?')
+            self.fake.notify('issueCommentMention', idle, body='@me portal needs this')
+            self.fake.notify('issueCommentMention', idle, body='note to self', author=(ME, 'Me'))   # own: ignored
+            api = [n for n in tick('api') if n['kind'] == 'mention']
+            portal = [n for n in tick('portal') if n['kind'] == 'mention']
+            self.assertEqual(tick('api') + tick('portal'), [])                      # deduped per comment
+        self.assertEqual([(n['issue'], n['session'], n['author']) for n in api], [('MST-960', 'local_w', 'Product Owner')])
+        self.assertIn('not an owner instruction', api[0]['do'])
+        self.assertEqual([(n['issue'], n['session'], n['text']) for n in portal], [('MST-961', None, '@me portal needs this')])
+        self.assertEqual(self.fake.state_of(idle), 'unstarted')                     # a mention starts nothing
 
     def test_related_sessions_are_listed_but_never_workers(self):
         old = self.old_issue(n=900, state='s-completed')
@@ -374,13 +439,17 @@ class LinearBoardFlow(unittest.TestCase):
     def test_verdicts_approval_with_notes_and_hedges(self):
         import board
         self.assertEqual(board.verdict_of('Approve'), 'approved')
-        self.assertEqual(board.verdict_of('Approve. Use the CN region first.'), 'approved')       # MST-25
+        # MST-60: a reply with content is never judged by wording; the orchestrator reads it (`board verdict`).
+        self.assertEqual(board.verdict_of('Approve. Use the CN region first.'), 'feedback')
         self.assertEqual(board.verdict_of('ok but change the schema'), 'feedback')
         self.assertEqual(board.verdict_of('approve? not sure'), 'feedback')
-        msgs = [{'id': 'a', 'order': '1', 'text': board.ASK + ' Plan ready'},
-                {'id': 'b', 'order': '2', 'text': '👍'}, {'id': 'c', 'order': '3', 'text': 'Also add a test for refunds'}]
-        verdict, text, _ = board.decide(msgs)                                                   # MST-32
-        self.assertEqual((verdict, 'refunds' in text), ('approved', True))
+        task = self.cli('plan', '--project', 'repo', '--title', 'T', '--plan', '-', stdin='p')['task']
+        self.fake.comment(task, '👍'); self.fake.comment(task, 'Also add a test for refunds')
+        row = self.cli('poll')[0]
+        self.assertEqual((row['verdict'], row.get('now'), 'board verdict' in row['action']), ('feedback', None, True))
+        out = self.cli('verdict', '--task', task, 'approve', '--why', 'approved, with a test added')
+        self.assertEqual((out['now'], 'refunds' in out['notes']), ('Todo', True))
+        self.assertIn('refunds', self.cli('dispatch', '--project', 'repo')['started'][0]['handoff']['prompt'])
 
     def test_adopted_worker_is_resumed_not_stuck_in_todo(self):                                # MST-26
         self.auto()
@@ -554,8 +623,71 @@ class LinearBoardFlow(unittest.TestCase):
         out = self.cli('merged', '--task', 'MST-910', '--doc', 'docs/m.md')
         self.assertEqual((out['status'], out['resources_added']), ('Done', []))
         self.assertEqual((self.fake.attachments, self.fake.issues[old]['comments'], self.fake.state_of(old)),
-                         ({}, [], 'started'))
+                         ({}, [], 'completed'))                                   # the status field only
         self.assertEqual(self.cli('status', '--project', 'repo')['tasks'][0]['status'], 'Done')
+
+    def test_private_status_follows_the_stages_and_landing_branch(self):                      # MST-60
+        self.docs_url(private=True)
+        self.fake.states.insert(3, {'id': 's-review', 'type': 'started', 'name': 'In Review', 'position': 2.5})
+        self.scoped(api={'apps': ['*'], 'never_done': True, 'landing': 'dev-sb'})
+        old = self.old_issue(n=920)
+        self.cli('owner', '--project', 'repo', '--task', 'MST-920', '/plan')
+        self.cli('propose', '--project', 'repo', '--scope', 'api', '--task', 'MST-920', '--plan', '-', stdin='1. fix')
+        self.assertEqual(self.fake.state_of(old), 'unstarted')                      # waiting for the owner: unchanged
+        self.cli('owner', '--project', 'repo', '--task', 'MST-920', 'OK for read-only prod counts')
+        self.assertEqual([r.get('now') for r in self.cli('poll')], [None])          # a side OK approves nothing
+        self.cli('owner', '--project', 'repo', '--task', 'MST-920', '👍')
+        self.cli('poll')
+        self.assertEqual(self.fake.state_of(old), 'started')                        # approved → In Progress
+        self.cli('adopt', '--project', 'repo', '--scope', 'api', '--task', 'MST-920', '--session', 'local_x')
+        self.cli('done', '--task', 'MST-920', '--size', 'small', '--summary', 'ok')
+        self.assertEqual(self.fake.issues[old]['stateId'], 's-started')              # finished, not landed
+        self.merged_branch('me/mst-919')                                          # sets origin/main up
+        self.git('checkout', '-q', '-b', 'dev-sb'); self.git('checkout', '-q', '-b', 'me/mst-920')
+        (self.repo / 'docs/m.md').write_text('# landed'); self.git('commit', '-qam', 'work')
+        self.git('checkout', '-q', 'dev-sb'); self.git('merge', '-q', '--no-ff', '-m', 'land', 'me/mst-920')
+        self.git('push', '-q', 'origin', 'dev-sb'); self.git('checkout', '-q', 'main')
+        out = self.cli('merged', '--task', 'MST-920', '--doc', 'docs/m.md')
+        self.assertEqual((out['branch'], self.fake.issues[old]['stateId']), ('dev-sb', 's-started'))   # landed, never Done
+        self.cli('merged', '--task', 'MST-920', '--verify', 'on Preview')
+        self.assertEqual(self.fake.issues[old]['stateId'], 's-review')               # on Preview → In Review
+        self.assertEqual(self.fake.issues[old]['comments'], [])
+
+    def test_watcher_flags_a_linear_status_that_lags_the_board_once(self):                    # MST-58
+        self.auto()
+        old = self.old_issue(n=940)
+        self.cli('adopt', '--project', 'repo', '--task', 'MST-940', '--session', 'local_x')
+        self.assertEqual(self.fake.state_of(old), 'started')
+        self.fake.issues[old]['stateId'] = 's-unstarted'                              # someone moved it back in Linear
+        with patch.object(cli, 'LINEAR_EVERY', 0), patch.object(cli, 'MIRROR_EVERY', 10 ** 9):
+            lag = [n for n in self.cli('tick')['needs_orchestrator'] if n['kind'] == 'status_lag']
+            self.assertEqual([(n['issue'], n['phase'], n['linear']) for n in lag], [('MST-940', 'In Progress', 'Unstarted')])
+            self.assertEqual([n for n in self.cli('tick')['needs_orchestrator'] if n['kind'] == 'status_lag'], [])
+
+    def test_adopt_keeps_the_real_stage(self):                                               # customer-api, MST-60
+        cfg = json.loads((self.repo / '.mstack/stack.json').read_text()); cfg['taskboard']['private'] = True
+        (self.repo / '.mstack/stack.json').write_text(json.dumps(cfg))
+        self.auto()
+        self.fake.states.insert(3, {'id': 's-review', 'type': 'started', 'name': 'In Review', 'position': 2.5})
+        draft, live, stuck = self.old_issue(n=139), self.old_issue(n=125, state='s-review'), self.old_issue(n=127)
+        out = self.cli('adopt', '--project', 'repo', '--task', 'MST-139', '--session', 'a', '--stage', 'planning')
+        self.assertEqual((out['status'], self.fake.state_of(draft)), ('Awaiting Approval', 'unstarted'))
+        self.assertEqual(self.cli('adopt', '--project', 'repo', '--task', 'MST-125', '--session', 'b')['status'], 'In Review')
+        self.assertEqual(self.fake.issues[live]['stateId'], 's-review')                # never pulled back to In Progress
+        self.cli('adopt', '--project', 'repo', '--task', 'MST-127', '--session', 'c', '--stage', 'blocked',
+                 '--reason', 'waiting for the iOS build')
+        self.assertEqual(self.fake.state_of(stuck), 'unstarted')
+        with patch.object(cli, 'LINEAR_EVERY', 0), patch.object(cli, 'MIRROR_EVERY', 10 ** 9):
+            need = self.cli('tick')['needs_orchestrator']
+        self.assertEqual([n for n in need if n['kind'] in ('status_lag', 'handoff', 'resume')], [])   # no false lags
+        self.assertIn('waiting for the iOS build', self.cli('thread', '--project', 'repo', '--task', 'MST-127')['messages'][-1]['text'])
+
+    def test_team_without_in_review_maps_to_its_nearest_state(self):                          # MST-53
+        old = self.old_issue(n=930, state='s-started')
+        self.cli('adopt', '--project', 'repo', '--task', 'MST-930', '--session', 'local_x')
+        self.cli('done', '--task', 'MST-930', '--size', 'small', '--summary', 'ok')
+        self.assertEqual(self.fake.state_of(old), 'started')
+        self.assertEqual(json.loads(cli.STATE.read_text())['linear_state_map'], {'MST': {'In Progress': 'Started', 'In Review': 'Started'}})
 
 
 class WorkspaceFlow(unittest.TestCase):

@@ -164,8 +164,9 @@ class OrchestratorTests(unittest.TestCase):
                                                       capture_output=True, text=True).stdout)
         self.b.owner(tasks[0], 'Rename the module please')
         self.b.threads[tasks[1]][-1]['reactions'] = {'✅': 1}
-        rows = {r['task']: r['now'] for r in self.run_cli('poll')}
-        self.assertEqual(rows, {tasks[0]: 'Todo', tasks[1]: 'Done'})
+        rows = {r['task']: r.get('now') for r in self.run_cli('poll')}
+        self.assertEqual(rows, {tasks[0]: None, tasks[1]: 'Done'})          # a reply waits for the orchestrator's reading
+        self.assertEqual(self.run_cli('verdict', '--task', tasks[0], 'changes')['now'], 'Todo')
 
     def test_max_parallel_and_human_tasks(self):
         self.configure(max_parallel=1)
@@ -756,7 +757,8 @@ class OrchestratorTests(unittest.TestCase):
         a, tree, _ = self.dsh_task()
         session = self.work(a, tree)['session']
         self.b.owner(a, 'Please rename the module')
-        self.assertEqual(self.run_cli('poll')[0]['now'], 'Todo')
+        self.assertEqual(self.run_cli('poll')[0]['verdict'], 'feedback')
+        self.assertEqual(self.run_cli('verdict', '--task', a, 'changes')['now'], 'Todo')
         self.spawned.clear()
         self.run_cli('dispatch', '--project', 'market')
         self.assertEqual(self.spawned[0][-1], '--resume')
@@ -868,6 +870,18 @@ class DecideTests(unittest.TestCase):
                               ('ok but use sqlite', 'feedback')]:
             self.assertEqual(board.decide([ask, {'order': '2', 'text': text}])[0], verdict)
         self.assertEqual(board.decide([ask])[0], 'pending')
+
+    def test_ok_for_a_side_action_is_not_approval(self):                                     # MST-60 / IRO-153
+        ask = {'id': 'a', 'order': '1', 'text': board.ASK + ' plan', 'reactions': {}}
+        for text, verdict in [('OK for read-only prod counts', 'feedback'), ('yes, run the query first', 'feedback'),
+                              ('OK', 'approved'), ('OK, go ahead', 'approved'), ('Go ahead. Use CN first.', 'feedback'),
+                              ('LGTM, also add a test', 'feedback')]:          # content: the orchestrator reads it
+            self.assertEqual(board.decide([ask, {'order': '2', 'text': text}])[0], verdict, text)
+        side = {'order': '2', 'text': board.SIDE + ' OK, approve the prod read'}
+        self.assertEqual(board.decide([ask, side])[0], 'pending')                # a side note is never a verdict
+        self.assertEqual(board.decide([dict(ask, reactions={'👍': 1}), side])[0], 'approved')
+        later = [ask, {'order': '2', 'text': 'OK for the prod counts'}, {'order': '3', 'text': '👍'}]
+        self.assertEqual(board.decide(later)[:2], ('approved', 'OK for the prod counts\n👍'))   # the latest bare 👍 decides
 
     def test_several_comments_are_judged_one_by_one(self):
         ask = {'id': 'a', 'order': '1', 'text': board.ASK + ' plan', 'reactions': {}}
