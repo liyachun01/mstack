@@ -951,7 +951,9 @@ def cmd_sessions(args, b):
             for row in listed:
                 ident = row.get('sessionId') or row.get('id')
                 if ident:
-                    seen[ident] = {'state': 'archived' if row.get('isArchived') else 'active', 'at': stamp,
+                    # idle: not archived and not running a turn (MST-46); status_table still shows In Review as active.
+                    live = 'active' if row.get('isRunning') else 'idle'
+                    seen[ident] = {'state': 'archived' if row.get('isArchived') else live, 'at': stamp,
                                    'title': (row.get('title') or '')[:120]}
             listed_ids = {row.get('sessionId') or row.get('id') for row in listed}
             gone = []
@@ -1813,7 +1815,7 @@ def parser():
     s.add_argument('action', choices=['todo', 'observe', 'done', 'list'])
     s.add_argument('--session', help='done: the session the CTA was for')
     s.add_argument('--result', help='done: what happened (shown as Last Action)')
-    s.add_argument('--state', choices=['active', 'archived', 'deleted'], help='done: the session\'s state now')
+    s.add_argument('--state', choices=['active', 'idle', 'archived', 'deleted'], help='done: the session\'s state now')
     s.add_argument('--complete', action='store_true', help='observe: the list is every session, archived included')
     s.add_argument('--self', dest='hub_session', help='observe: the hub\'s own session id (list_sessions leaves it out)')
     s = sub.add_parser('status-table', help='sync|show|rename: the owner\'s read-only "My tasks" table in Anytype (design 014)')

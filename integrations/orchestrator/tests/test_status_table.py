@@ -132,6 +132,11 @@ class Rows(unittest.TestCase):
         rows2, _, _ = self.rows(gone)
         self.assertEqual(rows2['session/local_rel']['properties']['session_state'], 'deleted')
         self.assertEqual(rows2['session/local_w']['properties']['session_state'], 'active')
+        # Idle: last seen not running, unless its issue waits for review (local_w's MST-40 is In Review).
+        idle = dict(self.STATE, sessions_seen={'local_sk': {'state': 'idle'}, 'local_w': {'state': 'idle'}})
+        rows3, _, _ = self.rows(idle)
+        self.assertEqual(rows3['session/local_sk']['properties']['session_state'], 'idle')
+        self.assertEqual(rows3['session/local_w']['properties']['session_state'], 'active')
         self.assertIn('obsolete', rows['session/local_rel']['properties']['session_report'])
         orch = rows['session/local_api']
         self.assertEqual((orch['name'], orch['properties']['session_type']), ('Orchestrator {{mstack:CLIENT_REPO}}/customer-api', 'orchestrator'))
@@ -395,6 +400,8 @@ class HubStep(unittest.TestCase):
         self.assertIn('refused', todo['refused'][0]['recorded'])
         self.assertEqual(self.any.objects[ids['local_o']]['properties']['session_cta'], 'noop')
         self.cli('sessions', 'observe', '--complete', stdin=json.dumps([{'sessionId': 'local_o', 'isArchived': False}]))
+        self.assertEqual(self.cli('sessions', 'list')['states'], {'local_o': 'idle', 'local_w': 'deleted'})
+        self.cli('sessions', 'observe', stdin=json.dumps([{'sessionId': 'local_o', 'isArchived': False, 'isRunning': True}]))
         self.assertEqual(self.cli('sessions', 'list')['states'], {'local_o': 'active', 'local_w': 'deleted'})
         self.owner_sets(ids['local_o'], 'archive')                                 # its worker is gone now
         self.cli('status-table', 'sync')

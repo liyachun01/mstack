@@ -133,9 +133,11 @@ def desired(issues, board_state, private, now=None, roles=None):
         return props, ('%s %s' % (ident, issue.get('title') or '')) if issue else ident
 
     def add(session, props, name, kind, agent, parent, report):
-        # Owner rule (2026-10-30): any session that isn't archived is active; never-observed ones included.
+        # Owner rules (2026-10-30): archived/deleted only when observed so. Idle when last seen not running a turn
+        # and its issue isn't waiting for review; every other session (never observed, running, just acked) is active.
         state = (seen.get(session) or {}).get('state')
-        state = state if state in ('archived', 'deleted') else 'active'
+        if state not in ('archived', 'deleted'):
+            state = 'idle' if state == 'idle' and props.get('task_status') != 'In Review' else 'active'
         props = {**props, 'agent_session': session, 'session_type': kind, 'session_agent': agent,
                  'session_parent': parent, 'session_state': state, 'session_report': short(report),
                  'session_action': (actions.get(session) or {}).get('text')}
