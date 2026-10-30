@@ -96,6 +96,10 @@ of the owner's (also refreshed every 5 minutes). It's an overview only and never
 - **Setting a stage yourself:** `note --task <ISSUE> --status <S> "why"` sets Linear to exactly S (mapped only when
   the team lacks it), private boards too, backwards included. Todo and Backlog change Linear only and hold the
   issue, so nothing dispatches it and the watcher never flags it.
+- **`catch_up`:** the watcher was offline (laptop closed, stopped, crashed) and has caught up. The stacked items came
+  as their own events, in order; this one is the overview for the owner ("while offline from A to B: …"), with the
+  Linear status changes made meanwhile. Tell the owner; act only on the individual events. Nothing was written to
+  Linear from the backlog.
 - **`handoff`:** an approved issue needs a worker.
   - Start a Claude Desktop session from the spec (`start_session`: initiation user_asked, context fresh, `cwd` = spec.cwd, `use_worktree: false`, title `<ISSUE>: <title>` (spec.title already has it, e.g. `IRO-104: Preview → Production migration`), prompt = spec.prompt, `wake_when_done: true`).
   - Then `ack --task <id> --session <session id>`.

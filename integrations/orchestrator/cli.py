@@ -847,7 +847,8 @@ def linear_signals(name, lb, seen, fresh):
             hit = TRIGGER.match(m['text'])
             if hit and m['order'] > last_bot and 'trigger:' + m['id'] not in seen:
                 out.append({'kind': 'plan', 'table': name, 'task': task['id'], 'issue': task['linear_identifier'],
-                            'name': task['name'], 'notes': hit.group(2).strip(), 'url': task.get('linear_url')})
+                            'name': task['name'], 'notes': hit.group(2).strip(), 'url': task.get('linear_url'),
+                            'at': m['order']})
                 fresh.append('trigger:' + m['id'])
         run = runs.get(task['id'])
         if run and (task['task_status'] == 'In Progress' or run.get('adopted')) and not task.get('closed_by_owner') \
@@ -855,7 +856,7 @@ def linear_signals(name, lb, seen, fresh):
             for m in mine:
                 if m['order'] > last_bot and not TRIGGER.match(m['text']) and 'fwd:' + m['id'] not in seen:
                     out.append({'kind': 'forward', 'table': name, 'task': task['id'], 'issue': task['linear_identifier'],
-                                'session': run.get('session'), 'text': m['text']})
+                                'session': run.get('session'), 'text': m['text'], 'at': m['order']})
                     fresh.append('fwd:' + m['id'])
         if task.get('closed_by_owner') and run and 'stop:' + task['id'] not in seen:
             out.append({'kind': 'stop', 'table': name, 'task': task['id'], 'issue': task['linear_identifier'],
@@ -863,6 +864,8 @@ def linear_signals(name, lb, seen, fresh):
             lb.say(task['id'], 'Stopped: you closed this issue in Linear (status → %s).' % task['task_status'])
             fresh.append('stop:' + task['id'])
     out += linear_triggers(name, lb, tasks, runs, seen, fresh)
+    CATCH_UP.setdefault(name, {})['status_changes'] = status_changes(name, tasks)
+    out.sort(key=lambda item: item.get('at') or '')         # stacked-up updates in the order they happened
     out += status_lags(name, lb, tasks, seen, fresh)
     # Branches merged into main whose issue is still open: remind the orchestrator once (after-merge follow-up).
     repo = Path(read_state()['tables'][name]['path'])
@@ -1258,17 +1261,49 @@ def adopt_stage_name(task, stage, status):
 TRIGGER_LOOKBACK = 86400  # seconds of Linear notifications read back (the hub's seen-keys drop repeats)
 
 
+CATCH_UP_MAX = 7 * 86400  # seconds: a catch-up never reads further back than this (the summary says when cut)
+CATCH_UP_GAP = 600        # seconds without a Linear poll after which a tick is a catch-up and gets a summary
+
+
+def iso(epoch):
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(epoch))
+
+
 def notify_since(name):
-    """Where a board's trigger read starts: never before the board's first read (old notifications start
-    nothing), at most a day back, and the same value for every scope in the hour so they share one read.
-    None on the very first read, which only records the baseline."""
-    base = read_state().get('notify_since', {}).get(name)
-    if base is None:
+    """Where a board's trigger read starts: its durable cursor (the latest notification already read, kept in the
+    state, so in Postgres board_state with the Postgres store), at most CATCH_UP_MAX back. None on the very first
+    read, which only records the cursor. Every scope of the board reads from the same point in one tick.
+    Returns (since, cut): cut when the cursor was older than CATCH_UP_MAX."""
+    key = cursor_key(name)
+    memo = linear_board.SHARED.get(('since', key)) if linear_board.SHARED is not None else None
+    if memo:
+        return memo
+    st = read_state()
+    cursor = st.get('notify_cursor', {}).get(key)
+    if cursor is None and st.get('notify_since', {}).get(name) is not None:     # before the cursor: its baseline
+        cursor = iso(max(st['notify_since'][name], (time.time() - TRIGGER_LOOKBACK) // 3600 * 3600))
+    if cursor is None:
         with state() as s:
-            s.setdefault('notify_since', {})[name] = time.time()
-        return None
-    start = max(base, (time.time() - TRIGGER_LOOKBACK) // 3600 * 3600)
-    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(start))
+            s.setdefault('notify_cursor', {})[key] = iso(time.time())
+        return None, False
+    floor = iso(time.time() - CATCH_UP_MAX)
+    found = (max(cursor, floor), cursor < floor)
+    if linear_board.SHARED is not None:
+        linear_board.SHARED[('since', key)] = found
+    return found
+
+
+def cursor_key(name):
+    """The hub keeps one cursor per board (all its scopes read in the same tick); a per-scope watcher keeps its own,
+    so one scope moving on never hides another scope's stacked updates."""
+    return name if POLL_DUE is not None else '/'.join(filter(None, (name, SCOPE)))
+
+
+def advance_cursor(name, latest):
+    key = cursor_key(name)
+    if latest and latest > read_state().get('notify_cursor', {}).get(key, ''):
+        with state() as s:
+            s.setdefault('notify_cursor', {})[key] = latest
 
 
 def linear_triggers(name, lb, tasks, runs, seen, fresh):
@@ -1277,19 +1312,23 @@ def linear_triggers(name, lb, tasks, runs, seen, fresh):
     scope's orchestrator. Read only, so private boards get them too. Deduped per assignment and per comment."""
     if not hasattr(lb, 'triggers'):
         return []
-    since = notify_since(name)
+    since, cut = notify_since(name)
     if since is None:
         return []
+    CATCH_UP.setdefault(name, {})['cut'] = cut
     managed = {t['id'] for t in tasks if t.get('managed')}
     status = {t['id']: t['task_status'] for t in tasks}
     out = []
-    for hit in lb.triggers(since):
+    hits = lb.triggers(since)
+    CATCH_UP[name]['cut'] = cut or getattr(lb, 'notify_cut', False)
+    advance_cursor(name, getattr(lb, 'notify_latest', None))
+    for hit in hits:
         key = 'new_issue:%s' % hit['id'] if hit['kind'] == 'new_issue' else 'mention:%s' % hit['comment']
         if key in seen or key in fresh:
             continue
         fresh.append(key)
         item = {'kind': hit['kind'], 'table': name, 'task': hit['task'], 'issue': hit['issue'], 'name': hit.get('title'),
-                'url': hit.get('url'), 'triage': hit.get('triage')}
+                'url': hit.get('url'), 'triage': hit.get('triage'), 'at': hit.get('at')}
         if hit['kind'] == 'new_issue':
             if hit['task'] in managed:
                 continue                                  # already planned or worked on: nothing new
@@ -1341,6 +1380,42 @@ def status_lags(name, lb, tasks, seen, fresh):
     return out
 
 
+CATCH_UP = {}             # this tick, per board: {'cut': bool, 'status_changes': [...]} for the catch-up summary
+
+
+def status_changes(name, tasks):
+    """Linear status changes since the board's last read ("IRO-1 Todo → In Progress"), from a durable snapshot of
+    each issue's Linear state. Information for the catch-up summary only: nothing is written back."""
+    snap = read_state().get('linear_states', {}).get(name, {})
+    now = {t['id']: t.get('linear_state') for t in tasks}
+    changes = ['%s %s → %s' % (t['linear_identifier'], snap[t['id']], now[t['id']]) for t in tasks
+               if t['id'] in snap and snap[t['id']] != now[t['id']]]
+    if any(snap.get(k) != v for k, v in now.items()):
+        with state() as s:
+            s.setdefault('linear_states', {}).setdefault(name, {}).update(now)
+    return changes
+
+
+def catch_up_summary(name, gap, items, verdicts):
+    """One `catch_up` item for this (board, scope) after a gap: what stacked up while the watcher was offline.
+    The items themselves were already raised as their normal events; this is the overview."""
+    mine = [i for i in items if i.get('table') == name]
+    count = lambda *kinds: sum(1 for i in mine if i['kind'] in kinds)
+    extra = CATCH_UP.get(name, {})
+    counts = {'new issues': count('new_issue'), 'comments': count('plan', 'forward', 'replan', 'review_reply'),
+              'mentions': count('mention'), 'status changes': len(extra.get('status_changes') or []),
+              'verdicts': sum(1 for v in verdicts if v.get('table') == name)}
+    text = 'while offline from %s to %s: %s' % (iso(gap[0]), iso(gap[1]),
+                                               ', '.join('%d %s' % (n, k) for k, n in counts.items() if n) or 'nothing new')
+    if extra.get('cut'):
+        text += ' (cut: only the last %d days or %d notifications were read)' % (CATCH_UP_MAX // 86400,
+                                                                            linear_board.CATCH_UP_LIMIT)
+    return {'kind': 'catch_up', 'table': name, 'scope': SCOPE, 'from': iso(gap[0]), 'to': iso(gap[1]), 'counts': counts,
+            'cut': bool(extra.get('cut')), 'status_changes': (extra.get('status_changes') or [])[:30], 'text': text,
+            'do': 'read-only overview: the stacked items arrive as their own events; status suggestions from them are '
+                  'never written by the watcher'}
+
+
 def triage_do(issue, triage):
     """What the orchestrator does with an issue that arrived from Linear (triage gate, owner 2026-10-30)."""
     if triage.get('missing'):
@@ -1390,6 +1465,7 @@ def cmd_tick(args, b):
     --hub: one pass for every registered orchestrator (project, scope) instead of the auto tables.
     Linear boards are read once per tick (linear_board.shared); `linear_calls` counts the requests by team."""
     before = dict(linear_board.CALLS)
+    GAPS.clear(); CATCH_UP.clear()
     with linear_board.shared():
         out = tick_once(args, b) if not getattr(args, 'hub', False) else hub_tick(b)
     calls = {team: n - before.get(team, 0) for team, n in linear_board.CALLS.items() if n > before.get(team, 0)}
@@ -1451,13 +1527,19 @@ def poll_due(name):
     key = name if POLL_DUE is not None else '/'.join(filter(None, (name, SCOPE)))
     if POLL_DUE is not None and name in POLL_DUE:
         return POLL_DUE[name]
-    due = time.time() - read_state().get('last_linear_poll', {}).get(key, 0) >= LINEAR_EVERY
+    last = read_state().get('last_linear_poll', {}).get(key, 0)
+    due = time.time() - last >= LINEAR_EVERY
     if due:
         with state() as s:
             s.setdefault('last_linear_poll', {})[key] = time.time()
+        if last and time.time() - last >= CATCH_UP_GAP:
+            GAPS[name] = (last, time.time())             # back after downtime: this tick catches up
     if POLL_DUE is not None:
         POLL_DUE[name] = due
     return due
+
+
+GAPS = {}                 # board → (last poll, now) when this tick follows a gap longer than CATCH_UP_GAP
 
 
 def hub_running():
@@ -1543,6 +1625,8 @@ def tick_once(args, b):
             out['started'] += cmd_dispatch(argparse.Namespace(project=name, runner=None), b)['started']
         except linear.RateLimited as error:         # never a failed tick: the board waits out the backoff
             out.setdefault('rate_limited', {})[name] = error.until
+        if name in GAPS:
+            out['needs_orchestrator'].append(catch_up_summary(name, GAPS[name], out['needs_orchestrator'], out['verdicts']))
     for task, run in read_state().get('runs', {}).items():
         mine = not SCOPE or run.get('scope') in (None, SCOPE)
         if run['table'] in names and run.get('handoff') and not run.get('session') and mine:
@@ -2207,6 +2291,7 @@ def event_line(e):
               'resume': lambda: 'approved plan for adopted chat `%s`: send it the prompt, then `board ack`' % p.get('session'),
               'verdict': lambda: 'verdict %s: %s → %s' % (p.get('verdict'), p.get('was'), p.get('now')),
               'status_lag': lambda: 'Linear says %s but the board is %s (want %s): %s' % (p.get('linear'), p.get('phase'), p.get('want'), p.get('do')),
+              'catch_up': lambda: p.get('text') or '',
               'new_issue': lambda: '"%s" assigned to you in Linear (%s): %s' % (p.get('name'), p.get('url'), p.get('do')),
               'mention': lambda: '%s mentioned you: %s; %s' % (p.get('author'), (p.get('text') or '')[:400], p.get('do')),
               'merged': lambda: 'branch `%s` is merged into main but the issue is %s: %s' % (p.get('branch'), p.get('status'), p.get('do'))}
