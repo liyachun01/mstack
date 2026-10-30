@@ -160,6 +160,28 @@ class Rows(unittest.TestCase):
         self.assertIn('session/local_tm', everything)
         self.assertEqual(kept, [])
 
+    def test_a_session_started_outside_dispatch_gets_a_row_from_its_title(self):
+        state = dict(self.STATE, sessions_seen={
+            'local_84': {'state': 'idle', 'title': 'CAN-9 storage: plans'},           # no run: matched by title
+            'local_gone': {'state': 'archived', 'title': 'CAN-9: older chat'},
+            'local_x': {'state': 'active', 'title': 'XYZ-1: not on any board'},
+            'local_t': {'state': 'active', 'title': 'Track CAN-9: not at the start'}},
+            status_table={'rows': {'{{mstack:CLIENT_REPO}}/CAN-9': {'id': 'o9'}}})
+        rows, takes, _ = st.desired(self.ISSUES, state, {'mstack': False, '{{mstack:CLIENT_REPO}}': True}, NOW, self.ROLES)
+        w = rows['session/local_84']['properties']
+        self.assertEqual((w['linear_identifier'], w['session_type'], w['task_scope'], w['session_state']),
+                         ('CAN-9', 'worker', 'staff-web', 'idle'))
+        self.assertNotIn('{{mstack:CLIENT_REPO}}/CAN-9', rows)                                   # its issue row is taken over
+        self.assertEqual(takes, {'session/local_84': '{{mstack:CLIENT_REPO}}/CAN-9'})
+        self.assertFalse({'session/local_gone', 'session/local_x', 'session/local_t'} & set(rows))
+        # A worker adopted for one issue (local_new: IRO-1) whose title names another shown issue: the title wins.
+        named = dict(state, sessions_seen={'local_new': {'state': 'active', 'title': 'CAN-9: the parent issue'}})
+        rows2, _, _ = st.desired(self.ISSUES, named, {'mstack': False, '{{mstack:CLIENT_REPO}}': True}, NOW, self.ROLES)
+        self.assertEqual(rows2['session/local_new']['properties']['linear_identifier'], 'CAN-9')
+        self.assertNotIn('{{mstack:CLIENT_REPO}}/CAN-9', rows2)
+        plain, _, _ = st.desired(self.ISSUES, self.STATE, {}, NOW, self.ROLES)
+        self.assertNotIn('session_state', plain['{{mstack:CLIENT_REPO}}/CAN-9']['properties'])  # issue-only rows: no state
+
     def test_an_old_issue_row_becomes_its_newest_workers_row(self):
         state = dict(self.STATE, **{st.STATE_KEY: {'rows': {'{{mstack:CLIENT_REPO}}/IRO-1': {'id': 'o1', 'hash': 'h'},
                                                             'mstack/MST-40': {'id': 'o2', 'hash': 'h'},

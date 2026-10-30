@@ -945,8 +945,8 @@ def cmd_sessions(args, b):
             else:
                 ready.append({k: c.get(k) for k in ('session', 'cta', 'name', 'type')})
         return {'observe_sessions': work['observe_sessions'], 'ctas': ready, 'refused': refused,
-                'how': 'observe_sessions: list_sessions(include_archived: true, limit: 200), pipe the JSON to '
-                       '`mstack sessions observe --complete`. For each CTA: continue → SendMessage "Continue: the owner '
+                'how': 'observe_sessions: list_sessions(include_archived: true, limit: 200), pipe the JSON (each row '
+                       'keeping at least sessionId, title, isArchived, isRunning) to `mstack sessions observe --complete`. For each CTA: continue → SendMessage "Continue: the owner '
                        'asked from My tasks." to the session; archive → archive_session; delete → delete_session (the app '
                        'asks the owner). Then `mstack sessions done --session <id> --result "<what happened>"`.'}
     if args.action == 'observe':
@@ -961,7 +961,7 @@ def cmd_sessions(args, b):
                     # idle: not archived and not running a turn (MST-46); status_table still shows In Review as active.
                     live = 'active' if row.get('isRunning') else 'idle'
                     seen[ident] = {'state': 'archived' if row.get('isArchived') else live, 'at': stamp,
-                                   'title': (row.get('title') or '')[:120]}
+                                   'title': (row.get('title') or seen.get(ident, {}).get('title') or '')[:120]}
             listed_ids = {row.get('sessionId') or row.get('id') for row in listed}
             gone = []
             if args.complete:                       # a full listing: our sessions missing from it were deleted

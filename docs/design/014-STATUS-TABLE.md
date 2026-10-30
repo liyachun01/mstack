@@ -31,7 +31,11 @@ Linear ──(mirror, every 5 min per board)──▶ Postgres mstack_orchestrat
   last update. Board state adds the sessions: workers (`runs`), earlier chats on an issue (`related`), orchestrators
   (`orchestrators` and each project's role registry, which also lists helpers), their reports (`runs[…].report`,
   written by `board done`/`note`) and their app state (`sessions_seen`, from the hub chat). `tables` says which boards
-  are private (each project's `taskboard.private`) and which boards are shown: only registered Linear boards. Rows of
+  are private (each project's `taskboard.private`). A session's observed title also names its issue: a title that
+  starts with an identifier on a shown board ("IRO-84: …", "IRO-84 storage …") labels its row, even for a session
+  adopted for other issues or started outside dispatch (no run), and takes over that issue's row (MST-46). The hub
+  must keep `title`, `isArchived` and `isRunning` when it pipes list_sessions to `observe`. `tables` also says
+  which boards are shown: only registered Linear boards. Rows of
   a retired (Anytype-backed, such as test-market) or unregistered board are left out, and any the table still holds
   are archived (MST-46). The old per-project collections were archived on 2026-10-30, so "My tasks" is the channel's
   only table. Before each pass, any Linear board whose
@@ -80,7 +84,7 @@ rows are never deleted: closed issues stay as Done/Canceled. On 2026-10-30: 165 
 | Session Type (`session_type`) | orchestrator, worker, helper |
 | Agent (`session_agent`) | claude, codex, deepseek, other (from the run's runner; orchestrators and helpers are Claude sessions) |
 | Parent Session (`session_parent`) | the orchestrator a worker or helper reports to: its scope's, else the project's; blank for orchestrators |
-| Session State (`session_state`) | archived or deleted only when the hub chat saw it so; **idle** when last seen not running a turn and its issue isn't In Review; every other session (running, never observed yet, just acked/adopted, or In Review) is **active** (owner rules, 2026-10-30, MST-46) |
+| Session State (`session_state`) | archived or deleted only when the hub chat saw it so; **idle** when last seen not running a turn and its issue isn't In Review; every other session (running, never observed yet, just acked/adopted, or In Review) is **active** (owner rules, 2026-10-30, MST-46). Issue-only rows (no session) have no state: filter views with "Session State is not archived, deleted" (empty passes), not "is active" |
 | Session Report (`session_report`) | the latest `board done` summary or `board note` (600 characters); free text |
 | CTA (`session_cta`) | set by the owner: noop (default), continue, archive, delete, forbidden |
 | Last Action (`session_action`) | what the last CTA did, with its time |
