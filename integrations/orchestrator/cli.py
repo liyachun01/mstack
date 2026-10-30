@@ -216,14 +216,17 @@ def add_resources(b, table, task, docs):
     return [d for d in docs if b.add_resource(task, base + d, d)]
 
 
-def set_status(b, task, status, linear=..., **props):
+def set_status(b, task, status, linear=..., explicit=False, **props):
     """Board phase; on a Linear board also its Linear status (`linear`: an explicit target, None to leave Linear).
     A phase change ends a recorded block (adopt --stage blocked)."""
     unblock(task)
     if hasattr(b, 'linear_target'):
-        b.set(task, task_status=status, linear=linear, **props)
+        b.set(task, task_status=status, linear=linear, explicit=explicit, **props)
     else:
         b.set(task, task_status=status, **props)
+
+
+WORK_PHASES = ('In Progress', 'In Review', 'Done', 'Canceled')   # `note --status` phases that are board phases too
 
 
 def unblock(task):
@@ -726,18 +729,19 @@ def cmd_dispatch(args, b):
     busy = [t['id'] for t in tasks if t.get('task_status') == 'In Progress' and t['id'] in runs
             and (runs[t['id']].get('pid') is None or alive(runs[t['id']]['pid']))]
     room = settings.get('max_parallel', 3) - len(busy)
+    held = read_state().get('blocked', {})
     started = []
     for task in tasks:
         if room <= 0:
             break
-        if task.get('task_status') != 'Todo' or task.get('task_agent') == 'human':
-            continue
+        if task.get('task_status') != 'Todo' or task.get('task_agent') == 'human' or task['id'] in held:
+            continue                                  # held on purpose (note --status Todo/Backlog, --hold): never started
         if (runs.get(task['id']) or {}).get('adopted'):
             # Approved work for a session that already exists: resume it there instead of starting a second worker.
             run = runs[task['id']]
             prompt = 'Approved: continue %s with the plan below.\n\n%s' % (
                 task.get('linear_identifier') or task['id'], brief_for(b, task['id'], name, Path(run.get('tree') or repo)))
-            b.set(task['id'], task_status='In Progress')
+            set_status(b, task['id'], 'In Progress')
             b.say(task['id'], 'Handed back to the existing session `%s` (status → In Progress).' % run.get('session'))
             with state() as s:
                 s['runs'][task['id']].update({'resume': {'session': run.get('session'), 'prompt': prompt}, 'resumed': False})
@@ -775,7 +779,7 @@ def cmd_dispatch(args, b):
         else:
             row['handoff'] = run['handoff'] = runners.handoff(runner, session_title(task), work_dir, brief, repo)
             where = 'Handed to **%s**' % runner
-        b.set(task['id'], task_status='In Progress', task_agent=runner, agent_session=runner + ' · ' + str(tree))
+        set_status(b, task['id'], 'In Progress', task_agent=runner, agent_session=runner + ' · ' + str(tree))
         b.say(task['id'], '%s in worktree `%s` (branch task/%s).' % (where, tree, short))
         with state() as s:                     # a spawned worker may already have recorded its session: keep it
             s.setdefault('runs', {})[task['id']] = {**s['runs'].get(task['id'], {}), **run} if 'log' in run else run
@@ -1903,9 +1907,24 @@ def cmd_note(args, b):
     b.say(args.task, '%s: %s%s' % (who, text[:1800], doc_links(table_of_task(args.task), args.doc)))
     added = add_resources(b, table_of_task(args.task), args.task, args.doc)
     record_report(run_key(args.task), 'note', text)
+    out = {'task': args.task, 'posted': True, 'status': args.status, 'resources_added': added}
     if args.status:
-        set_status(b, b.get(args.task).get('id') or args.task, args.status)
-    return {'task': args.task, 'posted': True, 'status': args.status, 'resources_added': added}
+        ident = b.get(args.task).get('id') or args.task
+        if not hasattr(b, 'push_status'):
+            b.set(ident, task_status=args.status)
+        elif args.status in WORK_PHASES:
+            # An explicit status wins: Linear gets exactly it (mapped only when the team lacks it), never the phase map.
+            set_status(b, ident, args.status, linear=args.status, explicit=True)
+        else:
+            # Todo / Backlog: Linear only. The board phase stays (a board "Todo" would hand the issue to a worker),
+            # and the issue is held, so nothing dispatches it and the watcher never flags it.
+            b.push_status(ident, args.status, explicit=True)
+            with state() as s:
+                s.setdefault('blocked', {})[ident] = 'Linear set to %s by note: %s' % (args.status, text[:200])
+        moves = pushed(b)
+        if moves:
+            out['linear_status'] = moves
+    return out
 
 
 def cmd_merged(args, b):
@@ -2365,7 +2384,9 @@ def parser():
     s.add_argument('--doc', action='append', default=[], help='repo doc path to link (taskboard.docs_url)')
     s.add_argument('--agent', default=os.environ.get('MSTACK_AGENT', 'agent'))
     s.add_argument('--direction', choices=['in', 'out', 'note'], default='note')
-    s.add_argument('--status', choices=['Todo', 'In Progress', 'In Review', 'Done', 'Canceled'])
+    s.add_argument('--status', choices=['Backlog', 'Todo', 'In Progress', 'In Review', 'Done', 'Canceled'],
+                   help='set the stage explicitly: Linear gets exactly this status (on private boards too, status field '
+                        'only); Todo and Backlog change Linear only and hold the issue (never dispatched or flagged)')
     s = sub.add_parser('merged', help='after merge and push: docs as Resources, one note, Done (or In Review with --verify)')
     s.add_argument('--task', required=True, help='issue id or MST-123')
     s.add_argument('--project', help='the board, when the issue has no run or plan recorded here')

@@ -682,6 +682,29 @@ class LinearBoardFlow(unittest.TestCase):
         self.assertEqual([n for n in need if n['kind'] in ('status_lag', 'handoff', 'resume')], [])   # no false lags
         self.assertIn('waiting for the iOS build', self.cli('thread', '--project', 'repo', '--task', 'MST-127')['messages'][-1]['text'])
 
+    def test_explicit_status_wins_and_the_watcher_never_rewrites_it(self):           # {{mstack:CLIENT_REPO}}, 14:20 UTC hotfix
+        cfg = json.loads((self.repo / '.mstack/stack.json').read_text()); cfg['taskboard']['private'] = True
+        (self.repo / '.mstack/stack.json').write_text(json.dumps(cfg))
+        self.auto()
+        self.fake.states.insert(3, {'id': 's-review', 'type': 'started', 'name': 'In Review', 'position': 2.5})
+        ids = {n: self.old_issue(n=n, state='s-started') for n in (125, 126, 139, 153)}
+        for n in ids:
+            self.cli('adopt', '--project', 'repo', '--task', 'MST-%d' % n, '--session', 's%d' % n)
+        # 153: approved and queued on the board (Todo), but deliberately delayed.
+        self.cli('propose', '--project', 'repo', '--task', 'MST-153', '--plan', '-', stdin='1. later')
+        self.cli('owner', '--project', 'repo', '--task', 'MST-153', '👍'); self.cli('poll')
+        for n, status in ((153, 'Todo'), (139, 'Backlog'), (126, 'In Progress'), (125, 'In Review')):
+            self.cli('note', '--task', 'MST-%d' % n, '--status', status, 'real stage')
+        want = {125: 's-review', 126: 's-started', 139: 's-backlog', 153: 's-unstarted'}
+        got = lambda: {n: self.fake.issues[i]['stateId'] for n, i in ids.items()}
+        self.assertEqual(got(), want)                                                  # exactly what was asked
+        with patch.object(cli, 'LINEAR_EVERY', 0), patch.object(cli, 'MIRROR_EVERY', 10 ** 9):
+            for _ in range(3):                                                         # minutes of watcher ticks
+                tick = self.cli('tick')
+                self.assertEqual([n for n in tick['needs_orchestrator'] if n['kind'] in ('resume', 'handoff', 'status_lag')], [])
+        self.assertEqual(got(), want)                                                  # nothing overwritten
+        self.assertEqual(tick['started'], [])                                          # held: never handed back
+
     def test_team_without_in_review_maps_to_its_nearest_state(self):                          # MST-53
         old = self.old_issue(n=930, state='s-started')
         self.cli('adopt', '--project', 'repo', '--task', 'MST-930', '--session', 'local_x')

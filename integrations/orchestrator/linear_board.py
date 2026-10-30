@@ -475,7 +475,7 @@ class LinearBoard:
         target = self.status_map.get(status)
         return None if target == 'Done' and self.never_done else target
 
-    def set(self, task, linear=..., **props):
+    def set(self, task, linear=..., explicit=False, **props):
         """Board fields. `task_status` also moves the Linear status (on private boards too: the status field
         only) to `linear`, by default the phase's linear_target; None leaves Linear as it is."""
         issue, link = self._issue(task)
@@ -485,7 +485,7 @@ class LinearBoard:
             if self.journal:
                 self.journal.add(real, '%s (status → %s)' % (MARK, props['task_status']))
             target = self.linear_target(props['task_status']) if linear is ... else linear
-            moved = self._status_change(issue, link, target) if target else None
+            moved = self._status_change(issue, link, target, explicit) if target else None
             if moved:
                 change['stateId'] = moved
         if 'name' in props and not self.journal:
@@ -494,23 +494,24 @@ class LinearBoard:
             link.post(UPDATE, {'id': real, 'input': change})
         self.forget(task)
 
-    def push_status(self, task, target):
+    def push_status(self, task, target, explicit=False):
         """Move only the Linear status (no phase note): for callers whose own note already records the phase."""
         issue, link = self._issue(task)
-        moved = self._status_change(issue, link, target) if target else None
+        moved = self._status_change(issue, link, target, explicit) if target else None
         if moved:
             link.post(UPDATE, {'id': issue['id'], 'input': {'stateId': moved}})
             self.forget(task)
 
-    def _status_change(self, issue, link, target):
-        """The state id to move the issue to, or None: already there, or closed in Linear (never reopened)."""
+    def _status_change(self, issue, link, target, explicit=False):
+        """The state id to move the issue to, or None: already there, or closed in Linear (never reopened).
+        `explicit` (someone ran `note --status X`): exactly X, even Done on a never_done scope."""
         state = link.state_for(target)
         if (state.get('name') or '').lower() != target.lower():
             self.mapped[(link.conf['team'], target)] = state.get('name') or state['type']
         current = issue.get('state') or {}
         if state['id'] == current.get('id') or (current.get('type') in CLOSED and state['type'] not in CLOSED):
             return None
-        if self.never_done and state['type'] == 'completed':
+        if self.never_done and state['type'] == 'completed' and not explicit:
             return None
         self.pushed.append({'issue': issue['identifier'], 'team': link.conf['team'], 'wanted': target,
                             'linear': state.get('name') or state['type'], 'mapped': (state.get('name') or '').lower() != target.lower()})
