@@ -34,3 +34,5 @@ For changing live status, use [the canonical handover](../HANDOVER.md).
     role cards on every message, plus `mstack spark` for reporting ideas back to mstack.
 14. [My tasks status table](014-STATUS-TABLE.md): the owner's read-only Anytype table of every project's
     issues, fed one way from the hub's Postgres by the hub watcher or `mstack status-table sync`.
+15. [Multi-harness workers](015-MULTI-HARNESS.md) (MST-54, plan): DeepSeek Harness headless workers first, OpenCode
+    second, the four spawn-path gaps, and a survey of session-manager UIs.
