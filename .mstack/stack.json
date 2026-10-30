@@ -37,7 +37,7 @@
     "memory.long": "graphify"
   },
   "hub": {
-    "store": "file",
+    "store": "postgres",
     "resend_minutes": 5
   }
 }
