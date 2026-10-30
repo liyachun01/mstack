@@ -1,0 +1,43 @@
+{
+  "receipt": "dsh headless qualification",
+  "issue": "MST-56",
+  "date": "2026-10-30",
+  "approval": "Owner in the mstack orchestrator chat, 2026-10-30: \"Approve, key A\"; the one test comment on MST-56 allowed",
+  "host": "orb-devbox (OrbStack Ubuntu VM), Linux 7.2 orbstack kernel, Landlock LSM, no bwrap",
+  "harness": {"package": "@deepseek-ai/dsh", "version": "0.2.0-rc.2", "node": "24.19.0", "installed_changes": "none"},
+  "created": {
+    "key_file": {"path": ".secrets/deepseek-worker.key", "mode": "0600", "source": "copy of the existing agents.csv harnessbot DeepSeek key (option A)", "printed": false},
+    "dsh_home": {"path": "infra/harnesses/deepseek/state/worker-home", "mode": "0700", "ignored": true,
+                  "contents": "profiles/headless (shipped template, no package install), sessions/, storages/, .anonymous-user-id"},
+    "evidence": {"path": "infra/harnesses/deepseek/state/qual-mst56", "mode": "0700, files 0600", "files": "NDJSON stdout and stderr per run"},
+    "overlay": "infra/harnesses/deepseek/worker/worker.cordis.yml"
+  },
+  "environment": {
+    "names": ["PATH", "HOME", "LANG", "DSH_HOME", "DSH_TELEMETRY_DISABLED=1", "DSH_TELEMETRY_MODE=DISABLED", "NODE_DISABLE_COMPILE_CACHE=1", "DEEPSEEK_API_KEY (from key file)"],
+    "command": "node <dsh>/lib/bin.js --profile headless --patch infra/harnesses/deepseek/worker/worker.cordis.yml --json [--session-id <id>] \"<task>\"",
+    "sandbox": "workspace-write (default), approval policy ask",
+    "model": "deepseek-official / deepseek-flash"
+  },
+  "throwaway_repo": {"path": "/home/developer/workspace/dsh-qual-mst56", "layout": "repo/ (git, canary AGENTS.md, .agents/skills/canary) + repo-wt/ (git worktree)", "deleted": true},
+  "runs": [
+    {"id": "00-dump", "model_call": false, "result": "pass", "detail": "composed tree: session-log-deepseek enabled false; web, web-search-deepseek, web-fetch-http, tool-web disabled; hmr disabled; OTel mode from DSH_TELEMETRY_MODE=DISABLED, launcher honours DSH_TELEMETRY_DISABLED"},
+    {"id": "01-canary-repo", "exit": 0, "result": "pass", "detail": "AGENTS.md canary and .agents/skills canary-skill seen; also 7 user-level skills from ~/.agents/skills"},
+    {"id": "02-canary-wt", "exit": 0, "result": "pass", "detail": "same in a git worktree: the .git file counts as the project root"},
+    {"id": "03-commit-repo", "exit": 0, "result": "pass", "detail": "git commit in a plain repo whose .git is inside the cwd works"},
+    {"id": "04-commit-note-wt", "exit": 0, "result": "denied as expected",
+     "detail": "worktree commit: Permission denied on <repo>/.git/worktrees/repo-wt/index.lock; mstack board note: Permission denied on mstack/.mstack/evidence/taskboard-test.lock, before anything was posted (no Linear comment)"},
+    {"id": "05-ask-wt", "exit": 0, "result": "fails closed",
+     "detail": "write outside workspace denied; model retried with sandbox_permissions danger-full-access; tool error 'requires approval, but no approval channel is available'; no hang, file not written"},
+    {"id": "06-resume", "exit": 0, "result": "pass", "detail": "--session-id continues run 2 with its history"},
+    {"id": "06b-resume-wrongcwd", "exit": 1, "model_call": false, "result": "refused as documented", "detail": "session recorded in repo-wt, not repo"},
+    {"id": "07-sigterm", "exit": 0, "result": "stops promptly, exit code misleading",
+     "detail": "SIGTERM to the process group during a 60 s bash sleep: the process and its child exit at once, nothing left running; stdout ends with an empty final and no turn_end status; the session log records turn/end interrupted"},
+    {"id": "08-resume-after-term", "exit": 0, "result": "pass", "detail": "the interrupted session resumes and knows the interrupted command"}
+  ],
+  "usage": {"agent_requests": 17, "title_requests": 6, "input_tokens_uncached": 19764, "input_tokens_cache_hit": 92032, "output_tokens": 2645,
+            "note": "title requests are one extra automatic Flash call per new session (session-title-first-prompt-llm); their tokens are not logged",
+            "budget": "approved at most ~50 requests"},
+  "secrets_check": "key string absent from all NDJSON, stderr and decoded session logs",
+  "untouched": ["~/.dsh (mtimes 2026-10-02/03)", "dsh version", "Magpie", "containers", "global configuration", "other keys"],
+  "rollback": "rm -rf infra/harnesses/deepseek/state/worker-home infra/harnesses/deepseek/state/qual-mst56; rm .secrets/deepseek-worker.key; revert the MST-56 commit"
+}

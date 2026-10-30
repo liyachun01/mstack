@@ -1,7 +1,8 @@
 # 015 — Multi-harness workers: DeepSeek Harness first, OpenCode second (MST-54, 2026-10-30)
 
-Status: investigation and plan. Nothing was installed, started, logged in or called. Every setup step below is a
-proposal that goes through `.agents/skills/mcp-stack-setup-guard/SKILL.md` with the owner's explicit OK.
+Status: investigation and plan (MST-54). Phase-1 step 1 is done: dsh 0.2.0-rc.2 headless qualified on a throwaway
+repo (MST-56, see [Phase-1 qualification](#phase-1-qualification-mst-56-2026-10-30)). Every other setup step below
+is still a proposal that goes through `.agents/skills/mcp-stack-setup-guard/SKILL.md` with the owner's explicit OK.
 
 ## Goal
 
@@ -197,6 +198,7 @@ Each setup step (★) is its own setup-guard proposal and needs the owner's OK b
    OTel disabled, worker-only key file, current 0.2.0-rc.2 first (update to 0.2.1 only if a blocker needs it).
    Check: AGENTS.md and `.agents/skills` load in a worktree; what "ask" does headless; whether `git commit` and
    `mstack board note` work under the sandbox; `--session-id` resume; SIGTERM. A handful of cheap Flash calls.
+   *Done 2026-10-30 (MST-56); results below. `DSH_HOME` ended up under the already-ignored `state/worker-home`.*
 2. **mstack code (no setup):** `dsh` manifest + `mcp_style: dsh-patch`; `work` records the session id from the
    JSON stream, supports `--resume` with a queued comment, skips a duplicate `finish()`; `board stop` for spawn runs;
    `agent_of()` and "My tasks" rows for spawn sessions; tests with a fake `dsh` (like `echo`).
@@ -208,3 +210,67 @@ Each setup step (★) is its own setup-guard proposal and needs the owner's OK b
 
 Out of scope for phase 1: ChatGPT/Codex workers (the `codex` manifest exists; the CLI is uninstalled), the
 orchestrator itself on DeepSeek, and any UI install.
+
+## Phase-1 qualification (MST-56, 2026-10-30)
+
+Owner-approved setup proposal on MST-56 ("Approve, key A"). Receipt:
+[`runtime/receipts/2026-10-30-mst56-dsh-headless.json`](../../runtime/receipts/2026-10-30-mst56-dsh-headless.json).
+Installed dsh 0.2.0-rc.2 on Ubuntu, nothing installed or updated, `~/.dsh` untouched.
+
+### Setup used
+
+| Piece | Value |
+|---|---|
+| Key | `.secrets/deepseek-worker.key` (0600), a copy of the existing `harnessbot` DeepSeek key, passed only as `DEEPSEEK_API_KEY` in the environment. Absent from every log. |
+| `DSH_HOME` | `infra/harnesses/deepseek/state/worker-home` (0700, already gitignored). dsh created `profiles/headless/` from its template without any package install. |
+| Overlay | [`infra/harnesses/deepseek/worker/worker.cordis.yml`](../../infra/harnesses/deepseek/worker/worker.cordis.yml): session-log upload off, web search/fetch off. |
+| Telemetry | `DSH_TELEMETRY_DISABLED=1` (honoured by the launcher) and `DSH_TELEMETRY_MODE=DISABLED` (no OTel transport built). |
+| Command | `env -i … node <dsh>/lib/bin.js --profile headless --patch <overlay> --json [--session-id <id>] "<task>"`, cwd = the repo or worktree. |
+| Sandbox | Default `workspace-write` + approval `ask`. This VM has no `bwrap`, so dsh uses Landlock. Writes are confined to the cwd and `/tmp`; network is not restricted. |
+
+### Results
+
+| Check | Result |
+|---|---|
+| AGENTS.md + `.agents/skills` in a repo | ✅ Canary and skill seen. dsh also loads **user-level `~/.agents/skills`** (7 volcengine/find-skills skills here). |
+| Same in a git worktree | ✅ A worktree's `.git` *file* counts as the project root. |
+| `git commit`, plain repo | ✅ Works (the `.git` is inside the cwd). |
+| `git commit` in a worktree | ❌ Denied: `index.lock` lives in the main repo's `.git/worktrees/<name>/`, outside the workspace. |
+| `mstack board note` | ❌ Denied on `mstack/.mstack/evidence/*.lock` **before** posting anything (no Linear comment was made). |
+| Headless "ask" / escalation | Fails closed. The model may retry with `sandbox_permissions`, and the tool answers "requires approval, but no approval channel is available". No hang. |
+| `--session-id` resume | ✅ History continues. Another cwd is refused before any model call (exit 1). |
+| SIGTERM to the process group | Stops at once and kills the tool child; nothing is left running. **Exit code 0**, an empty `final`, and no `turn_end` in the stream. The session log records `turn/end: interrupted`. |
+| Resume after SIGTERM | ✅ The interrupted session continues and knows what it was doing. |
+| Cost | 17 agent requests + 6 automatic title requests (one per new session). 19.8k uncached + 92k cached input tokens, 2.6k output. The system prompt is about 6k tokens. |
+
+### What this means for the mstack side (MST-57)
+
+- **Session id:** the first NDJSON line is `{"type":"session","sessionId":"session-<uuid>","cwd":…}`. The field is
+  `sessionId`, not `id`. Sessions live under `$DSH_HOME/sessions/<cwd-slug>/<id>/session.v4.jsonl.zstd` (multi-frame
+  zstd; Node 24 `zlib.zstdDecompressSync` reads it frame by frame).
+- **Success is not the exit code.** A run counts as completed only when the stream has
+  `{"type":"status","phase":"turn_end","reason":{"kind":"completed"}}`. A SIGTERM run exits 0 with no `turn_end`, and
+  failed tool steps inside a completed turn also exit 0. `status/step_end` carries per-request `usage` for metering.
+- **Commit and report run outside the agent.** Under `workspace-write`, a worker in an mstack worktree can edit but
+  can't `git commit` or `mstack board note/done`. Use the plan's fallback: the agent edits and writes its summary,
+  then `cli.py work` (unsandboxed) commits on the task branch and posts `note`/`done` from the `final` text. The
+  brief has to say so ("don't commit or call mstack board; end with a summary"). The alternative, a narrow profile
+  patch that adds the main repo's `.git` and `.mstack/` as writable roots, isn't offered by dsh-sandbox-policy on
+  0.2.0-rc.2 (one workspace root per session); `danger-full-access` would work but drops all confinement. Not
+  recommended.
+- **Owner comments mid-run** wait for exit and then go in with `--session-id` from the same cwd (the worktree).
+  Resume works after a normal end or a SIGTERM.
+- **Stop:** `SIGTERM` to the process group is clean and prompt. Record the stop yourself, since the exit code won't
+  show it.
+- **Skills hygiene:** user-level `~/.agents/skills` leak into workers. Either accept that or launch with a `HOME`
+  whose `.agents/skills` is empty. That's a later decision; it isn't needed for the first real issue.
+- **No blocker requires 0.2.1.** Headless reads `DEEPSEEK_API_KEY` from the environment on 0.2.0-rc.2 as well.
+
+### Questions resolved
+
+- Does the worktree `.git` file count as a root? Yes.
+- What does "ask" do headless? It fails closed with a clear tool error, and the run continues.
+- Can the agent commit and call `board`? Not under the sandbox, so `work` does both after exit.
+- Is `--session-id` resume usable across processes, and after SIGTERM? Yes, with the same cwd.
+- Is telemetry off? Yes: OTel `DISABLED` and session-log upload `enabled: false` in the composed tree. Title
+  generation still makes one Flash call per session, to the same official API.
