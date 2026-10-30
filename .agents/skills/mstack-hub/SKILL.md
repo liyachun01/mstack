@@ -41,6 +41,9 @@ carry messages. Commands: `/home/developer/workspace/mstack/mstack …`, run fro
 - **`status_table_error`:** the owner's "My tasks" table in Anytype (design 014) wasn't updated, usually because
   the Anytype app is closed. It never stops the watcher and retries by itself; mention it once in your report, not
   on every tick. Don't open Anytype or run `mstack status-table sync` yourself unless the owner asks.
+- **`rate-limited until …`** in the watcher line: Linear throttled a key. Every process skips that board until
+  then (shared backoff, `.mstack/cache/linear-backoff.json`). It's not a failure: don't restart. `Linear calls:`
+  on the same line shows the requests per team for that tick.
 - **A tick error or 5 failed ticks:** restart the watcher once; if it fails again, tell the owner with the error.
 
 ## Handover

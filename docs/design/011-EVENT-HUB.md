@@ -84,7 +84,8 @@ state (`.mstack/evidence/taskboard-test.json`) and private journals. That's why 
   stay `new` and are listed under `unrouted`. `--peek` shows without marking.
 - `mstack events resolve --id N [--note]`, run by the receiving orchestrator. `events list [--status]` for a look;
   `events schema [--apply]` prints or applies the schema.
-- Two scopes of one board now keep separate Linear poll timers (`last_linear_poll["board/scope"]`).
+- Two scopes of one board now keep separate Linear poll timers (`last_linear_poll["board/scope"]`). The hub
+  replaced this with one timer per board in MST-41 (below); per-scope watchers keep theirs as the fallback.
 
 ### Hub watcher and chat
 - `mstack board watch --hub` (lock `watch.hub.lock`) ticks every registered (project, scope) and exits when routable
@@ -98,6 +99,48 @@ state (`.mstack/evidence/taskboard-test.json`) and private journals. That's why 
   UPDATE), so everything looked unrouted. Sent rows now come from `UPDATE … RETURNING`; checked on a temp table.
 - Catching up a spool inside a write took the state lock a second time and hung; the lock is now re-entrant.
 - A missing state file is restored from Postgres instead of being pushed over it (which deleted every key).
+
+### Linear rate limits (MST-41, 2026-10-30)
+{{mstack:CLIENT_REPO}}'s watchers hit `HTTP 429` on many ticks, and the customer-api watcher stopped after 5 failed ticks.
+**Measured:** the watcher logs held 98 ({{mstack:CLIENT_C_FOLDER}}), 100 (hub) and 137 ({{mstack:CLIENT_REPO}}) 429s. Two causes:
+- {{mstack:CLIENT_REPO}}'s `API` link ({{mstack:CLIENT_ORG_A_SHORT}}/IRO) and {{mstack:CLIENT_C_FOLDER}} ({{mstack:CLIENT_ORG_A_SHORT}}/YEL) use the **same Linear key** (entry 2), and Linear
+  limits per key, so both projects share one budget.
+- Each due tick of a scope read the whole board three times (signals, verdict poll, dispatch), with up to 50
+  comments per issue. The hub's unscoped {{mstack:CLIENT_REPO}} route and portal-web read the same boards again, and per-scope
+  watchers shared the hub's per-scope timers, so whichever ran first polled. A fake-Linear replay of the live
+  setup (hub with 5 routes and 3 per-scope watchers, 10 s ticks) counted **2,904 requests/h, 2,292 of them on
+  the shared key**. After the change: **828/h, 708 on the shared key**. Most of what is left is parent lookups
+  that the fake data forces. On the real boards those parents are the owner's own issues, which are already loaded.
+
+**Changes:**
+- **One read per board per tick.** `tick` runs inside `linear_board.shared()`. Every LinearBoard made during it
+  (signals, poll, dispatch, the mirror, the "My tasks" pass, every scope) reuses one issue list per (key, team),
+  and parent lookups are shared too. Any write through a link (a mutation) drops that board's copy, so dispatch
+  still sees an approval the poll just wrote. Private boards write to the journal, so their copy stays valid.
+- **One poll timer per board in the hub.** The first route of a board decides whether it is due this tick
+  (`last_linear_poll["board"]`), and its other routes follow, so all scopes of a board poll together from one read.
+  `mirror` and `sync` timers were already per board.
+- **The hub owns Linear I/O.** A per-scope or per-project `tick`/`watch` skips a Linear board (`left_to_hub`)
+  while `watch.hub.lock` is held and the hub has that (board, scope) registered. It still lists handoffs and
+  resumes from the state file. With no hub, or for a scope the hub doesn't tick, it polls as before: this is
+  the fallback.
+- **Shared backoff on rate limits** (`linear.py`). A 429, a `RATELIMITED` GraphQL error, or a good answer whose
+  `X-RateLimit-Requests/Complexity-Remaining` is 0 puts the key in `.mstack/cache/linear-backoff.json`. The entry
+  is keyed by a hash of the key, never the key itself. The wait comes from `Retry-After`, else the
+  `X-RateLimit-*-Reset` time, else 60 s, doubling for each 429 in a row (at most 1 h). Until it ends, every
+  process using the key raises `RateLimited` without calling Linear. The backoff is logged once when it starts,
+  and the watcher line says `rate-limited until …` once per backoff. A rate-limited board is skipped for that
+  tick (`rate_limited` in the tick output) and never counts as a failed tick.
+- **Counter:** the tick output has `linear_calls` (requests by team), and the watcher line prints it, so an
+  hour of logs shows who calls Linear.
+
+**Questions resolved:**
+- *Share the board read across processes through Postgres?* No. While the hub runs, only the hub reads Linear,
+  so an in-process share per tick is enough. Two fallback watchers on scopes of one board (no hub) still read
+  it twice. That's acceptable for a fallback.
+- *Latency:* the hub still polls each board every `LINEAR_EVERY` (30 s), so verdicts and dispatch arrive as fast
+  as before. Per-scope orchestrators are woken by the hub's events instead of their own watcher's exit.
+- Not in scope: webhooks, moving {{mstack:CLIENT_C_FOLDER}} or {{mstack:CLIENT_REPO}} to another key.
 
 ### Not done in phase 1
 - The schema is not applied to the live database, and `hub.store` stays `file`, until the owner approves.
