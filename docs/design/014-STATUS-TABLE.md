@@ -77,7 +77,7 @@ rows are never deleted: closed issues stay as Done/Canceled. On 2026-10-30: 165 
 | Session Type (`session_type`) | orchestrator, worker, helper |
 | Agent (`session_agent`) | claude, codex, deepseek, other (from the run's runner; orchestrators and helpers are Claude sessions) |
 | Parent Session (`session_parent`) | the orchestrator a worker or helper reports to: its scope's, else the project's; blank for orchestrators |
-| Session State (`session_state`) | active, archived, deleted, from the hub chat's last look (blank until then) |
+| Session State (`session_state`) | archived or deleted only when the hub chat saw it so; every other session is active (owner rule, 2026-10-30; `board ack`/`adopt` also record active) |
 | Session Report (`session_report`) | the latest `board done` summary or `board note` (600 characters); free text |
 | CTA (`session_cta`) | set by the owner: noop (default), continue, archive, delete, forbidden |
 | Last Action (`session_action`) | what the last CTA did, with its time |

@@ -121,11 +121,17 @@ class Rows(unittest.TestCase):
             'linear_identifier': 'MST-40', 'task_project': 'mstack', 'task_status': 'In Review',
             'linear_updated_at': '2026-10-30T01:00:00Z', 'linear_url': 'https://linear.app/x/issue/MST-40',
             'agent_session': 'local_w', 'session_type': 'worker', 'session_agent': 'claude',
-            'session_parent': 'local_morch', 'session_report': 'Built it. Tests pass.'})
+            'session_parent': 'local_morch', 'session_state': 'active', 'session_report': 'Built it. Tests pass.'})
         old, new = rows['session/local_old']['properties'], rows['session/local_new']['properties']
         self.assertEqual((old['session_agent'], old['session_state'], old['session_parent']), ('codex', 'archived', 'local_api'))
         self.assertEqual((new['task_scope'], new['session_state'], new['task_status']), ('customer-api', 'active', 'In Review'))
         self.assertNotIn('linear_url', new)                                   # private board: no Linear link
+        # Never observed (local_w), or observed active: active; only archived/deleted show otherwise.
+        self.assertEqual(rows['session/local_rel']['properties']['session_state'], 'active')
+        gone = dict(self.STATE, sessions_seen={'local_rel': {'state': 'deleted'}, 'local_w': {'state': 'odd'}})
+        rows2, _, _ = self.rows(gone)
+        self.assertEqual(rows2['session/local_rel']['properties']['session_state'], 'deleted')
+        self.assertEqual(rows2['session/local_w']['properties']['session_state'], 'active')
         self.assertIn('obsolete', rows['session/local_rel']['properties']['session_report'])
         orch = rows['session/local_api']
         self.assertEqual((orch['name'], orch['properties']['session_type']), ('Orchestrator {{mstack:CLIENT_REPO}}/customer-api', 'orchestrator'))

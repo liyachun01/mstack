@@ -466,6 +466,7 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual([(n['kind'], n['task'], n['via']) for n in need], [('handoff', a, 'start_session')])
         self.assertEqual(len(self.tick()['needs_orchestrator']), 1)      # still not started: offered again
         self.run_cli('ack', '--task', a, '--session', 'local_abc')
+        self.assertEqual(json.loads(cli.STATE.read_text())['sessions_seen']['local_abc']['state'], 'active')
         self.assertEqual(self.tick()['needs_orchestrator'], [])
         self.assertEqual(self.tick()['started'], [])                    # busy, never re-dispatched
 

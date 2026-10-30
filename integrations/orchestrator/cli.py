@@ -661,6 +661,13 @@ def run_key(task):
     return next((k for k, r in runs.items() if r.get('issue') == task), task)
 
 
+def mark_active(st, session):
+    """A session ack/adopt just recorded is live: show it as active in My tasks before the next observe."""
+    if session:
+        st.setdefault('sessions_seen', {})[session] = {**(st.get('sessions_seen') or {}).get(session, {}),
+                                                       'state': 'active', 'at': time.strftime('%Y-%m-%dT%H:%M:%S%z')}
+
+
 def cmd_ack(args, b):
     """The orchestrator started the host session for a handoff, or resumed an adopted worker: stop offering it."""
     key = run_key(args.task)
@@ -672,6 +679,7 @@ def cmd_ack(args, b):
             raise ValueError('Task %s is worked by adopted session %s' % (args.task, run['session']))
         run['session'] = args.session
         run['resumed'] = True
+        mark_active(s, args.session)
     return {'task': key, 'session': args.session}
 
 
@@ -1038,6 +1046,7 @@ def cmd_adopt(args, b):
                                                 'issue': task.get('linear_identifier'),
                                                 'parent': task.get('parent'),
                                                 'adopted': True}
+        mark_active(s, args.session)
     remember(task['id'], name, task.get('linear_identifier'))
     b.say(task['id'], 'Tracked by the %s orchestrator: session `%s`%s (status → %s).'
           % (SCOPE or name, args.session, ' in `%s`' % args.tree if args.tree else '', status))

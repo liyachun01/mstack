@@ -133,7 +133,9 @@ def desired(issues, board_state, private, now=None, roles=None):
         return props, ('%s %s' % (ident, issue.get('title') or '')) if issue else ident
 
     def add(session, props, name, kind, agent, parent, report):
+        # Owner rule (2026-10-30): any session that isn't archived is active; never-observed ones included.
         state = (seen.get(session) or {}).get('state')
+        state = state if state in ('archived', 'deleted') else 'active'
         props = {**props, 'agent_session': session, 'session_type': kind, 'session_agent': agent,
                  'session_parent': parent, 'session_state': state, 'session_report': short(report),
                  'session_action': (actions.get(session) or {}).get('text')}
