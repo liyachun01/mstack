@@ -2376,6 +2376,11 @@
           "maximum": 120,
           "default": 5,
           "description": "`mstack events next` resends events still `sent` after this many minutes."
+        },
+        "status_table": {
+          "type": "boolean",
+          "default": true,
+          "description": "The owner's read-only \"My tasks\" table in Anytype, fed from the hub every few minutes (docs/design/014-STATUS-TABLE.md). false switches the hub step and `mstack status-table sync` off."
         }
       }
     }

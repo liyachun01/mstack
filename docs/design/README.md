@@ -32,3 +32,5 @@ For changing live status, use [the canonical handover](../HANDOVER.md).
    records, the `runtime/` folder, and the MST-22 migration.
 13. [Roles and sparks](013-ROLES-AND-SPARKS.md): strict orchestrator, sub-orchestrator and worker roles with
     role cards on every message, plus `mstack spark` for reporting ideas back to mstack.
+14. [My tasks status table](014-STATUS-TABLE.md): the owner's read-only Anytype table of every project's
+    issues, fed one way from the hub's Postgres by the hub watcher or `mstack status-table sync`.

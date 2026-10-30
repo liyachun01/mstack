@@ -19,6 +19,7 @@ plan and who works; these commands do the deterministic parts:
   link     link a table to Linear with an entry of the owner's .secrets/linear.csv
   orchestrators  register|list: which orchestrator session serves a (project, scope)
   events   next|resolve|list|schema: the event hub queue (design 011)
+  status-table  sync|show: the owner's read-only "My tasks" table in Anytype, fed from the hub (design 014)
 """
 import argparse
 import contextlib
@@ -39,6 +40,7 @@ import board as anyboard
 import config as intent
 import runners          # puts integrations/plugins on sys.path
 import registry
+import status_table
 import store
 import visibility
 
@@ -735,6 +737,92 @@ def psql(sql):
     store.psql(sql)
 
 
+def mirror_if_due(name, out):
+    """Refresh one Linear board's issue table when MIRROR_EVERY has passed; errors go into `out`."""
+    if time.time() - read_state().get('last_mirror', {}).get(name, 0) < MIRROR_EVERY:
+        return
+    try:
+        out.setdefault('mirrored', {})[name] = mirror(name)['rows']
+    except (RuntimeError, ValueError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+        out.setdefault('mirror_errors', {})[name] = str(error)[:200]
+    with state() as s:
+        s.setdefault('last_mirror', {})[name] = time.time()
+
+
+# ---- the owner's "My tasks" status table (design 014) ----------------------------------------------
+STATUS_CALL = None        # tests: a fake Anytype call; None = the macOS bridge (board.macctl)
+STATUS_SQL = None         # tests: a fake psql runner; None = store.psql
+
+
+def status_table_on():
+    """`hub.status_table` in mstack's .mstack/stack.json (default on). Only the real state file feeds the
+    table; tests switch it on explicitly."""
+    return STATE == DEFAULT_STATE and hub_settings().get('status_table', True) is not False
+
+
+def private_boards():
+    """Board name → True when its rows carry no Linear link: private boards, and any board whose config
+    can't be read (never leak a link by mistake)."""
+    out = {}
+    for name, entry in read_state().get('tables', {}).items():
+        try:
+            out[name] = bool(project_settings(entry).get('private'))
+        except (ValueError, OSError, KeyError):
+            out[name] = True
+    return out
+
+
+def status_table_pass(full=False):
+    """One pass: refresh stale Linear issue tables, then upsert the rows into "My tasks"."""
+    out = {}
+    for name, entry in sorted(read_state().get('tables', {}).items()):
+        if is_linear(entry):
+            mirror_if_due(name, out)
+    issues = status_table.read_issues(STATUS_SQL or store.psql)
+    current = read_state()
+    known = current.get(status_table.STATE_KEY) or {}
+    full = full or time.time() - known.get('last_full', 0) >= status_table.FULL_EVERY
+    table = status_table.StatusTable(STATUS_CALL or anyboard.macctl)
+    rows = status_table.desired(issues, current, private_boards())
+    try:
+        known, counts = table.sync(rows, known, full)
+    finally:
+        saved = known if table.partial is None else table.partial
+        with state() as s:
+            mine = dict(saved, last_try=time.time())
+            if table.partial is None:
+                mine['last_pass'] = time.strftime('%Y-%m-%dT%H:%M:%S%z')
+                if full:
+                    mine['last_full'] = time.time()
+            s[status_table.STATE_KEY] = mine
+    return {**out, 'rows': len(rows), 'full': full, **counts}
+
+
+def status_table_if_due(out):
+    """The hub watcher's step: a pass every status_table.EVERY seconds, failures recorded, never fatal."""
+    if not status_table_on():
+        return
+    known = read_state().get(status_table.STATE_KEY) or {}
+    if time.time() - known.get('last_try', 0) < status_table.EVERY:
+        return
+    try:
+        out['status_table'] = status_table_pass()
+    except (RuntimeError, ValueError, OSError, KeyError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+        out['status_table_error'] = str(error)[:200]
+        with state() as s:
+            s.setdefault(status_table.STATE_KEY, {})['last_try'] = time.time()
+
+
+def cmd_status_table(args, b):
+    if args.action == 'show':
+        known = read_state().get(status_table.STATE_KEY) or {}
+        return {'on': hub_settings().get('status_table', True) is not False, 'collection': known.get('collection'),
+                'rows': len(known.get('rows') or {}), 'last_pass': known.get('last_pass')}
+    if hub_settings().get('status_table', True) is False:
+        raise ValueError('The status table is off (hub.status_table: false in .mstack/stack.json)')
+    return status_table_pass(full=args.full)
+
+
 def cmd_mirror(args, b):
     return mirror(table_of(args.project)[0])
 
@@ -821,6 +909,7 @@ def cmd_tick(args, b):
                     out.setdefault(key, {}).update(value)
     finally:
         SCOPE = outer
+    status_table_if_due(out)
     return out
 
 
@@ -861,13 +950,7 @@ def tick_once(args, b):
                                                   'linear': task.get('linear_identifier')})
                 fresh.append(key)
         if is_linear(entry):
-            if time.time() - read_state().get('last_mirror', {}).get(name, 0) >= MIRROR_EVERY:
-                try:
-                    out.setdefault('mirrored', {})[name] = mirror(name)['rows']
-                except (RuntimeError, ValueError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
-                    out.setdefault('mirror_errors', {})[name] = str(error)[:200]
-                with state() as s:
-                    s.setdefault('last_mirror', {})[name] = time.time()
+            mirror_if_due(name, out)
             poll_key = '/'.join(filter(None, (name, SCOPE)))       # two scopes of one board poll on their own
             last = read_state().get('last_linear_poll', {}).get(poll_key, 0)
             if time.time() - last < LINEAR_EVERY:
@@ -959,7 +1042,8 @@ def cmd_watch(args, b):
                 time.strftime('%H:%M:%S'), len(result['verdicts']), len(result['started']),
                 len(result['needs_orchestrator']),
                 ''.join('; sync %s failed: %s' % kv for kv in result.get('sync_errors', {}).items())
-                + ''.join('; %s skipped: %s' % kv for kv in result.get('skipped_tables', {}).items())),
+                + ''.join('; %s skipped: %s' % kv for kv in result.get('skipped_tables', {}).items())
+                + ('; status table failed: %s' % result['status_table_error'] if result.get('status_table_error') else '')),
                 file=sys.stderr, flush=True)
             if hub and not result.get('queue_error'):
                 try:
@@ -1421,6 +1505,9 @@ def parser():
     s.add_argument('--peek', action='store_true', help='next: show without marking sent')
     s.add_argument('--status', choices=['new', 'sent', 'resolved'], help='list: only this status')
     s.add_argument('--apply', action='store_true', help='schema: run it against mstack_orchestrator (owner-approved)')
+    s = sub.add_parser('status-table', help='sync|show: the owner\'s read-only "My tasks" table in Anytype (design 014)')
+    s.add_argument('action', choices=['sync', 'show'])
+    s.add_argument('--full', action='store_true', help='sync: rewrite every row (overwrites hand edits now)')
     return p
 
 
@@ -1438,7 +1525,7 @@ def main(argv=None, b=None):
     if argv is None:
         ARGV = list(sys.argv[1:])          # a real command line: only then may a watcher re-exec itself
     try:
-        result = globals()['cmd_' + args.command](args, b or anyboard.Board())
+        result = globals()['cmd_' + args.command.replace('-', '_')](args, b or anyboard.Board())
     except (ValueError, RuntimeError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
         print('mstack board: ' + str(error), file=sys.stderr)
         return 1

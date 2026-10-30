@@ -404,7 +404,7 @@ def main(argv=None):
         return hydrate.main(arguments[1:])
     if arguments[:1] == ['board']:
         os.execv(sys.executable, [sys.executable, str(STACK_ROOT/'integrations/orchestrator/cli.py'), *arguments[1:]])
-    if arguments[:1] in (['events'], ['orchestrators']):      # the event hub (design 011): board subcommands
+    if arguments[:1] in (['events'], ['orchestrators'], ['status-table']):   # the event hub (011, 014): board subcommands
         os.execv(sys.executable, [sys.executable, str(STACK_ROOT/'integrations/orchestrator/cli.py'), *arguments])
     if arguments[:1] == ['connections']:
         return subprocess.call([sys.executable, str(STACK_ROOT/'integrations/gateway/projects.py'), *arguments[1:]])
@@ -414,6 +414,7 @@ def main(argv=None):
     sub.add_parser('board', help='Orchestrator toolbelt for the shared Anytype task board')
     sub.add_parser('events', help='Event hub queue: next|resolve|list|schema (design 011)')
     sub.add_parser('orchestrators', help='Event hub registry: register|list|remove orchestrator sessions')
+    sub.add_parser('status-table', help='The owner\'s read-only "My tasks" table in Anytype: sync|show (design 014)')
     sub.add_parser('plugin', help='List/validate joint plugins (agent, board, link, memory, compress, gateway, docs)')
     sub.add_parser('skills', help='Link mstack skills into a repo (local, gitignored with local visibility)')
     sub.add_parser('role', help='Role cards: remind each coordinator, orchestrator and worker session of its job')

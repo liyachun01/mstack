@@ -30,6 +30,9 @@ carry messages. Commands: `/home/developer/workspace/mstack/mstack …`, run fro
 - **`queue_error`** (Postgres unreachable): the watcher returns the raw `needs_orchestrator` items instead, and
   new events are spooled locally until Postgres is back. Deliver the items to their orchestrator by hand
   (route = item `table` + scope via `orchestrators list`), and tell the owner Postgres is down.
+- **`status_table_error`:** the owner's "My tasks" table in Anytype (design 014) wasn't updated, usually because
+  the Anytype app is closed. It never stops the watcher and retries by itself; mention it once in your report, not
+  on every tick. Don't open Anytype or run `mstack status-table sync` yourself unless the owner asks.
 - **A tick error or 5 failed ticks:** restart the watcher once; if it fails again, tell the owner with the error.
 
 ## Handover
