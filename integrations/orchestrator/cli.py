@@ -191,6 +191,41 @@ def doc_links(table, docs):
     return '\n\nDocs: ' + ', '.join('[%s](%s%s)' % (d, base, d) if base else '`%s`' % d for d in docs)
 
 
+SIZES = ('small', 'medium', 'big')
+BRIEF_LIMIT = 800         # characters: a consolidated issue description is a short brief plus the doc link
+
+
+def docs_missing(b, key, run, size, docs):
+    """What the docs rule (design by size, 2026-10-30) still needs before `done`: medium and big issues need a
+    repo doc passed with --doc, and on a writable Linear board a short issue description that links it."""
+    if size == 'small':
+        return []
+    fix = '--size small' if size == 'medium' else '--force'
+    roots = [Path(run['tree'])] if run.get('tree') else []
+    entry = read_state().get('tables', {}).get(table_of_task(key) or '')
+    if entry:
+        roots.append(Path(entry['path']))
+    if not docs:
+        return ['a doc: write it in the repo from the settled thread and pass `--doc <path>` '
+                '(or `%s` if this issue needs none)' % fix]
+    gone = [d for d in docs if not any((r/d).exists() for r in roots)]
+    if gone:
+        return ['the doc %s: not found in %s' % (', '.join('`%s`' % d for d in gone),
+                                                   ' or '.join('`%s`' % r for r in roots) or 'any recorded path')]
+    if not entry or not is_linear(entry) or project_settings(entry).get('private'):
+        return []                                     # private boards: Linear is read-only, the journal is the record
+    text = b.body(key)
+    wrong = []
+    if len(text) > BRIEF_LIMIT:
+        wrong.append('is %d characters (at most %d)' % (len(text), BRIEF_LIMIT))
+    if not any(d in text or Path(d).name in text for d in docs):
+        wrong.append('does not link %s' % ', '.join('`%s`' % d for d in docs))
+    if wrong:
+        return ['a consolidated issue description: it %s. Shrink it in Linear to a short brief plus the doc link, '
+                'keeping the comments, then run done again' % ' and '.join(wrong)]
+    return []
+
+
 def table_of_task(task):
     st = read_state()
     record = st.get('task_tables', {}).get(task) or {}
@@ -263,6 +298,10 @@ def cmd_propose(args, b):
     b.say(task['id'], 'Plan ready for **%s** (agent: %s).\n\n## Plan\n\n%s\n\nReact 👍 to approve, 👎 to drop, '
           'or reply with changes.' % (task['name'], args.agent, plan.strip() + doc_links(name, args.doc)), ask=True)
     remember(task['id'], name, task.get('linear_identifier'))
+    if args.size:
+        with state() as s:
+            for k in filter(None, (task['id'], task.get('linear_identifier'))):
+                s.setdefault('task_sizes', {})[k] = args.size
     if args.repos:
         known = workspace_repos(project_settings(table_of(args.project)[1]))
         wrong = [r for r in args.repos if r not in known]
@@ -271,7 +310,7 @@ def cmd_propose(args, b):
         with state() as s:
             s.setdefault('task_repos', {})[task['id']] = list(args.repos)
     return {'task': task['id'], 'issue': task.get('linear_identifier'), 'status': 'Awaiting Approval',
-            'repos': args.repos or []}
+            'repos': args.repos or [], 'size': args.size}
 
 
 def cmd_worktree(args, b):
@@ -373,7 +412,8 @@ def brief_for(b, task_id, table, tree, tools=()):
         '- If scope or plan changes, tell the owner on the issue:',
         '  %s note --task %s "what changed"' % (board, task_id),
         '- When finished, report for review (this moves the issue to In Review):',
-        '  %s done --task %s --summary "what changed and what is left"' % (board, task_id),
+        '  %s done --task %s --summary "what changed and what is left" --doc <path>' % (board, task_id),
+        '  (medium and big issues need the doc and a consolidated issue description; a small one passes --size small)',
         *(['', 'mstack tools in this session (MCP):'] + ['- %s: %s' % (t['name'], t.get('hint', ''))
                                                          for t in tools] if tools else [])])
 
@@ -970,10 +1010,17 @@ def cmd_done(args, b):
     run = read_state().get('runs', {}).get(key)
     if not run:
         raise ValueError('Task %s has no worker on the board (dispatch or adopt it first)' % args.task)
+    sizes = read_state().get('task_sizes', {})
+    size = args.size or sizes.get(key) or sizes.get(run.get('issue') or '') or 'medium'
+    missing = docs_missing(b, key, run, size, args.doc)
+    if missing and not args.force:
+        raise ValueError('%s is a %s issue; before done it still needs %s.' % (args.task, size, '; and '.join(missing)))
     summary = (sys.stdin.read() if args.summary == '-' else args.summary) + doc_links(table_of_task(key), args.doc)
+    if missing:
+        summary += '\n\n(Forced past the docs check; still missing: %s.)' % '; '.join(missing)
     tree = Path(run['tree']) if run.get('tree') else None      # adopted sessions may have no recorded worktree
     commits = finish(b, key, tree, run.get('runner') or 'worker', summary)
-    return {'task': key, 'status': 'In Review', 'commits': commits}
+    return {'task': key, 'status': 'In Review', 'commits': commits, 'size': size, 'forced': bool(missing)}
 
 
 def cmd_note(args, b):
@@ -1310,6 +1357,7 @@ def parser():
     s.add_argument('--plan', required=True, help='file or - for stdin'); s.add_argument('--agent', default='claude-desktop')
     s.add_argument('--doc', action='append', default=[], help='repo doc path to link (taskboard.docs_url)')
     s.add_argument('--repos', nargs='*', default=[], help='multi-repo workspace: repos the task will change')
+    s.add_argument('--size', choices=SIZES, help='record the issue size for the docs check at done')
     s = sub.add_parser('worktree', help='multi-repo workspace: add a repo worktree to a task folder')
     s.add_argument('--task', required=True, help='issue id or IRO-123'); s.add_argument('--repo', required=True)
     s = sub.add_parser('ask'); s.add_argument('--task', required=True); s.add_argument('text')
@@ -1330,6 +1378,9 @@ def parser():
     s = sub.add_parser('done'); s.add_argument('--task', required=True)
     s.add_argument('--summary', default='', help='text or - for stdin')
     s.add_argument('--doc', action='append', default=[], help='repo doc path to link (taskboard.docs_url)')
+    s.add_argument('--size', choices=SIZES, help='small needs no doc; medium/big need --doc and a consolidated '
+                   'description (default: the size from propose, else medium)')
+    s.add_argument('--force', action='store_true', help='report despite a failed docs check (noted on the issue)')
     s = sub.add_parser('note'); s.add_argument('--task', required=True); s.add_argument('text')
     s.add_argument('--doc', action='append', default=[], help='repo doc path to link (taskboard.docs_url)')
     s.add_argument('--agent', default=os.environ.get('MSTACK_AGENT', 'agent'))

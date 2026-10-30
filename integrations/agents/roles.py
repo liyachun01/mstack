@@ -181,7 +181,7 @@ def card(project, session):
             lines = ['## Your mstack role: **worker** for %s (%s, %s)' % (r.get('issue') or task, name, r.get('scope') or name),
                      RULES['worker'] + (' Your worktree: `%s`.' % r['tree'] if r.get('tree') else ''),
                      'Load the `mstack-worker` skill. Report with `%s/mstack board note --task %s "…"` and finish with '
-                     '`%s/mstack board done --task %s --summary "…"`. Never work on other issues; ask your orchestrator.'
+                     '`%s/mstack board done --task %s --summary "…" --doc <path>` (or `--size small`). Never work on other issues; ask your orchestrator.'
                      % (STACK_ROOT, task, STACK_ROOT, task),
                      HELPERS % (STACK_ROOT, project, r.get('issue') or task, session)]
             runs = board_state().get('runs', {}).values()

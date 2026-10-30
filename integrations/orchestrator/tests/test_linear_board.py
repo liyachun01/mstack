@@ -130,7 +130,7 @@ class LinearBoardFlow(unittest.TestCase):
         branch = subprocess.run(['git', '-C', spec['cwd'], 'branch', '--show-current'], capture_output=True,
                                 text=True).stdout.strip()
         self.assertEqual(branch, 'me/mst-1-x')                              # Linear's own branch name
-        self.cli('done', '--task', task, '--summary', 'added')
+        self.cli('done', '--task', task, '--size', 'small', '--summary', 'added')
         self.assertEqual(self.cli('status', '--project', 'repo')['tasks'][0]['status'], 'In Review')
         ask = self.fake.issues[task]['comments'][-1]
         ask['reactionData'] = [{'emoji': '👍', 'userIds': [ME]}]           # owner reacts on the result
@@ -315,7 +315,7 @@ class LinearBoardFlow(unittest.TestCase):
         self.assertEqual([v['now'] for v in tick['verdicts']], ['Todo'])
         self.assertTrue([n for n in tick['needs_orchestrator'] if n['kind'] == 'handoff'])
         self.cli('ack', '--task', old, '--session', 'local_w1')
-        self.cli('done', '--task', old, '--summary', 'fixed')
+        self.cli('done', '--task', old, '--size', 'small', '--summary', 'fixed')
         thread = self.cli('thread', '--project', 'repo', '--task', 'MST-500')
         self.assertEqual(thread['status'], 'In Review')
         self.assertTrue(any('finished' in m['text'] for m in thread['messages']))
@@ -393,9 +393,47 @@ class LinearBoardFlow(unittest.TestCase):
     def test_done_works_by_issue_name_without_a_worktree(self):                                # MST-28
         old = self.old_issue(n=820, state='s-started')
         self.cli('adopt', '--project', 'repo', '--task', 'MST-820', '--session', 'local_x')
-        out = self.cli('done', '--task', 'MST-820', '--summary', 'inventory written')
+        out = self.cli('done', '--task', 'MST-820', '--size', 'small', '--summary', 'inventory written')
         self.assertEqual(out['status'], 'In Review')
         self.assertIn('no mstack worktree recorded', self.fake.issues[old]['comments'][-1]['body'])
+
+    def refused(self, *argv):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.main(list(argv), cli.anyboard.Board(call=None)), 1)
+        return err.getvalue()
+
+    def test_done_needs_a_doc_and_a_consolidated_description(self):                      # docs rule by size
+        old = self.old_issue(n=830, state='s-started', description='long draft ' * 100)
+        self.cli('adopt', '--project', 'repo', '--task', 'MST-830', '--session', 'local_x')
+        self.assertIn('pass `--doc <path>`', self.refused('done', '--task', 'MST-830'))       # medium by default
+        self.assertIn('not found', self.refused('done', '--task', 'MST-830', '--doc', 'docs/x.md'))
+        (self.repo / 'docs').mkdir(); (self.repo / 'docs/x.md').write_text('# x')
+        msg = self.refused('done', '--task', 'MST-830', '--doc', 'docs/x.md')
+        self.assertIn('1099 characters', msg); self.assertIn('does not link `docs/x.md`', msg)
+        self.fake.issues[old]['description'] = 'Short brief. Doc: [docs/x.md](https://h/docs/x.md)'
+        out = self.cli('done', '--task', 'MST-830', '--doc', 'docs/x.md', '--summary', 'ok')
+        self.assertEqual((out['status'], out['size'], out['forced']), ('In Review', 'medium', False))
+
+    def test_size_from_propose_and_forced_done(self):
+        self.old_issue(n=840, state='s-started')
+        self.cli('adopt', '--project', 'repo', '--task', 'MST-840', '--session', 'local_x')
+        self.cli('propose', '--project', 'repo', '--task', 'MST-840', '--size', 'small', '--plan', '-', stdin='1. tiny')
+        self.assertEqual(self.cli('done', '--task', 'MST-840', '--summary', 'ok')['size'], 'small')
+        old = self.old_issue(n=850, state='s-started')
+        self.cli('adopt', '--project', 'repo', '--task', 'MST-850', '--session', 'local_y')
+        self.assertIn('--force', self.refused('done', '--task', 'MST-850', '--size', 'big'))
+        self.assertTrue(self.cli('done', '--task', 'MST-850', '--size', 'big', '--force')['forced'])
+        self.assertIn('Forced past the docs check', self.fake.issues[old]['comments'][-1]['body'])
+
+    def test_private_board_needs_the_doc_but_not_the_description(self):
+        cfg = json.loads((self.repo / '.mstack/stack.json').read_text()); cfg['taskboard']['private'] = True
+        (self.repo / '.mstack/stack.json').write_text(json.dumps(cfg))
+        self.old_issue(n=860, state='s-started', description='long draft ' * 100)
+        self.cli('adopt', '--project', 'repo', '--task', 'MST-860', '--session', 'local_x')
+        self.assertIn('--doc', self.refused('done', '--task', 'MST-860'))
+        (self.repo / 'docs').mkdir(); (self.repo / 'docs/p.md').write_text('# p')
+        self.assertEqual(self.cli('done', '--task', 'MST-860', '--doc', 'docs/p.md')['status'], 'In Review')
 
     def test_inhand_stops_the_watcher_raising_the_same_request(self):                          # MST-30
         self.auto()
@@ -471,7 +509,7 @@ class WorkspaceFlow(unittest.TestCase):
             subprocess.run(['git', '-C', str(tree / name), 'add', 'x'], check=True)
             subprocess.run(['git', '-C', str(tree / name), '-c', 'user.name=t', '-c', 'user.email=t@t',
                             'commit', '-q', '-m', 'x'], check=True)
-        self.cli('done', '--task', old, '--summary', 'both')
+        self.cli('done', '--task', old, '--size', 'small', '--summary', 'both')
         self.assertIn('api 1 commit(s); app 1 commit(s)', self.fake.issues[old]['comments'][-1]['body'])
         self.assertEqual(branch(self.root / 'app'), 'main')               # the owner's checkout is untouched
 

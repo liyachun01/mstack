@@ -615,7 +615,7 @@ class OrchestratorTests(unittest.TestCase):
         subprocess.run(['git', '-C', str(tree), 'add', '.'], check=True)
         subprocess.run(['git', '-C', str(tree), '-c', 'user.name=t', '-c', 'user.email=t@t',
                         'commit', '-q', '-m', 'desk'], check=True)
-        self.assertEqual(self.run_cli('done', '--task', a, '--summary', 'Added feature')['commits'], 1)
+        self.assertEqual(self.run_cli('done', '--task', a, '--size', 'small', '--summary', 'Added feature')['commits'], 1)
         self.assertEqual(self.b.objects[a]['task_status'], 'In Review')
         self.assertTrue(self.b.threads[a][-1]['text'].startswith(board.ASK))
         self.assertEqual(self.run_cli('dispatch', '--project', 'market')['started'][0]['task'], b)

@@ -130,7 +130,10 @@ result with `done`; the owner's 👍 makes it Done, and a reply sends the notes 
   - **Big or cross-cutting design:** doc first, as its own PR, reviewed line by line, then the issue links it.
   - Docs and PRs go under the issue's **Resources** (Linear attachments, `attachmentLinkURL`), not as comment links.
     On a private board, nothing goes to Linear: the draft lives in the journal, and Resources only when the owner asks.
-  - An issue isn't finished until its doc exists (medium and big) and its description is consolidated.
+  - An issue isn't finished until its doc exists (medium and big) and its description is consolidated. `done`
+    enforces it: give the size with `propose --size small|medium|big` (else `done --size`; default medium). Medium
+    and big need `--doc <path>` and a description of at most 800 characters linking it (not checked on private
+    boards). `--force` is noted on the issue.
 - **Report briefly:** what waits on the owner, and what is running.
 
 ## Multi-repo workspaces (`taskboard.repos`)

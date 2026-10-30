@@ -19,7 +19,8 @@ description: Behave as a worker session dispatched by the mstack orchestrator fo
 - **Private boards:** `note` and `done` work the same, but stay in a local journal that only the owner and the
   orchestrator read. Never post to Linear yourself.
 - **Finish:** run the tests, commit, then
-  `/home/developer/workspace/mstack/mstack board done --task <id> --summary "what changed, what is left"`.
+  `/home/developer/workspace/mstack/mstack board done --task <id> --summary "what changed, what is left" --doc <path>`
+  (or `--size small`).
   This posts the result for the owner's review. If the owner replies with changes, you'll get them
   in this same session.
 - **Keep comments rare and useful:** decisions and results, not running commentary.
@@ -30,7 +31,10 @@ description: Behave as a worker session dispatched by the mstack orchestrator fo
     shrink the issue description to a few lines plus the doc link (`--doc <path>`). Keep the comments.
   - Big design: the doc comes first as its own PR; the issue links it.
   - Docs and PRs go under the issue's **Resources**, not in comments; on a private board, only when the owner asks.
-  - Before `done`: the doc exists (medium and big) and the description is consolidated.
+  - `done` enforces this. Size comes from `--size small|medium|big` (on `done`, or recorded by `propose --size`;
+    default medium). Medium and big need `--doc <path>` (in your worktree or the repo) and, unless the board is
+    private, an issue description of at most 800 characters that links the doc. Small: `--size small`.
+    `--force` only when the owner agrees; it is noted on the issue.
 - **Ideas for mstack itself:** `mstack spark --from <project> "<idea>"`. Never edit mstack from a task.
 - **Helpers and sub-issues:**
   - For a part of your issue, you may start a **helper** as your side session (one level; it never starts its own).
