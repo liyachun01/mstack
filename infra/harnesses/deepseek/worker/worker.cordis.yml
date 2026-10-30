@@ -1,0 +1,20 @@
+# mstack headless worker overlay for dsh 0.2.0-rc.2 (MST-56).
+# Applied with --patch on top of the shipped headless profile. Launch with
+# DSH_TELEMETRY_DISABLED=1 (OTel feedback upload off) and a worker-only
+# DEEPSEEK_API_KEY from .secrets/deepseek-worker.key; DSH_HOME is the ignored
+# infra/harnesses/deepseek/state/worker-home, never ~/.dsh.
+
+# No session-log suffix on official DeepSeek API requests.
+- id: session-log-deepseek
+  config:
+    enabled: false
+
+# No web search (an extra paid request each) or anonymous web fetch.
+- id: tool-web
+  disabled: true
+- id: web
+  disabled: true
+- id: web-search-deepseek
+  disabled: true
+- id: web-fetch-http
+  disabled: true
