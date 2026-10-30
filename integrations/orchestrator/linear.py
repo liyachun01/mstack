@@ -8,14 +8,114 @@ Imported work waits: new Linear issues land in Backlog, and Linear status change
 never move a task into Todo or In Progress. Only a plan the owner approves on the
 board makes it Todo, so the always-on loop never starts work straight from Linear.
 Finished or canceled in Linear does carry over.
+
+Rate limits (MST-41): a 429, a RATELIMITED GraphQL error or an exhausted X-RateLimit-* budget puts the
+key in a shared backoff (BACKOFF_FILE, keyed by a hash of the key, never the key itself). Until it ends,
+every process using that key raises RateLimited at once without calling Linear, and the backoff is
+logged once, when it starts.
 """
+import collections
+import contextlib
+from email.utils import parsedate_to_datetime
+import fcntl
+import hashlib
 import json
 import re
+import sys
 import time
 import urllib.error
 import urllib.request
 
-from board import KINDS, SCHEMA, titled
+from board import KINDS, SCHEMA, STACK_ROOT, titled
+
+BACKOFF_FILE = STACK_ROOT/'.mstack/cache/linear-backoff.json'
+BACKOFF_DEFAULT = 60          # seconds to wait after a 429 that names no time; doubles per strike in a row
+BACKOFF_MAX = 3600
+CALLS = collections.Counter()  # requests this process sent, by key id (the watcher logs the per-team view)
+
+
+class RateLimited(RuntimeError):
+    """Linear is rate-limiting this key: nothing is sent until `until` (epoch seconds)."""
+    def __init__(self, until, who=''):
+        self.until = until
+        super().__init__('Linear rate-limited%s until %s' % (' (%s)' % who if who else '',
+                                                              time.strftime('%H:%M:%S', time.localtime(until))))
+
+
+def key_id(key):
+    return hashlib.sha256(key.encode()).hexdigest()[:12]
+
+
+@contextlib.contextmanager
+def _backoffs():
+    BACKOFF_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(BACKOFF_FILE.with_suffix('.lock'), 'w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            data = json.loads(BACKOFF_FILE.read_text())
+        except (OSError, ValueError):
+            data = {}
+        yield data
+        BACKOFF_FILE.write_text(json.dumps(data, indent=1) + '\n')
+
+
+def backoff_until(kid):
+    """End of the shared backoff for a key id, or 0."""
+    try:
+        return float(json.loads(BACKOFF_FILE.read_text()).get(kid, {}).get('until', 0))
+    except (OSError, ValueError, AttributeError):
+        return 0
+
+
+def wait_from(headers, now, spent_only=False):
+    """Seconds to wait from Retry-After or Linear's X-RateLimit-*-Reset headers (epoch ms), or None.
+    spent_only (a good answer): only a budget that says it is used up counts."""
+    headers = headers or {}
+    after = None if spent_only else headers.get('Retry-After')
+    if after:
+        try:
+            return float(after)
+        except ValueError:
+            try:
+                return parsedate_to_datetime(after).timestamp() - now
+            except (TypeError, ValueError):
+                pass
+    resets = []
+    for kind in ('Requests', 'Complexity'):
+        reset, left = headers.get('X-RateLimit-%s-Reset' % kind), headers.get('X-RateLimit-%s-Remaining' % kind)
+        if reset and (_num(left) <= 0 if left is not None else not spent_only):
+            resets.append(_num(reset) / 1000 - now)
+    return max(resets) if resets else None
+
+
+def _num(text):
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return 0
+
+
+def hold(kid, wait, now=None):
+    """Start (or extend) the shared backoff for a key id; logs once when a new backoff starts."""
+    now = time.time() if now is None else now
+    with _backoffs() as data:
+        entry = data.get(kid) or {}
+        strikes = entry.get('strikes', 0) + 1 if now - entry.get('until', 0) < BACKOFF_MAX else 1
+        if wait is None:
+            wait = BACKOFF_DEFAULT * 2 ** (strikes - 1)
+        until = now + min(max(wait, 1), BACKOFF_MAX)
+        fresh = entry.get('until', 0) <= now
+        data[kid] = {'until': max(until, entry.get('until', 0)), 'strikes': strikes}
+        until = data[kid]['until']
+    if fresh:
+        print('%s Linear rate limit for key %s: waiting until %s' % (
+            time.strftime('%H:%M:%S'), kid, time.strftime('%H:%M:%S', time.localtime(until))), file=sys.stderr, flush=True)
+    return until
+
+
+def rate_limited(data):
+    return any((e.get('extensions') or {}).get('code') == 'RATELIMITED' for e in (data or {}).get('errors') or [])
+
 
 PREFIX = re.compile(r'^(\[[A-Z0-9]+\])+\s*')
 
@@ -69,22 +169,43 @@ UPDATE = '''mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: 
 
 def http(key, attempts=5, pause=3.0, opener=urllib.request.urlopen):
     """GraphQL poster. Network failures (slow proxy TLS, resets) are retried with backoff;
-    HTTP and GraphQL errors (bad key, bad query) are not."""
+    HTTP and GraphQL errors (bad key, bad query) are not. Rate limits put the key in the shared
+    backoff and raise RateLimited (also before sending while a backoff is on)."""
+    kid = key_id(key)
+
     def post(query, variables):
+        until = backoff_until(kid)
+        if until > time.time():
+            raise RateLimited(until, kid)
         req = urllib.request.Request('https://api.linear.app/graphql', method='POST',
                                      data=json.dumps({'query': query, 'variables': variables}).encode(),
                                      headers={'Authorization': key, 'Content-Type': 'application/json'})
         for attempt in range(attempts):
+            CALLS[kid] += 1
             try:
                 with opener(req, timeout=30) as resp:
                     data = json.loads(resp.read())
+                    headers = getattr(resp, 'headers', None)
                 break
-            except urllib.error.HTTPError:
+            except urllib.error.HTTPError as error:
+                body = {}
+                if error.code in (400, 429):
+                    with contextlib.suppress(ValueError, OSError):
+                        body = json.loads(error.read() or b'{}')
+                if error.code == 429 or rate_limited(body):
+                    now = time.time()
+                    raise RateLimited(hold(kid, wait_from(error.headers or {}, now), now), kid) from None
                 raise
             except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
                 if attempt == attempts - 1:
                     raise RuntimeError('Linear unreachable after %d attempts: %s' % (attempts, error))
                 time.sleep(pause * (attempt + 1))
+        if rate_limited(data):
+            now = time.time()
+            raise RateLimited(hold(kid, wait_from(headers or {}, now), now), kid)
+        spent = wait_from(headers, time.time(), spent_only=True)
+        if spent is not None:
+            hold(kid, spent)                  # this answer is good, but the budget is used up: wait for the reset
         if data.get('errors'):
             raise RuntimeError('Linear: ' + data['errors'][0].get('message', 'error'))
         return data['data']

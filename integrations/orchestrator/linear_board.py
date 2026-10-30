@@ -24,7 +24,12 @@ instead of the issue, creating issues is refused, and Linear comments other than
 orchestrator's earlier ones are ignored, so teammates see nothing and cannot trigger
 anything. The owner's words reach the board through `mstack board owner`, recorded in the
 same journal and read exactly like Linear comments (`/plan …`, 👍, a reply).
+
+One fetch per board per tick (MST-41): inside `shared()` (a watcher tick) every LinearBoard reading the
+same (key, team) reuses one issue list, and parent lookups are shared too, so the signals, verdict poll,
+dispatch and mirror of every scope cost one board read. Any write through a link drops that board's copy.
 """
+import collections
 import contextlib
 from datetime import datetime, timezone
 import fcntl
@@ -36,6 +41,21 @@ import uuid
 import linear
 import store
 from board import ASK, MARK
+
+SHARED = None                       # inside shared(): {(key id, team): issue nodes, ('parents', key id): {ident: parent}}
+CALLS = collections.Counter()       # requests sent through links, by team (the watcher logs them per tick)
+
+
+@contextlib.contextmanager
+def shared():
+    """Share board reads between every LinearBoard made inside (one watcher tick). Nests."""
+    global SHARED
+    outer = SHARED
+    SHARED = {} if outer is None else outer
+    try:
+        yield
+    finally:
+        SHARED = outer
 
 STATE_TYPE = {'Backlog': 'backlog', 'Todo': 'unstarted', 'Awaiting Approval': 'unstarted',
               'In Progress': 'started', 'In Review': 'started', 'Done': 'completed', 'Canceled': 'canceled'}
@@ -147,8 +167,23 @@ class Link:
     """One (app, workspace, team, key) the board reads and writes."""
     def __init__(self, app, conf, project, http=linear.http):
         self.app, self.conf = app, conf
-        self.post = http((Path(project)/conf['credential_file']).read_text().strip())
+        key = (Path(project)/conf['credential_file']).read_text().strip()
+        self.kid = linear.key_id(key)
+        self.raw = http(key)
         self._team = self._me = None
+
+    def post(self, query, variables):
+        CALLS[self.conf['team']] += 1
+        if SHARED is not None and query.lstrip().startswith('mutation'):
+            SHARED.pop(self.board_key(), None)        # a write: the next read of this board goes to Linear
+        return self.raw(query, variables)
+
+    def board_key(self):
+        return (self.kid, self.conf['team'])
+
+    def parents(self):
+        """Parent lookups shared by every board on this key in the current tick ({} outside one)."""
+        return {} if SHARED is None else SHARED.setdefault(('parents', self.kid), {})
 
     def team(self):
         if self._team is None:
@@ -231,11 +266,16 @@ class LinearBoard:
             if ident in roots:
                 return True
             if ident not in self.parents and link:
-                try:
-                    found = link.post(ONE, {'id': ident})['issue']
-                    self.parents[ident] = (found.get('parent') or {}).get('identifier') if found else None
-                except RuntimeError:
-                    return False
+                known = link.parents()
+                if ident not in known:
+                    try:
+                        found = link.post(ONE, {'id': ident})['issue']
+                    except linear.RateLimited:
+                        raise
+                    except RuntimeError:
+                        return False
+                    known[ident] = (found.get('parent') or {}).get('identifier') if found else None
+                self.parents[ident] = known[ident]
             ident, seen = self.parents.get(ident), seen + 1
         return False
 
@@ -246,24 +286,34 @@ class LinearBoard:
         return [t for t in rows if self.in_focus(t['linear_identifier'], self.owner_of[t['id']])]
 
     def _all(self):
-        out = []
-        for link in self.links:
-            mine = {'or': [{'assignee': {'isMe': {'eq': True}}}, {'creator': {'isMe': {'eq': True}}}]}
-            filt = {'and': [mine, {'team': {'key': {'eq': link.conf['team']}}}]}
-            after = None
-            while True:
-                page = link.post(ISSUES, {'filter': filt, 'after': after})['issues']
-                out += [self._task(i, link) for i in page['nodes']]
-                if not page['pageInfo']['hasNextPage']:
-                    break
-                after = page['pageInfo']['endCursor']
-        return out
+        return [self._task(i, link) for link in self.links for i in self._fetch(link)]
+
+    @staticmethod
+    def _fetch(link):
+        """Every issue of one link, once per tick when shared() is on."""
+        if SHARED is not None and link.board_key() in SHARED:
+            return SHARED[link.board_key()]
+        mine = {'or': [{'assignee': {'isMe': {'eq': True}}}, {'creator': {'isMe': {'eq': True}}}]}
+        filt = {'and': [mine, {'team': {'key': {'eq': link.conf['team']}}}]}
+        nodes, after = [], None
+        while True:
+            page = link.post(ISSUES, {'filter': filt, 'after': after})['issues']
+            nodes += page['nodes']
+            if not page['pageInfo']['hasNextPage']:
+                break
+            after = page['pageInfo']['endCursor']
+        if SHARED is not None:
+            SHARED[link.board_key()] = nodes
+        return nodes
 
     def _issue(self, task):
         if task not in self.cache:
             for link in self.links:
+                found = next((i for i in (SHARED or {}).get(link.board_key()) or [] if task in (i['id'], i['identifier'])), None)
                 try:
-                    found = link.post(ONE, {'id': task})['issue']
+                    found = found or link.post(ONE, {'id': task})['issue']
+                except linear.RateLimited:
+                    raise
                 except RuntimeError:
                     continue
                 if found:

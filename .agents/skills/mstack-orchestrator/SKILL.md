@@ -52,6 +52,9 @@ named scope in `.mstack/stack.json`, under `taskboard.orchestrators.<name>`:
 
 Add `--scope <name>` to every board command. Your watcher is `watch --project P --scope <name>`,
 with one lock per scope. Scopes must not claim the same issues; `mstack doctor` reports overlaps.
+While the hub watcher runs and your scope is registered, your watcher leaves Linear to the hub (`left_to_hub`
+in its tick line) and the hub's events wake you. It polls Linear itself only as the fallback when there is no hub.
+`rate_limited` means Linear is throttling the key. Every process waits it out on its own, so don't restart anything.
 `mirror --project P` refreshes the local Postgres table `orchestrator.issues`, which covers every issue
 of the owner's (also refreshed every 5 minutes). It's an overview only and never starts sessions.
 - **Carving a tree out of a scope:** give the new scope `focus: [ROOT]` and add `ROOT` to the old scope's `exclude`.

@@ -39,6 +39,8 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent/'stack'))
 import board as anyboard
 import config as intent
+import linear
+import linear_board
 import runners          # puts integrations/plugins on sys.path
 import registry
 import project_state
@@ -127,7 +129,6 @@ def alive(pid):
 
 
 def linear_board_factory(path, settings, scope=None, all_issues=False):
-    import linear_board
     return linear_board.LinearBoard(path, settings, scope=scope, all_issues=all_issues)
 
 
@@ -1052,12 +1053,25 @@ def cmd_tick(args, b):
     """One unattended pass: apply verdicts, start what is approved, and list what only an orchestrator
     agent can do (start a desktop session, revise a plan). Safe to repeat: nothing is offered twice.
     Everything that needs an orchestrator also goes into the event queue (design 011).
-    --hub: one pass for every registered orchestrator (project, scope) instead of the auto tables."""
-    global SCOPE
-    if not getattr(args, 'hub', False):
-        return tick_once(args, b)
+    --hub: one pass for every registered orchestrator (project, scope) instead of the auto tables.
+    Linear boards are read once per tick (linear_board.shared); `linear_calls` counts the requests by team."""
+    before = dict(linear_board.CALLS)
+    with linear_board.shared():
+        out = tick_once(args, b) if not getattr(args, 'hub', False) else hub_tick(b)
+    calls = {team: n - before.get(team, 0) for team, n in linear_board.CALLS.items() if n > before.get(team, 0)}
+    if calls:
+        out['linear_calls'] = calls
+    return out
+
+
+def hub_tick(b):
+    """One pass for every registered orchestrator. Linear boards are polled per board: the first route of a
+    board decides whether it is due this tick, every other route of that board follows, and all of them read
+    the one fetch shared by linear_board.shared()."""
+    global SCOPE, POLL_DUE
     out = {'tables': [], 'verdicts': [], 'started': [], 'needs_orchestrator': []}
     outer = SCOPE
+    POLL_DUE = {}
     try:
         for entry in sorted(read_state().get('orchestrators', {}).values(), key=lambda e: (e['project'], e.get('scope') or '')):
             SCOPE = entry.get('scope') or None
@@ -1072,9 +1086,46 @@ def cmd_tick(args, b):
                 elif isinstance(value, dict):
                     out.setdefault(key, {}).update(value)
     finally:
-        SCOPE = outer
+        SCOPE, POLL_DUE = outer, None
     status_table_if_due(out)
     return out
+
+
+POLL_DUE = None           # inside a hub tick: board name → polled this tick (one timestamp per board)
+
+
+def poll_due(name):
+    """Whether this tick polls Linear board `name`, stamping the poll. The hub keeps one timestamp per board,
+    shared by its scopes; a per-scope watcher (the fallback when no hub runs) keeps its own per scope."""
+    key = name if POLL_DUE is not None else '/'.join(filter(None, (name, SCOPE)))
+    if POLL_DUE is not None and name in POLL_DUE:
+        return POLL_DUE[name]
+    due = time.time() - read_state().get('last_linear_poll', {}).get(key, 0) >= LINEAR_EVERY
+    if due:
+        with state() as s:
+            s.setdefault('last_linear_poll', {})[key] = time.time()
+    if POLL_DUE is not None:
+        POLL_DUE[name] = due
+    return due
+
+
+def hub_running():
+    """True while the hub watcher (`watch --hub`) holds its lock."""
+    lock = STATE.with_name('watch.hub.lock')
+    if not lock.exists():
+        return False
+    with open(lock, 'a') as probe:
+        try:
+            fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(probe, fcntl.LOCK_UN)
+        except BlockingIOError:
+            return True
+    return False
+
+
+def left_to_hub(name):
+    """Outside the hub, a Linear board's I/O is the hub's while the hub runs and ticks this (board, scope)."""
+    return POLL_DUE is None and store.route_key(name, SCOPE) in read_state().get('orchestrators', {}) and hub_running()
 
 
 def route_key(entry):
@@ -1114,27 +1165,32 @@ def tick_once(args, b):
                                                   'linear': task.get('linear_identifier')})
                 fresh.append(key)
         if is_linear(entry):
-            mirror_if_due(name, out)
-            poll_key = '/'.join(filter(None, (name, SCOPE)))       # two scopes of one board poll on their own
-            last = read_state().get('last_linear_poll', {}).get(poll_key, 0)
-            if time.time() - last < LINEAR_EVERY:
+            if left_to_hub(name):
+                out.setdefault('left_to_hub', []).append(name)
                 continue
-            with state() as s:
-                s.setdefault('last_linear_poll', {})[poll_key] = time.time()
+            mirror_if_due(name, out)
+            if not poll_due(name):
+                continue
             try:
                 out['needs_orchestrator'] += linear_signals(name, board_for(name, b), seen, fresh)
+            except linear.RateLimited as error:
+                out.setdefault('rate_limited', {})[name] = error.until
+                continue
             except (RuntimeError, ValueError, OSError) as error:
                 out.setdefault('sync_errors', {})[name] = str(error)[:200]
                 continue
-        rows = cmd_poll(argparse.Namespace(project=name), b)
-        out['verdicts'] += [r for r in rows if r.get('now')]
-        for r in rows:
-            key = '%s:%s' % (r['task'], hashlib.sha256(r.get('feedback', '').encode()).hexdigest()[:12])
-            if r.get('action') and key not in seen:
-                out['needs_orchestrator'].append({'kind': 'replan', 'table': name, 'task': r['task'], 'name': r['name'],
-                                                  'feedback': r['feedback']})
-                fresh.append(key)
-        out['started'] += cmd_dispatch(argparse.Namespace(project=name, runner=None), b)['started']
+        try:
+            rows = cmd_poll(argparse.Namespace(project=name), b)
+            out['verdicts'] += [r for r in rows if r.get('now')]
+            for r in rows:
+                key = '%s:%s' % (r['task'], hashlib.sha256(r.get('feedback', '').encode()).hexdigest()[:12])
+                if r.get('action') and key not in seen:
+                    out['needs_orchestrator'].append({'kind': 'replan', 'table': name, 'task': r['task'], 'name': r['name'],
+                                                      'feedback': r['feedback']})
+                    fresh.append(key)
+            out['started'] += cmd_dispatch(argparse.Namespace(project=name, runner=None), b)['started']
+        except linear.RateLimited as error:         # never a failed tick: the board waits out the backoff
+            out.setdefault('rate_limited', {})[name] = error.until
     for task, run in read_state().get('runs', {}).items():
         mine = not SCOPE or run.get('scope') in (None, SCOPE)
         if run['table'] in names and run.get('handoff') and not run.get('session') and mine:
@@ -1195,6 +1251,7 @@ def cmd_watch(args, b):
     except BlockingIOError:
         raise ValueError('Another watcher is already running (lock %s)' % lock)
     failures = 0
+    limited = {}                          # board → backoff end already logged (a backoff is logged once)
     started_on = code_fingerprint()
     while True:
         if ARGV is not None and code_fingerprint() != started_on:
@@ -1207,7 +1264,11 @@ def cmd_watch(args, b):
                 len(result['needs_orchestrator']),
                 ''.join('; sync %s failed: %s' % kv for kv in result.get('sync_errors', {}).items())
                 + ''.join('; %s skipped: %s' % kv for kv in result.get('skipped_tables', {}).items())
-                + ('; status table failed: %s' % result['status_table_error'] if result.get('status_table_error') else '')),
+                + ('; status table failed: %s' % result['status_table_error'] if result.get('status_table_error') else '')
+                + rate_note(result.get('rate_limited') or {}, limited)
+                + ('; Linear calls: %s' % ', '.join('%s %d' % kv for kv in sorted(result['linear_calls'].items()))
+                   if result.get('linear_calls') else '')
+                + ('; Linear left to the hub: %s' % ', '.join(result['left_to_hub']) if result.get('left_to_hub') else '')),
                 file=sys.stderr, flush=True)
             if hub and not result.get('queue_error'):
                 try:
@@ -1234,6 +1295,16 @@ def cmd_watch(args, b):
             return {'stopped': 'max ticks reached'}
         args.max_ticks = args.max_ticks - 1 if args.max_ticks else 0
         time.sleep(args.interval)
+
+
+def rate_note(now_limited, logged):
+    """'; Linear rate-limited …' for backoffs not logged yet; a backoff that ended is forgotten."""
+    fresh = {name: until for name, until in now_limited.items() if logged.get(name) != until}
+    for name in [n for n in logged if n not in now_limited]:
+        del logged[name]
+    logged.update(fresh)
+    return ''.join('; %s: Linear rate-limited until %s' % (name, time.strftime('%H:%M:%S', time.localtime(until)))
+                   for name, until in sorted(fresh.items()))
 
 
 def cmd_work(args, b):
