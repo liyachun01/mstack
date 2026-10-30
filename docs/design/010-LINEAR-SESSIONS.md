@@ -140,13 +140,15 @@ as a Claude Code plugin when the workflow is promoted to the team. The existing
 
 Before the workflow is shown to the team, {{mstack:CLIENT_REPO}} runs with `taskboard.private: true`. IRO and CAN are team
 workspaces, so anything the board writes there is visible to everyone.
-- **Linear is read-only for the board:** no comments, no status changes, no issue creation.
+- **Linear is read-only for the board:** no comments, no other fields, no issue creation. Since MST-60 the one
+  exception is the **status field**, so the consumer sees where the work is (below).
 - **Local journal:** the orchestrator's messages and phase changes, plus the owner's words, go to the project's
   `.mstack/journal.json` (0600, gitignored with the rest of `.mstack/`). Phases are read from the journal
   alongside the orchestrator's earlier Linear comments.
 - **Owner ↔ orchestrator in chat:** the owner tells the orchestrator session "plan IRO-130", "👍" or feedback,
   and the orchestrator records it with `mstack board owner --task … "<words>"`. Teammates' Linear comments are
-  ignored, so nobody else can trigger or approve work.
+  never verdicts, so nobody else can approve work. Since MST-60 a comment that @-mentions the owner reaches the
+  orchestrator as a `mention` event (information, never a verdict).
 - **Still read from Linear:** titles, descriptions, hierarchy, Blocked By, branch names, and the owner closing
   an issue, which still stops its worker.
 - **`mstack board thread --task …`** prints an issue's whole conversation.
@@ -231,8 +233,8 @@ against the merged code, and doc links sat only in comments instead of the issue
   the doc is only named in the note, and a warning says so.
 - **Note and status:** one 🤖 note, "Merged as `sha` on main (status → Done)", plus the doc links. Then the Linear
   state moves to Done. With `--verify`, the note says "(status → In Review) Still to verify: …" and the state stays.
-- **Private boards:** nothing goes to Linear. No Resources (only when the owner asks); the note goes to the journal,
-  and its "(status → X)" sets the phase.
+- **Private boards:** no comments or Resources go to Linear (Resources only when the owner asks); the note goes to the
+  journal, and its "(status → X)" sets the phase. Since MST-60 the Linear status field follows (below).
 
 **`note --doc` and `done --doc`** also add the docs as Resources, not only as links in the comment.
 
@@ -253,3 +255,69 @@ push → check the docs → `board merged`.
   dead link). A warning when the doc exists but the branch didn't change it.
 - *What about an issue the owner already 👍'd (Done before merge)?* `merged` still adds the Resources and the note,
   and leaves it Done.
+
+## Linear triggers, timely status and owner replies (2026-10-30, MST-60)
+
+Owner request, relayed by {{mstack:CLIENT_REPO}} customer-api: start orchestration from Linear itself (a new issue assigned to
+the owner, a comment mentioning them), and keep the Linear status current at every stage, private boards included.
+IRO-148..154 had been approved, built and landed while Linear still said Todo. Folds in sparks MST-45, 50–53, 55, 58.
+
+**Triggers (read only, so private boards get them too).** Each Linear poll of a board also reads the key's own
+notifications (`viewer.notifications`, types `issueAssignedToYou`, `issueCommentMention`, `issueMention`), once per
+key per tick (`linear_board.shared`). The key's user *is* the owner, so no address or user id is configured.
+- `new_issue`: an issue newly assigned to the owner in the board's team and the scope's tree (`in_focus`, so
+  customer-api gets IRO except IRO-91, portal-web gets IRO-91, staff-web gets CAN). Skipped when the issue is
+  already managed or was reassigned away again. Deduped per notification (one per assignment). The orchestrator
+  drafts a plan with `propose`; nothing starts before the owner's verdict.
+- `mention`: a comment (or description) mentioning the owner, not written by the owner. With a live worker on the
+  issue the event carries its `session` (a CLI worker gets it straight from the hub as "Linear mention from …, a
+  teammate, not the owner"); otherwise it goes to the scope's orchestrator. Deduped per comment id.
+- The first read of a board only records a baseline (`notify_since`), so old notifications start nothing; later
+  reads go back at most a day (the seen-keys drop repeats), on an hour boundary so every scope shares one read.
+
+**Status at every stage.** `LinearBoard.set` moves the Linear status with the phase, through a phase → Linear map.
+Public boards keep the phase's own name. Private boards (`PRIVATE_STATUS`) write only the status field:
+
+| Stage | Board phase | Linear |
+|---|---|---|
+| plan proposed, waiting for the owner | Awaiting Approval | unchanged |
+| approved, dispatched/adopted, building | Todo / In Progress | In Progress |
+| worker finished, owner reviewing | In Review | In Progress (not landed) |
+| owner accepted, not merged | Done | unchanged (private) |
+| landed, not on Preview (`merged`, `never_done` scope) | Done | In Progress |
+| live on Preview (`merged --verify "…"`) | In Review | In Review |
+| landed on a scope that allows Done | Done | Done |
+
+- `dispatch`, `adopt`, `done`, `merged` and verdicts push it, and report the moves as `linear_status`.
+- **Nearest state:** a state is matched by name first; a team without it gets the nearest state of the same type
+  (In Review → a "…review…" state, else the last started one; CAN has no In Review, so In Progress). States are
+  never created. The mapping is in the command output and the state's `linear_state_map`.
+- Closed issues are the consumer's: never reopened, never flagged. `never_done` scopes never move to Done.
+- **Lag flag:** the watcher raises `status_lag` once per (issue, phase, Linear state) for a managed issue whose
+  Linear state isn't the one its phase maps to (Todo, In Progress, In Review phases only). The fix is
+  `board note --task X --status <phase> "status sync"`.
+- **Scope config** (`taskboard` or `taskboard.orchestrators.<scope>`, in the project schema): `never_done: true`
+  (backend scopes: the product owner or iOS closes), `landing: "clientapp-dev-sb"` (`merged` checks
+  `origin/<landing>` instead of main; `--branch` overrides), `linear_status: {phase: state|null}` overrides.
+
+**Owner replies are read, not pattern-matched** (owner, 2026-10-30). The IRO-153 bug: "OK for read-only prod
+counts", a side-action OK, approved the whole plan because it started with "OK".
+- Only bare signals are applied by the watcher: a 👍/👎 reaction, or a latest reply that is nothing but approval or
+  rejection ("👍", "ok", "lgtm, go ahead", "👎"; earlier replies travel as notes).
+- Any reply with content becomes `replan` (on a plan) or `review_reply` (on a result) for the orchestrator, which
+  reads it and records its reading: `board verdict --task X approve|reject|changes [--why "…"]`. In Review replies
+  no longer send the work back by themselves.
+- Private boards: `board owner --side --task X "…"` records a side-action OK on the thread without it ever being a
+  verdict, and `board owner` prints how the next poll will read what it recorded.
+
+**Questions resolved**
+- *Notifications or scanning comments?* Notifications: they name the owner exactly (the key's user), cover issues
+  outside the "assigned to or created by me" board fetch, and cost one read per key per tick.
+- *Does a new issue or mention start work?* No. It reaches the orchestrator, who proposes or tells the owner; work
+  still starts only on the owner's verdict.
+- *Is "accepted" Done in Linear on a private board?* No, it isn't landed yet; `merged` moves it.
+- *Split into sub-issues?* Not needed: one issue, one commit per part (approval fix, triggers, status).
+
+**Left for the owner:** set `never_done: true` and `landing: "clientapp-dev-sb"` on {{mstack:CLIENT_REPO}}'s customer-api scope
+(and `never_done` on portal-web if it is backend too); a hub restart is not needed (watchers re-exec after merge).
+

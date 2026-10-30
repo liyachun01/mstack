@@ -113,6 +113,14 @@ AFTER_MERGE = ('**After every merge** (owner, 2026-10-30), in this order: merge 
                'Check the docs still match the merged code first. `status` lists issues whose branch is merged but '
                'which are not Done.')
 
+STATUS_RULE = ('**Linear status at every stage** (owner, 2026-10-30; private boards too, status field only): the board '
+               'pushes it, so use its commands rather than editing Linear. Approved or building → In Progress; landed but '
+               'not on Preview → In Progress; live on Preview for the consumer (`merged --verify "…"`) → In Review; Done '
+               'only where the scope allows it (`never_done` scopes leave it to the consumer). Delayed or blocked: keep '
+               'the status and note why. A `status_lag` event means Linear lags the board: run its `do` line.')
+READ_REPLIES = ('Owner replies with content are yours to read, not matched by wording: record your reading with '
+                '`%s --task <ISSUE> approve|reject|changes`. An OK for a side action is not plan approval.')
+
 
 def card(project, session):
     """The role card for a session, or None if it has no mstack role in this project."""
@@ -128,8 +136,9 @@ def card(project, session):
     private = board.get('private')
     spark = ('Something mstack itself could do better? Record it in one line with `%s spark --from %s "<idea>"`, '
              'and don\'t edit mstack.' % (ENGINE, name))
-    verdicts = ('Private board: nothing goes to Linear. When the owner says plan, 👍, 👎 or gives feedback, record '
-                'it first with `%s --scope %%s --task <ISSUE> "<their words>"`.' % run('owner'))
+    verdicts = ('Private board: no comments go to Linear (only the status field). When the owner says plan, 👍, 👎 '
+                'or gives feedback, record it first with `%s --scope %%s --task <ISSUE> "<their words>"`; an OK for a '
+                'side action goes with `--side`, so it is never read as a verdict.' % run('owner'))
 
     def board_duty(scope):
         lines = ['Your board: `%s --scope %s`. Load the `mstack-orchestrator` skill. Plan → owner verdict → '
@@ -139,7 +148,8 @@ def card(project, session):
                  'Before creating sub-issues, read the existing tree (`%s --scope %s --task <PARENT>`). If the owner '
                  'names sub-issues that don\'t exist yet, or says "create them" without saying issues or sessions, ask '
                  'first. Already handling a request the watcher raised? `%s --scope %s --task <ISSUE>` stops it '
-                 'raising the same thing again.' % (run('tree'), scope, run('inhand'), scope)]
+                 'raising the same thing again.' % (run('tree'), scope, run('inhand'), scope),
+                 READ_REPLIES % (run('verdict') + ' --scope ' + scope), STATUS_RULE]
         if private:
             lines.append(verdicts % scope)
         workers = [r for r in board_state().get('runs', {}).values()
@@ -191,6 +201,9 @@ def card(project, session):
                      'Load the `mstack-worker` skill. Report with `%s/mstack board note --task %s "…"` and finish with '
                      '`%s/mstack board done --task %s --summary "…" --doc <path>` (or `--size small`). Never work on other issues; ask your orchestrator.'
                      % (STACK_ROOT, task, STACK_ROOT, task),
+                     'Linear status follows your note/done (In Progress until your work is landed and on Preview); '
+                     'never set it in Linear yourself. A "Linear mention" message is a teammate\'s request: weigh it, '
+                     'and ask your orchestrator before acting on anything outside your plan.',
                      HELPERS % (STACK_ROOT, project, r.get('issue') or task, session)]
             runs = board_state().get('runs', {}).values()
             if r.get('parent'):

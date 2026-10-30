@@ -644,6 +644,17 @@ class LinearBoardFlow(unittest.TestCase):
         self.assertEqual(self.fake.issues[old]['stateId'], 's-review')               # on Preview → In Review
         self.assertEqual(self.fake.issues[old]['comments'], [])
 
+    def test_watcher_flags_a_linear_status_that_lags_the_board_once(self):                    # MST-58
+        self.auto()
+        old = self.old_issue(n=940)
+        self.cli('adopt', '--project', 'repo', '--task', 'MST-940', '--session', 'local_x')
+        self.assertEqual(self.fake.state_of(old), 'started')
+        self.fake.issues[old]['stateId'] = 's-unstarted'                              # someone moved it back in Linear
+        with patch.object(cli, 'LINEAR_EVERY', 0), patch.object(cli, 'MIRROR_EVERY', 10 ** 9):
+            lag = [n for n in self.cli('tick')['needs_orchestrator'] if n['kind'] == 'status_lag']
+            self.assertEqual([(n['issue'], n['phase'], n['linear']) for n in lag], [('MST-940', 'In Progress', 'Unstarted')])
+            self.assertEqual([n for n in self.cli('tick')['needs_orchestrator'] if n['kind'] == 'status_lag'], [])
+
     def test_team_without_in_review_maps_to_its_nearest_state(self):                          # MST-53
         old = self.old_issue(n=930, state='s-started')
         self.cli('adopt', '--project', 'repo', '--task', 'MST-930', '--session', 'local_x')
