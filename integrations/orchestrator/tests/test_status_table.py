@@ -107,8 +107,13 @@ class Rows(unittest.TestCase):
     ISSUES = [issue('mstack', 'MST-40', managed=True, agent_phase='In Review'),
               issue('{{mstack:CLIENT_REPO}}', 'IRO-1', state='In Review'), issue('{{mstack:CLIENT_REPO}}', 'CAN-9', 'unstarted')]
 
-    def rows(self, state=None):
-        return st.desired(self.ISSUES, state or self.STATE, {'mstack': False, '{{mstack:CLIENT_REPO}}': True}, NOW, self.ROLES)
+    BOARDS = {'mstack': {'teams': {'MST': 'yyyymmdd'}},
+              '{{mstack:CLIENT_REPO}}': {'teams': {'CAN': '{{mstack:CLIENT_ORG_B}}', 'IRO': '{{mstack:CLIENT_ORG_A_SHORT}}'},
+                           'scopes': {'customer-api': {'apps': ['API'], 'exclude': ['IRO-91']}, 'staff-web': {'apps': ['*']},
+                                      'portal-web': {'apps': ['API'], 'focus': ['IRO-91']}}}}
+
+    def rows(self, state=None, issues=None):
+        return st.desired(issues or self.ISSUES, state or self.STATE, self.BOARDS, NOW, self.ROLES)
 
     def test_one_row_per_session_with_its_issue(self):
         rows, _, _ = self.rows()
@@ -119,21 +124,26 @@ class Rows(unittest.TestCase):
         self.assertEqual(w['name'], 'MST-40 Title of MST-40')
         self.assertEqual(w['properties'], {
             'linear_identifier': 'MST-40', 'task_project': 'mstack', 'task_status': 'In Review',
+            'item_source': 'yyyymmdd/MST', 'task_scope': '—',
             'linear_updated_at': '2026-10-30T01:00:00Z', 'linear_url': 'https://linear.app/x/issue/MST-40',
             'agent_session': 'local_w', 'session_type': 'worker', 'session_agent': 'claude',
             'session_parent': 'local_morch', 'session_report': 'Built it. Tests pass.'})
         old, new = rows['session/local_old']['properties'], rows['session/local_new']['properties']
         self.assertEqual((old['session_agent'], old['session_state'], old['session_parent']), ('codex', 'archived', 'local_api'))
         self.assertEqual((new['task_scope'], new['session_state'], new['task_status']), ('customer-api', 'active', 'In Review'))
-        self.assertNotIn('linear_url', new)                                   # private board: no Linear link
+        self.assertEqual(new['linear_url'], 'https://linear.app/x/issue/IRO-1')   # private boards too (owner, MST-42)
+        self.assertEqual(new['item_source'], '{{mstack:CLIENT_ORG_A_SHORT}}/IRO')
         self.assertIn('obsolete', rows['session/local_rel']['properties']['session_report'])
         orch = rows['session/local_api']
         self.assertEqual((orch['name'], orch['properties']['session_type']), ('Orchestrator {{mstack:CLIENT_REPO}}/customer-api', 'orchestrator'))
         self.assertNotIn('session_parent', orch['properties'])               # orchestrators have no parent
+        self.assertEqual((orch['properties']['item_source'], rows['session/local_sk']['properties']['task_scope']),
+                         ('hub', '—'))
         self.assertEqual(rows['session/local_help']['properties']['session_parent'], 'local_morch')
         self.assertEqual(rows['{{mstack:CLIENT_REPO}}/CAN-9']['properties'],               # an issue nobody works on yet
                          {'linear_identifier': 'CAN-9', 'task_project': '{{mstack:CLIENT_REPO}}', 'task_scope': 'staff-web',
-                          'task_status': 'Todo', 'linear_updated_at': '2026-10-30T01:00:00Z'})
+                          'item_source': '{{mstack:CLIENT_ORG_B}}/CAN', 'task_status': 'Todo', 'linear_updated_at': '2026-10-30T01:00:00Z',
+                          'linear_url': 'https://linear.app/x/issue/CAN-9'})
 
     def test_an_old_issue_row_becomes_its_newest_workers_row(self):
         state = dict(self.STATE, **{st.STATE_KEY: {'rows': {'{{mstack:CLIENT_REPO}}/IRO-1': {'id': 'o1', 'hash': 'h'},
@@ -143,11 +153,55 @@ class Rows(unittest.TestCase):
         self.assertEqual(takes, {'session/local_new': '{{mstack:CLIENT_REPO}}/IRO-1'})
         self.assertEqual(retire, ['mstack/MST-40'])                           # its worker already had a row
 
-    def test_unknown_board_gets_no_link_and_closed_wins(self):
+    def test_unknown_board_keeps_its_link_and_team_and_closed_wins(self):
         rows, _, _ = st.desired([issue('other', 'X-1', 'completed', managed=True, agent_phase='In Review')], {}, {}, NOW)
         props = rows['other/X-1']['properties']
-        self.assertEqual(props['task_status'], 'Done')
-        self.assertNotIn('linear_url', props)
+        self.assertEqual((props['task_status'], props['item_source'], props['task_scope']), ('Done', 'X', '—'))
+        self.assertEqual(props['linear_url'], 'https://linear.app/x/issue/X-1')
+
+    def test_scope_comes_from_the_route_when_nothing_else_names_it(self):
+        issues = [issue('{{mstack:CLIENT_REPO}}', 'IRO-5', team='IRO', app='API'), issue('{{mstack:CLIENT_REPO}}', 'IRO-91', team='IRO', app='API'),
+                  issue('{{mstack:CLIENT_REPO}}', 'IRO-6', team='IRO', app='API', scopes='portal-web'), issue('{{mstack:CLIENT_REPO}}', 'CAN-3')]
+        rows, _, _ = st.desired(issues, {}, self.BOARDS, NOW)
+        self.assertEqual({k: r['properties']['task_scope'] for k, r in rows.items()},
+                         {'{{mstack:CLIENT_REPO}}/IRO-5': 'customer-api',       # app code API → customer-api
+                          '{{mstack:CLIENT_REPO}}/IRO-91': '—',                 # excluded there; portal-web only focuses (mirror's job)
+                          '{{mstack:CLIENT_REPO}}/IRO-6': 'portal-web',         # the mirror's scopes come first
+                          '{{mstack:CLIENT_REPO}}/CAN-3': 'staff-web'})         # no app code → the * scope
+
+    def test_the_issue_hierarchy_is_shown(self):
+        old = '2026-08-01T00:00:00Z'
+        issues = self.ISSUES + [issue('mstack', 'MST-1', 'completed', updated_at=old),        # hidden on its own …
+                                issue('mstack', 'MST-2', 'completed', updated_at=old, parent='MST-1'),
+                                issue('mstack', 'MST-3', parent='MST-2'),                    # … but its grandchild is open
+                                issue('mstack', 'MST-41', parent='MST-40'),                  # parent has a worker row
+                                issue('mstack', 'MST-50', parent='MST-999')]                 # parent not in the mirror
+        rows, _, _ = self.rows(None, issues)
+        self.assertEqual((rows['mstack/MST-3']['properties']['parent_issue'], rows['mstack/MST-3']['parent']),
+                         ('MST-2', 'mstack/MST-2'))
+        self.assertEqual(rows['mstack/MST-2']['parent'], 'mstack/MST-1')
+        self.assertNotIn('parent', rows['mstack/MST-1'])
+        self.assertEqual(rows['mstack/MST-41']['parent'], 'session/local_w')
+        self.assertEqual((rows['mstack/MST-50']['properties']['parent_issue'], rows['mstack/MST-50'].get('parent')),
+                         ('MST-999', None))
+        self.assertEqual(st.parents_first(rows).index('mstack/MST-1') < st.parents_first(rows).index('mstack/MST-2')
+                         < st.parents_first(rows).index('mstack/MST-3'), True)
+
+    def test_no_row_lacks_issue_link_source_or_scope_when_the_data_exists(self):
+        issues = self.ISSUES + [issue('{{mstack:CLIENT_REPO}}', 'IRO-7', team='IRO', app='API', parent='IRO-1')]
+        rows, _, _ = self.rows(None, issues)
+        for key, row in rows.items():
+            p = row['properties']
+            self.assertTrue(p.get('item_source') and p.get('task_scope'), key)          # every row
+            if p.get('session_type') == 'orchestrator':
+                continue
+            if p.get('linear_identifier') or not key.startswith('session/'):
+                ident = '%s/%s' % (p['task_project'], p['linear_identifier'])
+                found = next(i for i in issues if '%s/%s' % (i['board'], i['identifier']) == ident)
+                self.assertEqual(p.get('linear_url'), found['url'], key)                # issue, worker and helper rows
+                self.assertEqual(p.get('parent_issue'), found.get('parent'), key)
+            else:
+                self.assertEqual(p['item_source'], 'session', key)
 
     def test_which_closed_issues_are_shown(self):
         old = '2026-08-01T00:00:00Z'
@@ -165,7 +219,7 @@ class Upsert(unittest.TestCase):
     def setUp(self):
         self.any = FakeAnytype()
         self.table = st.StatusTable(self.any)
-        self.rows = st.desired([issue('mstack', 'MST-1'), issue('mstack', 'MST-2')], {}, {'mstack': False}, NOW)[0]
+        self.rows = st.desired([issue('mstack', 'MST-1'), issue('mstack', 'MST-2')], {}, {}, NOW)[0]
 
     def test_first_pass_builds_the_table_then_only_changes_are_written(self):
         known, counts = self.table.sync(self.rows, {})
@@ -198,6 +252,18 @@ class Upsert(unittest.TestCase):
         added = [b['ops'][0]['property'] for m, p, b in self.any.calls if m == 'PATCH' and p == 'types/agent_task']
         self.assertEqual(sorted(added), ['linear_updated_at', 'task_scope'])
         self.assertEqual({o['type'] for o in self.any.objects.values() if 'type' in o}, {'agent_task'})
+
+    def test_parent_task_points_at_the_parents_row_and_clears_when_it_goes(self):
+        rows = st.desired([issue('mstack', 'MST-2', parent='MST-1'), issue('mstack', 'MST-1')], {}, {}, NOW)[0]
+        known, _ = self.table.sync(rows, {}, limit=1)                   # the parent is written first, even batched
+        self.assertEqual(list(known['rows']), ['mstack/MST-1'])
+        known, _ = self.table.sync(rows, known)
+        child = self.any.objects[known['rows']['mstack/MST-2']['id']]['properties']
+        self.assertEqual((child['parent_issue'], child['task_parent']), ('MST-1', [known['rows']['mstack/MST-1']['id']]))
+        rows = st.desired([issue('mstack', 'MST-2'), issue('mstack', 'MST-1')], {}, {}, NOW)[0]   # re-parented away
+        known, counts = self.table.sync(rows, known)
+        child = self.any.objects[known['rows']['mstack/MST-2']['id']]['properties']
+        self.assertEqual((counts['updated'], child['parent_issue'], child['task_parent']), (1, '', []))
 
     def test_rename_channel_patches_the_space_itself(self):
         self.table.rename_channel('mstack')

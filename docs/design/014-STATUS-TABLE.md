@@ -1,6 +1,6 @@
 # 014 — "My tasks": the owner's table of sessions and issues in Anytype, fed from the hub (MST-40, 2026-10-30)
 
-Status: built and live (MST-40). Code `integrations/orchestrator/status_table.py`, wired in
+Status: built and live (MST-40); issue hierarchy and complete rows (MST-42). Code `integrations/orchestrator/status_table.py`, wired in
 `integrations/orchestrator/cli.py` (`status-table`, `sessions`), tests `integrations/orchestrator/tests/test_status_table.py`,
 hub playbook `.agents/skills/mstack-hub`.
 
@@ -27,11 +27,11 @@ Linear ──(mirror, every 5 min per board)──▶ Postgres mstack_orchestrat
 ```
 
 - **Source:** the hub's Postgres. `orchestrator.issues` (the local Linear issue table that `mstack board mirror`
-  keeps: every issue assigned to or created by the owner, private boards included) gives title, state, URL and
-  last update. Board state adds the sessions: workers (`runs`), earlier chats on an issue (`related`), orchestrators
+  keeps: every issue assigned to or created by the owner, private boards included) gives title, state, URL,
+  last update, team, app code and Linear parent. Board state adds the sessions: workers (`runs`), earlier chats on an issue (`related`), orchestrators
   (`orchestrators` and each project's role registry, which also lists helpers), their reports (`runs[…].report`,
-  written by `board done`/`note`) and their app state (`sessions_seen`, from the hub chat). `tables` says which boards
-  are private (each project's `taskboard.private`). Before each pass, any Linear board whose
+  written by `board done`/`note`) and their app state (`sessions_seen`, from the hub chat). Each project's
+  `taskboard` links give each team's Linear workspace, and `taskboard.orchestrators` routes app codes to scopes. Before each pass, any Linear board whose
   issue table is older than 5 minutes is mirrored first, so boards without a registered orchestrator (mstack itself)
   stay current too.
 - **Sink:** a new collection "My tasks" in the board's existing channel, whose rows are objects of the existing
@@ -62,16 +62,26 @@ that changed in the last 30 days, or that are already in the table. When an issu
 row becomes that session's row (same object, no orphan); an issue row its sessions make redundant is removed. Other
 rows are never deleted: closed issues stay as Done/Canceled. On 2026-10-30: 165 rows, 22 of them sessions.
 
+**Hierarchy (MST-42):** a row whose issue has a Linear parent shows it as Parent Issue, and its "Parent Task" relation
+points at the parent's row: the parent's issue row, else its newest worker's row, else a helper's. A shown issue's
+parent is always shown too (and its parent, up the tree), even when it would be filtered out as closed and old, so
+the relation never points at nothing. A parent outside the mirror (not the owner's) keeps the text, no relation.
+Parents are written before their children in a pass; re-parenting in Linear shows on the next mirror and pass, and
+a parent that goes away clears both columns.
+
 ## Columns
 
 | Column (Agent Task property) | From |
 |---|---|
 | Name | `<issue> <title>`; `Orchestrator <project>/<scope>`; `Helper: …` |
 | Issue (`linear_identifier`) | Linear identifier (MST-40, IRO-104, YEL-407 …) |
+| Parent Issue (`parent_issue`) | the issue's Linear parent (`orchestrator.issues.parent`) |
+| Parent Task (`task_parent`) | relation to the parent issue's row (see Hierarchy) |
 | Project (`task_project`) | board name (`mstack`, `{{mstack:CLIENT_REPO}}`, `{{mstack:CLIENT_C_FOLDER}}`) |
-| Scope (`task_scope`) | the session's orchestrator scope, else the scope that planned the issue, else the mirror's focus scopes |
+| Item Source (`item_source`) | where the row comes from: `<workspace>/<team>` for issue and worker rows (`yyyymmdd/MST`, `{{mstack:CLIENT_ORG_A_SHORT}}/IRO`, `{{mstack:CLIENT_ORG_B}}/CAN`, `{{mstack:CLIENT_ORG_A_SHORT}}/YEL`; the team alone if no link names its workspace); `session` for a chat with no issue; `hub` for orchestrator and helper rows |
+| Scope (`task_scope`) | the first of: the run's (or chat's) scope, the scope that planned the issue (`task_tables`), the mirror's focus scopes, the orchestrator's own route, the app code routed through `taskboard.orchestrators` (scopes naming the code, minus focus-only and excluding ones; for a code no scope names, the `*` scopes). `—` when none applies |
 | Status (`task_status`) | closed in Linear → Done / Canceled; else the board's phase for managed issues (Awaiting Approval, In Review …); else the Linear state if it is one of ours; else its state type |
-| Link (`linear_url`) | the Linear URL, only for public boards. Private boards ({{mstack:CLIENT_REPO}}, {{mstack:CLIENT_C_SITE}}) and unreadable configs get none |
+| Link (`linear_url`) | the Linear URL on every issue, worker and helper row, private boards included: the table is the owner's own local Anytype (owner, MST-42; replaces the MST-40 "no link for private boards" rule) |
 | Last update (`linear_updated_at`) | Linear `updatedAt` |
 | Session (`agent_session`) | the `local_…` id |
 | Session Type (`session_type`) | orchestrator, worker, helper |
@@ -178,3 +188,8 @@ every row's CTA set to noop. A first look at the sessions (52 listed) gave every
   sessions; forbidden = protected; the report column is the latest `board done`/`note` text.
 - **"Overwritten on the next pass"** became "within the hour": rewriting all ~130 rows every minute through the
   rate-limited bridge is too heavy, so changed rows go at once and everything is rewritten hourly.
+- **Hierarchy and complete rows (owner, MST-42 revised plan, 2026-10-30):** parent from the mirror (no new Linear
+  calls), shown both as text and as the existing "Parent Task" relation; links on private boards too; a new
+  Item Source column; Scope filled wherever it can be derived. Item Source is a new property, not the old
+  `task_source` select (that one names the Anytype/Linear origin of the old board's tasks). Sub-issue rollups and
+  writing hierarchy back to Linear are out of scope.
