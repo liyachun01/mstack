@@ -107,6 +107,15 @@ NO_WORK = ('**You never work on an issue yourself, and do no other real work her
            'piece of work in this chat ("do YEL-12 here yourself"). Then say so, record it with `note` when there\'s '
            'an issue, and do only that. When unsure, ask the owner.')
 
+LINEAR_STATUS = ('**Linear status is always current** (owner, 2026-10-30; private boards included, status field only, '
+                 'never comments there). Set it the moment the stage changes, not later: plan approved or worker building '
+                 '→ **In Progress**; landed but not yet on Preview → still In Progress; live on Preview for the consumer '
+                 'to check → **In Review**; finished → Done, except backend issues, which the product owner or iOS '
+                 'closes; delayed or blocked → keep the status and record why. On a public board `note --status` / '
+                 '`done` / `merged` set it. On a private board, set the issue\'s Linear status yourself (Linear '
+                 'connector, the status field only) at the same moment. Before ending any turn, check that every issue '
+                 'you touched shows its real stage in Linear.')
+
 AFTER_MERGE = ('**After every merge** (owner, 2026-10-30), in this order: merge → run the tests → check for leaked '
                'secrets or private runtime files → push → `%s --task <ISSUE> --doc <path> …` (adds the docs as the '
                'issue\'s Resources, posts one note and sets Done; `--verify "what is left"` keeps it In Review). '
@@ -150,7 +159,7 @@ def card(project, session):
 
     me = roles.get(session)
     if me and me.get('role') == 'orchestrator':
-        lines = ['## Your mstack role: %s **orchestrator** (top level)' % name, RULES['orchestrator'], NO_WORK,
+        lines = ['## Your mstack role: %s **orchestrator** (top level)' % name, RULES['orchestrator'], NO_WORK, LINEAR_STATUS,
                  AFTER_MERGE % run('merged')]
         others = {s: c for s, c in scopes.items() if s != me.get('scope')}
         if others:
@@ -166,7 +175,7 @@ def card(project, session):
         lines.append('Status for the owner: `%s`.' % run('status'))
     elif me and me.get('role') == 'sub-orchestrator':
         scope = me.get('scope')
-        lines = ['## Your mstack role: **%s** sub-orchestrator (%s)' % (scope, name), RULES['sub-orchestrator'], NO_WORK,
+        lines = ['## Your mstack role: **%s** sub-orchestrator (%s)' % (scope, name), RULES['sub-orchestrator'], NO_WORK, LINEAR_STATUS,
                  AFTER_MERGE % (run('merged') + ' --scope ' + scope),
                  scope_line(scope, scopes.get(scope, {}), board, subs), *board_duty(scope),
                  'If the app refuses `start_session` because your turn began with another session\'s message, offer '
@@ -191,6 +200,7 @@ def card(project, session):
                      'Load the `mstack-worker` skill. Report with `%s/mstack board note --task %s "…"` and finish with '
                      '`%s/mstack board done --task %s --summary "…" --doc <path>` (or `--size small`). Never work on other issues; ask your orchestrator.'
                      % (STACK_ROOT, task, STACK_ROOT, task),
+                     LINEAR_STATUS,
                      HELPERS % (STACK_ROOT, project, r.get('issue') or task, session)]
             runs = board_state().get('runs', {}).values()
             if r.get('parent'):

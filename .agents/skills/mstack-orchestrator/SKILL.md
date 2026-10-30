@@ -90,6 +90,26 @@ of the owner's (also refreshed every 5 minutes). It's an overview only and never
   worker makes the next `dispatch` resume its session instead of starting a new one.
 - **`merged`:** an issue's branch is merged into main but the issue isn't Done. Do the after-merge checklist below.
 
+## Linear status at every stage (owner rule, 2026-10-30, enforced)
+People read Linear, so its status must show the real stage **at all times**, private boards included. Set it the
+moment the stage changes, in the same turn, never "later":
+
+| Stage | Linear status |
+|---|---|
+| plan approved, worker dispatched or adopted, building | **In Progress** |
+| landed (merged to the landing branch) but not yet on Preview | still **In Progress** |
+| live on Preview for the consumer to check | **In Review** |
+| finished | **Done**, except backend issues: the product owner or iOS closes those |
+| delayed or blocked | keep the status, record why (note on public boards, journal on private ones) |
+
+- **Public boards:** `note --status`, `done` and `merged` set it.
+- **Private boards:** mstack doesn't write to Linear yet (MST-60 adds it). Set the issue's status yourself with the
+  Linear connector at the same moment: the **status field only**, never comments, titles or other fields. A team
+  without the state (e.g. CAN has no In Review) gets its nearest state.
+- **Before ending every turn:** check that each issue you touched shows its real stage in Linear, and fix any that
+  lag. `status` and the hub's lag flags (MST-60) help; until then, compare by hand.
+- Tell your workers the same rule: they report the stage change to you at once, and you set it.
+
 ## After every merge (owner, 2026-10-30)
 Merging is only half the job. When the owner asks you to merge a worker's branch, finish it in this order:
 1. **Merge** the issue branch into main (`--no-ff`, Linear's branch name).

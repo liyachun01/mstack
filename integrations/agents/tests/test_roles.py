@@ -40,6 +40,7 @@ class RoleCardTests(unittest.TestCase):
         self.assertIn('repo **orchestrator** (top level)', text)
         self.assertIn('You never work on an issue yourself', text)
         self.assertIn('work with no issue goes to a side chat', text)
+        self.assertIn('**Linear status is always current**', text)                          # owner rule
         self.assertIn('**After every merge**', text)                                          # MST-47
         self.assertIn('board merged --project repo --task <ISSUE>', text)
         self.assertIn('**customer-api**: apps API ({{mstack:CLIENT_ORG_A_SHORT}}/IRO), session `local_api`', text)
