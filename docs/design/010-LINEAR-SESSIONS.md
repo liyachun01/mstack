@@ -213,3 +213,43 @@ First user: {{mstack:CLIENT_C_SITE}}, a folder on the Mac that the dev VM sees a
 scope. {{mstack:CLIENT_REPO}}: `portal-web` = API focus IRO-91, and `customer-api` = API except IRO-91. An earlier fixed list of
 40 roots would have left every new IRO issue in no scope. `mstack doctor` treats a focus excluded from the other
 scope as disjoint.
+
+## After merge: `board merged` (2026-10-30, MST-47)
+
+**Problem.** After a merge, orchestrators forgot the follow-up: issues stayed In Review, docs weren't checked
+against the merged code, and doc links sat only in comments instead of the issue's Resources.
+
+**One command after merge and push:**
+`mstack board merged --task <ISSUE> [--commit SHA] [--doc PATH …] [--verify "what is left"] [--project P]`.
+- **Pushed check:** the commit (default: the merge that brought the issue's branch into `origin/<main>`, else the
+  branch tip) must be on the pushed main, or it refuses and changes nothing. Each `--doc` must exist in that commit.
+- **Docs check:** a doc the branch didn't touch (diff from the worktree's recorded base, or the merge's base, to
+  the branch tip) gives the warning "docs not updated by the branch". Commits on the branch that aren't on the
+  pushed main give a warning too.
+- **Resources:** each doc becomes a Linear link attachment (`attachmentLinkURL(issueId, url, title)`), with url =
+  `taskboard.docs_url` + path and title = path. Ones already attached (same url) are skipped. With no `docs_url`,
+  the doc is only named in the note, and a warning says so.
+- **Note and status:** one 🤖 note, "Merged as `sha` on main (status → Done)", plus the doc links. Then the Linear
+  state moves to Done. With `--verify`, the note says "(status → In Review) Still to verify: …" and the state stays.
+- **Private boards:** nothing goes to Linear. No Resources (only when the owner asks); the note goes to the journal,
+  and its "(status → X)" sets the phase.
+
+**`note --doc` and `done --doc`** also add the docs as Resources, not only as links in the comment.
+
+**Forgotten merges.** `board status` marks each issue whose branch is merged into the local main but which isn't
+Done or Canceled (`merged_not_done`). A branch counts only if it has work of its own: its tip is off main's
+first-parent line (a `--no-ff` merge), or differs from its worktree's recorded base. A freshly made, empty branch
+doesn't count. The watcher raises a `merged` event once per issue (orchestrator-managed issues only), and the hub
+delivers it like any other event.
+
+**Checklist** (orchestrator skill and the orchestrator and sub-orchestrator role cards): merge → test → leak check →
+push → check the docs → `board merged`.
+
+**Questions resolved**
+- *Is "on main" the local main or the pushed one?* `merged` needs the pushed `origin/<main>`, so it never runs ahead
+  of the push. `status` and the watcher use the local main, because that's where the orchestrator merges.
+- *Which commit does the note name?* The merge commit when there is one; `--commit` overrides it.
+- *Is a missing doc an error or a warning?* An error when the doc isn't in the merged commit (the Resource would be a
+  dead link). A warning when the doc exists but the branch didn't change it.
+- *What about an issue the owner already 👍'd (Done before merge)?* `merged` still adds the Resources and the note,
+  and leaves it Done.
