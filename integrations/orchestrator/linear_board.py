@@ -17,8 +17,8 @@ orchestrator comments is history: it is never polled or dispatched (it reads as 
 or its finished state), so nothing starts from old issues. The owner's comments and
 reactions are the verdicts, exactly as before; kind comes from existing labels only.
 
-Private mode (`taskboard.private: true`) makes Linear read-only for the board: the
-orchestrator's comments and status changes go to a local journal (`.mstack/journal.json`, or
+Private mode (`taskboard.private: true`) makes Linear read-only for the board except the status field
+(MST-60: the consumer must see where the work is; PRIVATE_STATUS): the orchestrator's comments and phases go to a local journal (`.mstack/journal.json`, or
 Postgres orchestrator.journal with the Postgres store)
 instead of the issue, creating issues is refused, and Linear comments other than the
 orchestrator's earlier ones are ignored, so teammates see nothing and cannot trigger
@@ -64,6 +64,9 @@ FROM_TYPE = {'backlog': 'Backlog', 'triage': 'Backlog', 'unstarted': 'Backlog', 
 LABEL_KIND = {'feature': 'FEAT', 'improvement': 'FEAT', 'bug': 'BUG', 'chore': 'CHORE', 'docs': 'DOCS',
               'documentation': 'DOCS', 'test': 'TEST', 'refactor': 'REFACTOR', 'performance': 'PERF',
               'security': 'SEC', 'ops': 'OPS'}
+PUBLIC_STATUS = {k: k for k in STATE_TYPE}
+PRIVATE_STATUS = {'Todo': 'In Progress', 'In Progress': 'In Progress', 'In Review': 'In Progress'}
+CLOSED = ('completed', 'canceled', 'duplicate')
 PRIORITY = {'Urgent': 1, 'High': 2, 'Medium': 3, 'Low': 4}
 PHASES = [  # (pattern on an orchestrator comment, phase); the latest matching comment wins
     (re.compile(r'\(status → ([A-Za-z ]+)\)'), None),
@@ -84,7 +87,7 @@ ISSUES = '''query($filter: IssueFilter, $after: String) { issues(first: 100, aft
   nodes { %s } pageInfo { hasNextPage endCursor } } }''' % FIELDS
 ONE = '''query($id: String!) { issue(id: $id) { %s } }''' % FIELDS
 TEAM = '''query($key: String!) { teams(first: 1, filter: {key: {eq: $key}}) { nodes {
-  id states(first: 50) { nodes { id type position } } labels(first: 100) { nodes { id name } } } } }'''
+  id states(first: 50) { nodes { id type name position } } labels(first: 100) { nodes { id name } } } } }'''
 ME = '''query { viewer { id } }'''
 # The key's own Linear user is the owner (MST-60): its notifications say which issues were assigned to it and
 # which comments mention it, in every team the key sees. Read only, so private boards use it too.
@@ -217,10 +220,21 @@ class Link:
             SHARED[key] = found
         return found
 
-    def state_id(self, status):
+    def state_for(self, status):
+        """The team's state for a board status: the one of that name, else the nearest of its type (MST-53: a team
+        with no "In Review" gets its last started state, e.g. In Progress). States are never created."""
+        nodes = self.team()['states']['nodes']
+        named = [s for s in nodes if (s.get('name') or '').lower() == status.lower()]
+        if named:
+            return named[0]
         want = STATE_TYPE[status]
-        states = sorted((s for s in self.team()['states']['nodes'] if s['type'] == want), key=lambda s: s['position'])
-        return states[0]['id']
+        typed = sorted((s for s in nodes if s['type'] == want), key=lambda s: s['position'])
+        if status == 'In Review':
+            typed = [s for s in typed if 'review' in (s.get('name') or '').lower()] or typed[::-1]
+        return typed[0]
+
+    def state_id(self, status):
+        return self.state_for(status)['id']
 
     def existing_label(self, kind):
         """A kind label only if the team already has one; never created."""
@@ -247,6 +261,17 @@ class LinearBoard:
         self.all_issues = all_issues
         self.cache, self.owner_of, self.parents = {}, {}, {}
         self.journal = Journal(project) if settings.get('private') else None
+        # Board phase → Linear status (MST-60). Private boards push the status field only, and Linear's statuses
+        # are for the consumer there: queued or building is In Progress, a finished worker is still In Progress
+        # (not landed); `merged` says when it is landed or on Preview. `never_done` scopes leave Done to the
+        # consumer. taskboard / scope `linear_status` overrides single entries (a null keeps Linear as it is).
+        self.status_map = dict(PRIVATE_STATUS if self.journal else PUBLIC_STATUS)
+        for conf in (settings, scope or {}):
+            self.status_map.update(conf.get('linear_status') or {})
+        self.never_done = bool((scope or {}).get('never_done', settings.get('never_done')))
+        self.landing = (scope or {}).get('landing') or settings.get('landing')
+        self.pushed = []                    # Linear status changes made by this board: {issue, wanted, linear}
+        self.mapped = {}                    # (team, wanted status) → the team's state standing in for it
 
     def _comments(self, issue):
         """The issue's thread. Private: only the orchestrator's earlier Linear comments, plus the journal."""
@@ -443,19 +468,51 @@ class LinearBoard:
         for key in [k for k, v in self.cache.items() if v is issue or k in (task, ident)]:
             self.cache.pop(key, None)
 
-    def set(self, task, **props):
+    def linear_target(self, status):
+        """The Linear status a board phase shows as (None: leave Linear as it is)."""
+        target = self.status_map.get(status)
+        return None if target == 'Done' and self.never_done else target
+
+    def set(self, task, linear=..., **props):
+        """Board fields. `task_status` also moves the Linear status (on private boards too: the status field
+        only) to `linear`, by default the phase's linear_target; None leaves Linear as it is."""
         issue, link = self._issue(task)
         real = issue['id']
         change = {}
-        if 'task_status' in props and self.journal:
-            self.journal.add(real, '%s (status → %s)' % (MARK, props['task_status']))   # phase only, Linear untouched
-        elif 'task_status' in props:
-            change['stateId'] = link.state_id(props['task_status'])
-        if 'name' in props:
+        if 'task_status' in props:
+            if self.journal:
+                self.journal.add(real, '%s (status → %s)' % (MARK, props['task_status']))
+            target = self.linear_target(props['task_status']) if linear is ... else linear
+            moved = self._status_change(issue, link, target) if target else None
+            if moved:
+                change['stateId'] = moved
+        if 'name' in props and not self.journal:
             change['title'] = props['name']
-        if change and not self.journal:
+        if change:
             link.post(UPDATE, {'id': real, 'input': change})
         self.forget(task)
+
+    def push_status(self, task, target):
+        """Move only the Linear status (no phase note): for callers whose own note already records the phase."""
+        issue, link = self._issue(task)
+        moved = self._status_change(issue, link, target) if target else None
+        if moved:
+            link.post(UPDATE, {'id': issue['id'], 'input': {'stateId': moved}})
+            self.forget(task)
+
+    def _status_change(self, issue, link, target):
+        """The state id to move the issue to, or None: already there, or closed in Linear (never reopened)."""
+        state = link.state_for(target)
+        if (state.get('name') or '').lower() != target.lower():
+            self.mapped[(link.conf['team'], target)] = state.get('name') or state['type']
+        current = issue.get('state') or {}
+        if state['id'] == current.get('id') or (current.get('type') in CLOSED and state['type'] not in CLOSED):
+            return None
+        if self.never_done and state['type'] == 'completed':
+            return None
+        self.pushed.append({'issue': issue['identifier'], 'team': link.conf['team'], 'wanted': target,
+                            'linear': state.get('name') or state['type'], 'mapped': (state.get('name') or '').lower() != target.lower()})
+        return state['id']
 
     def say(self, task, text, ask=False, reply_to=None):
         issue, link = self._issue(task)

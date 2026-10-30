@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS orchestrator.queue (
   created_at  timestamptz NOT NULL DEFAULT now(),
   board       text NOT NULL,             -- table name (e.g. {{mstack:CLIENT_REPO}})
   scope       text NOT NULL DEFAULT '',  -- orchestrator scope; '' = the whole board
-  kind        text NOT NULL,             -- plan, replan, forward, stop, handoff, resume, verdict, merged, new_issue, mention
+  kind        text NOT NULL,             -- plan, replan, forward, stop, handoff, resume, verdict, merged, new_issue, mention, status_lag
   task        text,
   issue       text,
   dedupe      text UNIQUE,               -- repeats of the same signal return the existing row

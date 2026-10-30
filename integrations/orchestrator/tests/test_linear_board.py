@@ -341,9 +341,9 @@ class LinearBoardFlow(unittest.TestCase):
         thread = self.cli('thread', '--project', 'repo', '--task', 'MST-500')
         self.assertEqual(thread['status'], 'In Review')
         self.assertTrue(any('finished' in m['text'] for m in thread['messages']))
-        # Linear saw nothing: only the teammate's comment, and the original state.
+        # Linear saw no comment, only the status field (MST-60): a finished worker is still In Progress there.
         self.assertEqual([c['body'] for c in self.fake.issues[old]['comments']], ['/plan from a teammate'])
-        self.assertEqual(self.fake.state_of(old), 'unstarted')
+        self.assertEqual(self.fake.state_of(old), 'started')
         self.assertEqual(oct((self.repo / '.mstack/journal.json').stat().st_mode & 0o777), '0o600')
         out = io.StringIO()
         with contextlib.redirect_stderr(out), contextlib.redirect_stdout(io.StringIO()), \
@@ -430,13 +430,17 @@ class LinearBoardFlow(unittest.TestCase):
     def test_verdicts_approval_with_notes_and_hedges(self):
         import board
         self.assertEqual(board.verdict_of('Approve'), 'approved')
-        self.assertEqual(board.verdict_of('Approve. Use the CN region first.'), 'approved')       # MST-25
+        # MST-60: a reply with content is never judged by wording; the orchestrator reads it (`board verdict`).
+        self.assertEqual(board.verdict_of('Approve. Use the CN region first.'), 'feedback')
         self.assertEqual(board.verdict_of('ok but change the schema'), 'feedback')
         self.assertEqual(board.verdict_of('approve? not sure'), 'feedback')
-        msgs = [{'id': 'a', 'order': '1', 'text': board.ASK + ' Plan ready'},
-                {'id': 'b', 'order': '2', 'text': '👍'}, {'id': 'c', 'order': '3', 'text': 'Also add a test for refunds'}]
-        verdict, text, _ = board.decide(msgs)                                                   # MST-32
-        self.assertEqual((verdict, 'refunds' in text), ('approved', True))
+        task = self.cli('plan', '--project', 'repo', '--title', 'T', '--plan', '-', stdin='p')['task']
+        self.fake.comment(task, '👍'); self.fake.comment(task, 'Also add a test for refunds')
+        row = self.cli('poll')[0]
+        self.assertEqual((row['verdict'], row.get('now'), 'board verdict' in row['action']), ('feedback', None, True))
+        out = self.cli('verdict', '--task', task, 'approve', '--why', 'approved, with a test added')
+        self.assertEqual((out['now'], 'refunds' in out['notes']), ('Todo', True))
+        self.assertIn('refunds', self.cli('dispatch', '--project', 'repo')['started'][0]['handoff']['prompt'])
 
     def test_adopted_worker_is_resumed_not_stuck_in_todo(self):                                # MST-26
         self.auto()
@@ -610,8 +614,42 @@ class LinearBoardFlow(unittest.TestCase):
         out = self.cli('merged', '--task', 'MST-910', '--doc', 'docs/m.md')
         self.assertEqual((out['status'], out['resources_added']), ('Done', []))
         self.assertEqual((self.fake.attachments, self.fake.issues[old]['comments'], self.fake.state_of(old)),
-                         ({}, [], 'started'))
+                         ({}, [], 'completed'))                                   # the status field only
         self.assertEqual(self.cli('status', '--project', 'repo')['tasks'][0]['status'], 'Done')
+
+    def test_private_status_follows_the_stages_and_landing_branch(self):                      # MST-60
+        self.docs_url(private=True)
+        self.fake.states.insert(3, {'id': 's-review', 'type': 'started', 'name': 'In Review', 'position': 2.5})
+        self.scoped(api={'apps': ['*'], 'never_done': True, 'landing': 'dev-sb'})
+        old = self.old_issue(n=920)
+        self.cli('owner', '--project', 'repo', '--task', 'MST-920', '/plan')
+        self.cli('propose', '--project', 'repo', '--scope', 'api', '--task', 'MST-920', '--plan', '-', stdin='1. fix')
+        self.assertEqual(self.fake.state_of(old), 'unstarted')                      # waiting for the owner: unchanged
+        self.cli('owner', '--project', 'repo', '--task', 'MST-920', 'OK for read-only prod counts')
+        self.assertEqual([r.get('now') for r in self.cli('poll')], [None])          # a side OK approves nothing
+        self.cli('owner', '--project', 'repo', '--task', 'MST-920', '👍')
+        self.cli('poll')
+        self.assertEqual(self.fake.state_of(old), 'started')                        # approved → In Progress
+        self.cli('adopt', '--project', 'repo', '--scope', 'api', '--task', 'MST-920', '--session', 'local_x')
+        self.cli('done', '--task', 'MST-920', '--size', 'small', '--summary', 'ok')
+        self.assertEqual(self.fake.issues[old]['stateId'], 's-started')              # finished, not landed
+        self.merged_branch('me/mst-919')                                          # sets origin/main up
+        self.git('checkout', '-q', '-b', 'dev-sb'); self.git('checkout', '-q', '-b', 'me/mst-920')
+        (self.repo / 'docs/m.md').write_text('# landed'); self.git('commit', '-qam', 'work')
+        self.git('checkout', '-q', 'dev-sb'); self.git('merge', '-q', '--no-ff', '-m', 'land', 'me/mst-920')
+        self.git('push', '-q', 'origin', 'dev-sb'); self.git('checkout', '-q', 'main')
+        out = self.cli('merged', '--task', 'MST-920', '--doc', 'docs/m.md')
+        self.assertEqual((out['branch'], self.fake.issues[old]['stateId']), ('dev-sb', 's-started'))   # landed, never Done
+        self.cli('merged', '--task', 'MST-920', '--verify', 'on Preview')
+        self.assertEqual(self.fake.issues[old]['stateId'], 's-review')               # on Preview → In Review
+        self.assertEqual(self.fake.issues[old]['comments'], [])
+
+    def test_team_without_in_review_maps_to_its_nearest_state(self):                          # MST-53
+        old = self.old_issue(n=930, state='s-started')
+        self.cli('adopt', '--project', 'repo', '--task', 'MST-930', '--session', 'local_x')
+        self.cli('done', '--task', 'MST-930', '--size', 'small', '--summary', 'ok')
+        self.assertEqual(self.fake.state_of(old), 'started')
+        self.assertEqual(json.loads(cli.STATE.read_text())['linear_state_map'], {'MST': {'In Progress': 'Started', 'In Review': 'Started'}})
 
 
 class WorkspaceFlow(unittest.TestCase):

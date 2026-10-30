@@ -20,13 +20,9 @@ ASK = MARK + '❓'      # a line that waits for the owner's reaction or reply
 APPROVE = {'👍', '✅', '🚀', '👌', '❤️'}
 REJECT = {'👎', '❌'}
 APPROVE_WORDS = ('approve', 'approved', 'lgtm', 'go ahead', 'ship it', 'yes', 'ok', 'go', 'approve it', 'do it')
-# "Approve, and also …" is an approval with notes, but "ok but …" or a question is feedback.
-# Only these may lead an approval that goes on with more words ("Approve. Use the CN region first.").
-# A bare "ok"/"yes"/"go" approves, but "OK for read-only prod counts" answers something else (MST-60/IRO-153).
-LEAD_APPROVE = re.compile(r'^(approved?|approve it|lgtm|go ahead|ship it)\b')
+# Bare approval only ("ok, go ahead"); a reply with anything more is read by the orchestrator, not by a rule.
 ONLY_APPROVE = re.compile(r'^(?:(?:%s)[\s,.!]*)+$' % '|'.join(sorted(map(re.escape, APPROVE_WORDS), key=len, reverse=True)))
 SIDE = '(side)'      # owner text recorded with `board owner --side`: kept on the thread, never a verdict
-HEDGES = ('?', ' but ', 'except', "don't", 'do not', 'wait', 'instead', 'hold', ' actually ', ' change ')
 # Anytype comments can store emoji as shortcodes (a typed 👍 arrives as ":+1:").
 SHORTCODES = {':+1:': '👍', ':thumbsup:': '👍', ':white_check_mark:': '✅', ':rocket:': '🚀',
               ':ok_hand:': '👌', ':heart:': '❤️', ':-1:': '👎', ':thumbsdown:': '👎', ':x:': '❌'}
@@ -176,23 +172,18 @@ def normalize(text):
 
 
 def verdict_of(text):
-    """One owner comment: approved, rejected, or feedback (anything with real content)."""
-    words = [w for w in text.lower().replace(',', ' ').split() if w]
-    tokens = [w.strip('.!') for w in words]
+    """One owner comment: 'approved' or 'rejected' only when it is nothing but an approval or a rejection
+    ("👍", "ok", "lgtm, go ahead", "👎"); anything with more in it is 'feedback'. No phrasing rule decides what a
+    reply with content means (owner, MST-60): the orchestrator agent reads it and records the verdict itself
+    (`mstack board verdict`)."""
+    tokens = [w.strip('.!') for w in text.lower().replace(',', ' ').split() if w]
     if text in REJECT or (tokens and all(t in REJECT for t in tokens)):
         return 'rejected'
     plain = text.lower().strip(' .!')
-    if text in APPROVE or plain in APPROVE_WORDS:
+    if text in APPROVE or plain in APPROVE_WORDS or ONLY_APPROVE.match(plain):
         return 'approved'
-    # "approve 👍", "lgtm ✅", "👍👍": only approval words and approval emoji
     if tokens and all(t in APPROVE_WORDS or t in APPROVE or (t and all(c in ''.join(APPROVE) for c in t))
                       for t in tokens):
-        return 'approved'
-    if ONLY_APPROVE.match(plain):                     # "ok, go ahead", "yes, ship it"
-        return 'approved'
-    # Leading approval followed by instructions: "Approve. Use the CN region first." → approved, notes kept.
-    if (LEAD_APPROVE.match(plain) or text[:1] in APPROVE) and \
-            not any(h in ' %s ' % plain for h in HEDGES):
         return 'approved'
     return 'feedback'
 
@@ -200,8 +191,10 @@ def verdict_of(text):
 def decide(messages):
     """Owner's verdict on the latest orchestrator ask in a discussion.
 
-    Returns ('approved'|'rejected'|'feedback'|'pending', owner_text, ask_id). Reactions on the
-    ask count (the owner is the only human in the channel); so do owner replies after it.
+    Returns ('approved'|'rejected'|'feedback'|'pending', owner_text, ask_id). A 👎 reaction rejects; otherwise the
+    owner's latest reply after the ask decides when it is a bare approval or rejection (earlier replies travel as
+    notes), and any other reply is 'feedback' for the orchestrator to read and judge. With no reply, a 👍 reaction
+    approves. Side notes (`board owner --side`) are never read here.
     """
     asks = [m for m in messages if m.get('text', '').startswith(ASK)]
     if not asks:
@@ -212,16 +205,10 @@ def decide(messages):
         return 'rejected', '', ask['id']
     after = [m for m in messages if m.get('order', '') > ask.get('order', '')
              and not m.get('text', '').startswith((MARK, SIDE))]
-    if after:
-        texts = [normalize(m.get('text', '')) for m in after]
-        text = '\n'.join(texts).strip()
-        verdicts = {verdict_of(t) for t in texts if t}
-        if 'rejected' in verdicts and verdicts <= {'rejected', 'approved'}:
-            return 'rejected', text, ask['id']
-        hedged = any(h in ' %s ' % x.lower().strip(' .!') for x in texts if verdict_of(x) != 'approved' for h in HEDGES)
-        if 'approved' in verdicts and 'rejected' not in verdicts and verdict_of(texts[0]) == 'approved' and not hedged:
-            return 'approved', text, ask['id']      # 👍 then instructions: approved, the text travels as notes
-        return 'feedback', text, ask['id']
+    texts = [t for t in (normalize(m.get('text', '')) for m in after) if t]
+    if texts:
+        last = verdict_of(texts[-1])
+        return (last if last in ('approved', 'rejected') else 'feedback'), '\n'.join(texts), ask['id']
     if reactions & APPROVE:
         return 'approved', '', ask['id']
     return 'pending', '', None
