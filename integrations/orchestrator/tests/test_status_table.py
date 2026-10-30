@@ -55,6 +55,12 @@ class FakeAnytype:
         if method == 'PATCH' and base == '.':
             self.channel = body['name']
             return {}
+        if method == 'POST' and base == 'search':
+            out = [{'id': i, 'name': o.get('name'), 'type': o.get('type'),
+                    'properties': {f: [o['properties'][f]] for f in body.get('fields', []) if f in o.get('properties', {})}}
+                   for i, o in self.objects.items() if o.get('type') == body.get('type')]
+            offset = int(dict(x.split('=') for x in path.split('?')[1].split('&')).get('offset', 0))
+            return {'data': out[offset:offset + 200]}
         if method == 'GET' and base.endswith('/views'):
             return {'data': [{'id': 'v-all', 'name': 'All'}, {'id': 'v-table', 'name': 'Table'}, {'id': 'v-board', 'name': 'Board'}]}
         if method == 'POST' and base in ('collections', 'objects'):
@@ -84,32 +90,61 @@ class FakeAnytype:
 
 
 class Rows(unittest.TestCase):
-    def test_columns_status_worker_scope_and_links(self):
-        state = {'runs': {'t1': {'table': 'mstack', 'issue': 'MST-40', 'session': 'local_w', 'scope': None},
-                          't2': {'table': '{{mstack:CLIENT_REPO}}', 'issue': 'IRO-1', 'session': 'local_old', 'scope': 'customer-api',
-                                 'dispatched_at': '2026-10-29T10:00:00+0800'},
-                          't3': {'table': '{{mstack:CLIENT_REPO}}', 'issue': 'IRO-1', 'session': 'local_new', 'scope': 'customer-api',
-                                 'dispatched_at': '2026-10-30T10:00:00+0800'}},
-                 'task_tables': {'CAN-9': {'table': '{{mstack:CLIENT_REPO}}', 'scope': 'staff-web'}}}
-        rows = st.desired([issue('mstack', 'MST-40', managed=True, agent_phase='In Review'),
-                           issue('{{mstack:CLIENT_REPO}}', 'IRO-1', state='In Review'),
-                           issue('{{mstack:CLIENT_REPO}}', 'CAN-9', 'unstarted')],
-                          state, {'mstack': False, '{{mstack:CLIENT_REPO}}': True}, NOW)
-        mst = rows['mstack/MST-40']
-        self.assertEqual(mst['name'], 'MST-40 Title of MST-40')
-        self.assertEqual(mst['properties'], {
+    STATE = {'runs': {'t1': {'table': 'mstack', 'issue': 'MST-40', 'session': 'local_w', 'scope': None,
+                             'runner': 'claude-desktop', 'report': {'kind': 'done', 'text': 'Built it.\n  Tests pass.'}},
+                      't2': {'table': '{{mstack:CLIENT_REPO}}', 'issue': 'IRO-1', 'session': 'local_old', 'scope': 'customer-api',
+                             'runner': 'codex', 'dispatched_at': '2026-10-29T10:00:00+0800'},
+                      't3': {'table': '{{mstack:CLIENT_REPO}}', 'issue': 'IRO-1', 'session': 'local_new', 'scope': 'customer-api',
+                             'dispatched_at': '2026-10-30T10:00:00+0800'},
+                      't4': {'table': 'test-market', 'issue': None, 'session': None}},      # never had a session
+             'related': {'t3': [{'session': 'local_rel', 'scope': 'customer-api', 'note': 'obsolete'}]},
+             'orchestrators': {'{{mstack:CLIENT_REPO}}/customer-api': {'project': '{{mstack:CLIENT_REPO}}', 'scope': 'customer-api', 'session': 'local_api'},
+                               '{{mstack:CLIENT_REPO}}/': {'project': '{{mstack:CLIENT_REPO}}', 'scope': None, 'session': 'local_sk'}},
+             'task_tables': {'CAN-9': {'table': '{{mstack:CLIENT_REPO}}', 'scope': 'staff-web'}},
+             'sessions_seen': {'local_old': {'state': 'archived'}, 'local_new': {'state': 'active'}}}
+    ROLES = {'mstack': {'local_morch': {'role': 'orchestrator'},
+                        'local_help': {'role': 'helper', 'task': 'MST-40', 'worker': 'local_w'}}}
+    ISSUES = [issue('mstack', 'MST-40', managed=True, agent_phase='In Review'),
+              issue('{{mstack:CLIENT_REPO}}', 'IRO-1', state='In Review'), issue('{{mstack:CLIENT_REPO}}', 'CAN-9', 'unstarted')]
+
+    def rows(self, state=None):
+        return st.desired(self.ISSUES, state or self.STATE, {'mstack': False, '{{mstack:CLIENT_REPO}}': True}, NOW, self.ROLES)
+
+    def test_one_row_per_session_with_its_issue(self):
+        rows, _, _ = self.rows()
+        self.assertEqual(sorted(rows), ['session/local_api', 'session/local_help', 'session/local_morch', 'session/local_new',
+                                        'session/local_old', 'session/local_rel', 'session/local_sk', 'session/local_w',
+                                        '{{mstack:CLIENT_REPO}}/CAN-9'])
+        w = rows['session/local_w']
+        self.assertEqual(w['name'], 'MST-40 Title of MST-40')
+        self.assertEqual(w['properties'], {
             'linear_identifier': 'MST-40', 'task_project': 'mstack', 'task_status': 'In Review',
-            'agent_session': 'local_w', 'linear_updated_at': '2026-10-30T01:00:00Z',
-            'linear_url': 'https://linear.app/x/issue/MST-40'})
-        iro = rows['{{mstack:CLIENT_REPO}}/IRO-1']['properties']
-        self.assertEqual((iro['agent_session'], iro['task_scope'], iro['task_status']),
-                         ('local_new', 'customer-api', 'In Review'))           # latest dispatch wins
-        self.assertNotIn('linear_url', iro)                                  # private board: no Linear link
-        self.assertEqual(rows['{{mstack:CLIENT_REPO}}/CAN-9']['properties']['task_scope'], 'staff-web')
-        self.assertEqual(rows['{{mstack:CLIENT_REPO}}/CAN-9']['properties']['task_status'], 'Todo')
+            'linear_updated_at': '2026-10-30T01:00:00Z', 'linear_url': 'https://linear.app/x/issue/MST-40',
+            'agent_session': 'local_w', 'session_type': 'worker', 'session_agent': 'claude',
+            'session_parent': 'local_morch', 'session_report': 'Built it. Tests pass.'})
+        old, new = rows['session/local_old']['properties'], rows['session/local_new']['properties']
+        self.assertEqual((old['session_agent'], old['session_state'], old['session_parent']), ('codex', 'archived', 'local_api'))
+        self.assertEqual((new['task_scope'], new['session_state'], new['task_status']), ('customer-api', 'active', 'In Review'))
+        self.assertNotIn('linear_url', new)                                   # private board: no Linear link
+        self.assertIn('obsolete', rows['session/local_rel']['properties']['session_report'])
+        orch = rows['session/local_api']
+        self.assertEqual((orch['name'], orch['properties']['session_type']), ('Orchestrator {{mstack:CLIENT_REPO}}/customer-api', 'orchestrator'))
+        self.assertNotIn('session_parent', orch['properties'])               # orchestrators have no parent
+        self.assertEqual(rows['session/local_help']['properties']['session_parent'], 'local_morch')
+        self.assertEqual(rows['{{mstack:CLIENT_REPO}}/CAN-9']['properties'],               # an issue nobody works on yet
+                         {'linear_identifier': 'CAN-9', 'task_project': '{{mstack:CLIENT_REPO}}', 'task_scope': 'staff-web',
+                          'task_status': 'Todo', 'linear_updated_at': '2026-10-30T01:00:00Z'})
+
+    def test_an_old_issue_row_becomes_its_newest_workers_row(self):
+        state = dict(self.STATE, **{st.STATE_KEY: {'rows': {'{{mstack:CLIENT_REPO}}/IRO-1': {'id': 'o1', 'hash': 'h'},
+                                                            'mstack/MST-40': {'id': 'o2', 'hash': 'h'},
+                                                            'session/local_w': {'id': 'o3', 'hash': 'h'}}}})
+        _, takes, retire = self.rows(state)
+        self.assertEqual(takes, {'session/local_new': '{{mstack:CLIENT_REPO}}/IRO-1'})
+        self.assertEqual(retire, ['mstack/MST-40'])                           # its worker already had a row
 
     def test_unknown_board_gets_no_link_and_closed_wins(self):
-        rows = st.desired([issue('other', 'X-1', 'completed', managed=True, agent_phase='In Review')], {}, {}, NOW)
+        rows, _, _ = st.desired([issue('other', 'X-1', 'completed', managed=True, agent_phase='In Review')], {}, {}, NOW)
         props = rows['other/X-1']['properties']
         self.assertEqual(props['task_status'], 'Done')
         self.assertNotIn('linear_url', props)
@@ -123,18 +158,18 @@ class Rows(unittest.TestCase):
                   issue('b', 'A-5', 'started', present=False),                         # left the source, never shown
                   issue('b', 'A-6', 'started', present=False)]                         # left the source, shown before
         shown = {st.STATE_KEY: {'rows': {'b/A-4': {'id': 'o4', 'hash': 'h'}, 'b/A-6': {'id': 'o6', 'hash': 'h'}}}}
-        self.assertEqual(sorted(st.desired(issues, shown, {}, NOW)), ['b/A-2', 'b/A-3', 'b/A-4', 'b/A-6'])
+        self.assertEqual(sorted(st.desired(issues, shown, {}, NOW)[0]), ['b/A-2', 'b/A-3', 'b/A-4', 'b/A-6'])
 
 
 class Upsert(unittest.TestCase):
     def setUp(self):
         self.any = FakeAnytype()
         self.table = st.StatusTable(self.any)
-        self.rows = st.desired([issue('mstack', 'MST-1'), issue('mstack', 'MST-2')], {}, {'mstack': False}, NOW)
+        self.rows = st.desired([issue('mstack', 'MST-1'), issue('mstack', 'MST-2')], {}, {'mstack': False}, NOW)[0]
 
     def test_first_pass_builds_the_table_then_only_changes_are_written(self):
         known, counts = self.table.sync(self.rows, {})
-        self.assertEqual(counts, {'created': 2, 'updated': 0, 'unchanged': 0, 'pending': 0})
+        self.assertEqual(counts, {'created': 2, 'updated': 0, 'unchanged': 0, 'pending': 0, 'removed': 0})
         posted = [b['name'] for m, p, b in self.any.calls if m == 'POST' and p == 'collections']
         self.assertEqual(posted, ['My tasks'])
         props = [b['key'] for m, p, b in self.any.calls if m == 'POST' and p == 'properties']
@@ -167,6 +202,17 @@ class Upsert(unittest.TestCase):
     def test_rename_channel_patches_the_space_itself(self):
         self.table.rename_channel('mstack')
         self.assertEqual((self.any.calls[-1][:2], self.any.channel), (('PATCH', '.'), 'mstack'))
+
+    def test_an_issue_row_taken_over_by_a_session_gets_a_noop_cta(self):
+        known, _ = self.table.sync(self.rows, {})
+        ident = known['rows']['mstack/MST-1']['id']
+        del self.any.objects[ident]['properties']['session_cta']                  # a row from before the CTA column
+        row = {'name': 'MST-1 Title of MST-1', 'properties': {'agent_session': 'local_w', 'session_type': 'worker'}}
+        known, counts = self.table.sync({'session/local_w': row, 'mstack/MST-2': self.rows['mstack/MST-2']}, known,
+                                        takes={'session/local_w': 'mstack/MST-1'})
+        self.assertEqual((counts['created'], counts['updated']), (0, 1))
+        self.assertEqual(known['rows']['session/local_w']['id'], ident)
+        self.assertEqual(self.any.objects[ident]['properties']['session_cta'], 'noop')
 
     def test_a_full_pass_overwrites_hand_edits(self):
         known, _ = self.table.sync(self.rows, {})
@@ -286,6 +332,93 @@ class HubStep(unittest.TestCase):
         self.assertEqual(outer['created'], 1)
         rows = [o for o in self.any.objects.values() if o.get('type') == st.TYPE['key']]
         self.assertEqual(len(rows), 1)
+
+    def sessions(self):
+        """A worker on MST-7 under a registered orchestrator, synced once; returns {session: object id}."""
+        self.wire([issue('repo', 'MST-7')])
+        with cli.state() as s:
+            s['runs'] = {'t1': {'table': 'repo', 'issue': 'MST-7', 'session': 'local_w', 'runner': 'claude-desktop'}}
+            s['orchestrators'] = {'repo/': {'project': 'repo', 'scope': None, 'session': 'local_o'}}
+        cli.record_report('t1', 'note', 'Halfway: parser done.')
+        self.cli('status-table', 'sync')
+        rows = cli.read_state()[st.STATE_KEY]['rows']
+        return {k[len('session/'):]: v['id'] for k, v in rows.items() if k.startswith('session/')}
+
+    def owner_sets(self, object_id, cta):
+        self.any.objects[object_id]['properties']['session_cta'] = cta
+
+    def test_archive_cta_goes_to_the_hub_chat_and_comes_back_as_last_action(self):
+        ids = self.sessions()
+        w = self.any.objects[ids['local_w']]['properties']
+        self.assertEqual((w['session_type'], w['session_parent'], w['session_report'], w['session_cta']),
+                         ('worker', 'local_o', 'Halfway: parser done.', 'noop'))
+        self.owner_sets(ids['local_w'], 'archive')
+        self.assertEqual(self.cli('status-table', 'sync')['ctas'], 1)
+        todo = self.cli('sessions', 'todo')
+        self.assertEqual([(c['session'], c['cta'], c['type']) for c in todo['ctas']], [('local_w', 'archive', 'worker')])
+        self.assertEqual(self.cli('sessions', 'todo')['ctas'], [])                 # handed out: not again at once
+        done = self.cli('sessions', 'done', '--session', 'local_w', '--result', 'archived', '--state', 'archived')
+        self.assertIn('archive: archived', done['recorded'])
+        self.assertEqual(self.any.objects[ids['local_w']]['properties']['session_cta'], 'noop')   # reset at once
+        self.cli('status-table', 'sync')
+        w = self.any.objects[ids['local_w']]['properties']
+        self.assertEqual(w['session_state'], 'archived')
+        self.assertIn('archive: archived', w['session_action'])
+        self.assertEqual(self.cli('sessions', 'list')['ctas'], {})
+
+    def test_forbidden_protects_and_noop_cancels(self):
+        ids = self.sessions()
+        self.owner_sets(ids['local_w'], 'forbidden')
+        self.cli('status-table', 'sync')
+        self.assertEqual(self.cli('sessions', 'list')['protected'], ['local_w'])
+        self.assertEqual(self.cli('sessions', 'todo')['ctas'], [])                  # never acted on
+        self.owner_sets(ids['local_w'], 'delete')
+        self.cli('status-table', 'sync')
+        self.assertEqual(self.cli('sessions', 'list')['protected'], [])
+        self.assertEqual(list(self.cli('sessions', 'list')['ctas']), ['local_w'])
+        self.owner_sets(ids['local_w'], 'noop')                                    # changed their mind
+        self.cli('status-table', 'sync')
+        self.assertEqual(self.cli('sessions', 'list')['ctas'], {})
+
+    def test_an_orchestrator_with_active_workers_is_never_archived(self):
+        ids = self.sessions()
+        self.owner_sets(ids['local_o'], 'archive')
+        self.cli('status-table', 'sync')
+        todo = self.cli('sessions', 'todo')
+        self.assertEqual(todo['ctas'], [])
+        self.assertIn('refused', todo['refused'][0]['recorded'])
+        self.assertEqual(self.any.objects[ids['local_o']]['properties']['session_cta'], 'noop')
+        self.cli('sessions', 'observe', '--complete', stdin=json.dumps([{'sessionId': 'local_o', 'isArchived': False}]))
+        self.assertEqual(self.cli('sessions', 'list')['states'], {'local_o': 'active', 'local_w': 'deleted'})
+        self.owner_sets(ids['local_o'], 'archive')                                 # its worker is gone now
+        self.cli('status-table', 'sync')
+        self.assertEqual([c['session'] for c in self.cli('sessions', 'todo')['ctas']], ['local_o'])
+
+    def test_a_cta_on_an_issue_row_is_reset(self):
+        self.wire([issue('repo', 'MST-8')])
+        self.cli('status-table', 'sync')
+        object_id = cli.read_state()[st.STATE_KEY]['rows']['repo/MST-8']['id']
+        self.owner_sets(object_id, 'archive')
+        self.assertEqual(self.cli('status-table', 'sync')['ctas'], 0)
+        self.assertEqual(self.any.objects[object_id]['properties']['session_cta'], 'noop')
+
+    def test_the_hub_watcher_wakes_the_hub_chat_for_ctas_and_session_states(self):
+        ids = self.sessions()
+        with cli.state() as s:
+            s['sessions_observed'] = {'at': time.time(), 'asked': time.time()}
+        on = patch.object(cli, 'status_table_on', lambda: True)
+        with on, patch.object(st, 'EVERY', 0), patch.object(cli, 'LINEAR_EVERY', 0):
+            self.assertNotIn('hub_work', self.cli('watch', '--hub', '--max-ticks', '1', '--interval', '0'))
+            self.owner_sets(ids['local_w'], 'continue')
+            out = self.cli('watch', '--hub', '--max-ticks', '1', '--interval', '0')
+            self.assertEqual(out['hub_work'], {'ctas': 1, 'observe_sessions': False})
+            with cli.state() as s:
+                s['sessions_observed'] = {'at': 0, 'asked': 0}
+            self.cli('sessions', 'done', '--session', 'local_w', '--result', 'sent "Continue"')
+            out = self.cli('watch', '--hub', '--max-ticks', '1', '--interval', '0')
+            self.assertEqual(out['hub_work'], {'ctas': 0, 'observe_sessions': True})
+            self.assertTrue(self.cli('sessions', 'todo')['observe_sessions'])
+            self.assertNotIn('hub_work', self.cli('watch', '--hub', '--max-ticks', '1', '--interval', '0'))
 
     def test_stale_boards_are_mirrored_before_the_pass(self):
         self.wire([])

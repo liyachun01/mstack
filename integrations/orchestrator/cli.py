@@ -19,6 +19,7 @@ plan and who works; these commands do the deterministic parts:
   link     link a table to Linear with an entry of the owner's .secrets/linear.csv
   orchestrators  register|list: which orchestrator session serves a (project, scope)
   events   next|resolve|list|schema: the event hub queue (design 011)
+  sessions      todo|observe|done|list: the hub chat's side of the "My tasks" CTAs and session states (design 014)
   status-table  sync|show|rename: the owner's read-only "My tasks" table in Anytype, fed from the hub (design 014)
 """
 import argparse
@@ -40,6 +41,7 @@ import board as anyboard
 import config as intent
 import runners          # puts integrations/plugins on sys.path
 import registry
+import project_state
 import status_table
 import store
 import visibility
@@ -784,6 +786,17 @@ def status_table_pass(full=False, limit=None):
         return _status_table_pass(full, limit)
 
 
+def project_roles():
+    """Board name → its project's role registry (orchestrators, sub-orchestrators, helpers)."""
+    out = {}
+    for name, entry in read_state().get('tables', {}).items():
+        try:
+            out[name] = project_state.read(Path(entry['path']))['runtime'].get('roles', {})
+        except (ValueError, OSError, KeyError):
+            continue
+    return out
+
+
 def _status_table_pass(full, limit):
     out = {}
     for name, entry in sorted(read_state().get('tables', {}).items()):
@@ -794,9 +807,10 @@ def _status_table_pass(full, limit):
     known = current.get(status_table.STATE_KEY) or {}
     full = full or time.time() - known.get('last_full', 0) >= status_table.FULL_EVERY
     table = status_table.StatusTable(STATUS_CALL or anyboard.macctl)
-    rows = status_table.desired(issues, current, private_boards())
+    rows, takes, retire = status_table.desired(issues, current, private_boards(), roles=project_roles())
     try:
-        known, counts = table.sync(rows, known, full, limit)
+        known, counts = table.sync(rows, known, full, limit, takes, retire)
+        counts['ctas'] = take_ctas(table, known, rows)
     finally:
         saved = known if table.partial is None else table.partial
         with state() as s:
@@ -808,6 +822,137 @@ def _status_table_pass(full, limit):
                     mine['last_full'] = time.time()        # the rewrite carries on through the forgotten fingerprints
             s[status_table.STATE_KEY] = mine
     return {**out, 'rows': len(rows), 'full': full, **counts}
+
+
+SESSIONS_EVERY = 900      # seconds between session-state refreshes the hub chat is asked for
+
+
+def take_ctas(table, known, rows):
+    """Read the owner's CTAs (one search) into `known`: forbidden protects a session; continue/archive/delete wait
+    in known['ctas'] for the hub chat; a CTA set back to noop cancels a waiting one. A CTA on an issue row (no
+    session) is reset. Returns the number waiting."""
+    found = table.ctas(known)
+    by_id = {r['id']: key for key, r in known.get('rows', {}).items()}
+    waiting, protected = dict(known.get('ctas') or {}), set(known.get('protected') or [])
+    now_protected = set()
+    for object_id, cta in found.items():
+        key = by_id.get(object_id, '')
+        if not key.startswith('session/'):
+            table.set_cta(object_id)                      # issue rows have no session to act on
+            continue
+        session = key[len('session/'):]
+        if cta == 'forbidden':
+            now_protected.add(session)
+            waiting.pop(session, None)
+        elif cta in status_table.ACTIONS and (waiting.get(session) or {}).get('cta') != cta:
+            waiting[session] = {'cta': cta, 'object': object_id, 'at': time.time(), 'handed': 0,
+                                'name': (rows.get(key) or {}).get('name'),
+                                'type': ((rows.get(key) or {}).get('properties') or {}).get('session_type')}
+    for session in list(waiting):
+        if waiting[session]['object'] not in found:        # the owner set it back to noop
+            waiting.pop(session)
+    known['ctas'], known['protected'] = waiting, sorted(now_protected)
+    known['sessions'] = {key[len('session/'):]: {k: row['properties'].get(v) for k, v in
+                                                 (('type', 'session_type'), ('parent', 'session_parent'))}
+                         for key, row in rows.items() if key.startswith('session/')}
+    if protected != now_protected:
+        known['protected_changed'] = time.strftime('%Y-%m-%dT%H:%M:%S%z')
+    return len(waiting)
+
+
+def hub_work(peek=True):
+    """What only the hub chat can do for "My tasks": CTAs to carry out, and a fresh list of session states.
+    Without peek, the CTAs are marked handed out (again after hub.resend_minutes)."""
+    st = read_state()
+    known = st.get(status_table.STATE_KEY) or {}
+    resend = board_store().resend * 60
+    due = [dict(c, session=s) for s, c in sorted((known.get('ctas') or {}).items())
+           if time.time() - c.get('handed', 0) >= resend]
+    observe = bool(known.get('rows')) and time.time() - (st.get('sessions_observed') or {}).get('at', 0) >= SESSIONS_EVERY \
+        and time.time() - (st.get('sessions_observed') or {}).get('asked', 0) >= SESSIONS_EVERY
+    if not peek and (due or observe):
+        with state() as s:
+            mine = s.setdefault(status_table.STATE_KEY, {})
+            for c in due:
+                if c['session'] in (mine.get('ctas') or {}):
+                    mine['ctas'][c['session']]['handed'] = time.time()
+            if observe:
+                s.setdefault('sessions_observed', {})['asked'] = time.time()
+    return {'ctas': due, 'observe_sessions': observe}
+
+
+def cmd_sessions(args, b):
+    """The hub chat's side of "My tasks" (design 014): `todo` hands out CTAs and asks for session states;
+    `observe` takes list_sessions JSON on stdin; `done` records what a CTA did and resets it to noop."""
+    key = status_table.STATE_KEY
+    if args.action == 'list':
+        st = read_state()
+        known = st.get(key) or {}
+        return {'ctas': known.get('ctas') or {}, 'protected': known.get('protected') or [],
+                'observed': (st.get('sessions_observed') or {}).get('at'),
+                'states': {k: v.get('state') for k, v in (st.get('sessions_seen') or {}).items()}}
+    if args.action == 'todo':
+        work = hub_work(peek=False)
+        seen = read_state().get('sessions_seen') or {}
+        info = (read_state().get(key) or {}).get('sessions') or {}
+        ready, refused = [], []
+        for c in work['ctas']:
+            live = [w for w, i in info.items() if i.get('parent') == c['session']
+                    and (seen.get(w) or {}).get('state') not in ('archived', 'deleted')]
+            if c['type'] == 'orchestrator' and c['cta'] in ('archive', 'delete') and live:
+                refused.append(cta_done(c['session'], 'refused: this orchestrator still has %d active worker(s)' % len(live)))
+            else:
+                ready.append({k: c.get(k) for k in ('session', 'cta', 'name', 'type')})
+        return {'observe_sessions': work['observe_sessions'], 'ctas': ready, 'refused': refused,
+                'how': 'observe_sessions: list_sessions(include_archived: true, limit: 200), pipe the JSON to '
+                       '`mstack sessions observe --complete`. For each CTA: continue → SendMessage "Continue: the owner '
+                       'asked from My tasks." to the session; archive → archive_session; delete → delete_session (the app '
+                       'asks the owner). Then `mstack sessions done --session <id> --result "<what happened>"`.'}
+    if args.action == 'observe':
+        raw = json.loads(sys.stdin.read() or '[]')
+        listed = raw if isinstance(raw, list) else raw.get('sessions') or []
+        stamp = time.strftime('%Y-%m-%dT%H:%M:%S%z')
+        with state() as st:
+            seen = st.setdefault('sessions_seen', {})
+            for row in listed:
+                ident = row.get('sessionId') or row.get('id')
+                if ident:
+                    seen[ident] = {'state': 'archived' if row.get('isArchived') else 'active', 'at': stamp,
+                                   'title': (row.get('title') or '')[:120]}
+            listed_ids = {row.get('sessionId') or row.get('id') for row in listed}
+            gone = []
+            if args.complete:                       # a full listing: our sessions missing from it were deleted
+                for ident in (st.get(key) or {}).get('sessions') or {}:
+                    if ident not in listed_ids and ident != args.hub_session:
+                        seen[ident] = {**seen.get(ident, {}), 'state': 'deleted', 'at': stamp}
+                        gone.append(ident)
+            st['sessions_observed'] = {'at': time.time(), 'asked': time.time()}
+        return {'observed': len(listed), 'deleted': gone}
+    if args.action == 'done':
+        if not args.session or not args.result:
+            raise ValueError('done needs --session and --result')
+        return cta_done(args.session, args.result, args.state)
+    raise ValueError('unknown action')
+
+
+def cta_done(session, result, new_state=None):
+    """Record a CTA's outcome on the row (Last Action), reset its CTA to noop, and update the session's state."""
+    key = status_table.STATE_KEY
+    with state() as st:
+        known = st.setdefault(key, {})
+        cta = (known.get('ctas') or {}).pop(session, None)
+        text = '%s %s: %s' % (time.strftime('%Y-%m-%d %H:%M'), (cta or {}).get('cta') or 'action', result)
+        known.setdefault('actions', {})[session] = {'text': text[:300], 'at': time.time()}
+        if new_state:
+            st.setdefault('sessions_seen', {})[session] = {**(st.get('sessions_seen') or {}).get(session, {}),
+                                                           'state': new_state, 'at': time.strftime('%Y-%m-%dT%H:%M:%S%z')}
+        row = (known.get('rows') or {}).get('session/' + session)
+    if row:
+        try:
+            status_table.StatusTable(STATUS_CALL or anyboard.macctl).set_cta(row['id'])
+        except RuntimeError as error:
+            return {'session': session, 'recorded': text, 'reset_error': str(error)[:200]}
+    return {'session': session, 'recorded': text}
 
 
 def status_table_if_due(out):
@@ -1072,6 +1217,10 @@ def cmd_watch(args, b):
                 if waiting:
                     return {**result, 'events_waiting': len(waiting),
                             'next': 'run `mstack events next` and deliver each group with SendMessage'}
+                work = hub_work() if status_table_on() else {}
+                if work.get('ctas') or work.get('observe_sessions'):
+                    return {**result, 'hub_work': {'ctas': len(work['ctas']), 'observe_sessions': work['observe_sessions']},
+                            'next': 'run `mstack sessions todo` and do what it lists (My tasks CTAs, session states)'}
                 if waiting is not None and not (args.exit_on_start and result['started']):
                     result = {**result, 'needs_orchestrator': []}      # queued: delivered through `events next`
             if result['needs_orchestrator'] or (args.exit_on_start and result['started']):
@@ -1123,6 +1272,7 @@ def cmd_done(args, b):
         summary += '\n\n(Forced past the docs check; still missing: %s.)' % '; '.join(missing)
     tree = Path(run['tree']) if run.get('tree') else None      # adopted sessions may have no recorded worktree
     commits = finish(b, key, tree, run.get('runner') or 'worker', summary)
+    record_report(key, 'done', summary)
     return {'task': key, 'status': 'In Review', 'commits': commits, 'size': size, 'forced': bool(missing)}
 
 
@@ -1131,9 +1281,20 @@ def cmd_note(args, b):
     text = SECRET.sub('[redacted]', sys.stdin.read() if args.text == '-' else args.text).strip()
     who = {'in': '%s ← owner (session)', 'out': '%s → (session)', 'note': '%s'}[args.direction] % args.agent
     b.say(args.task, '%s: %s%s' % (who, text[:1800], doc_links(table_of_task(args.task), args.doc)))
+    record_report(run_key(args.task), 'note', text)
     if args.status:
         b.set(args.task, task_status=args.status)
     return {'task': args.task, 'posted': True, 'status': args.status}
+
+
+def record_report(key, kind, text):
+    """The worker's latest report on its run, for the session column of "My tasks" (design 014). A note doesn't
+    replace a done report unless it is newer work: the latest one always wins."""
+    with state() as s:
+        run = s.get('runs', {}).get(key)
+        if run is not None:
+            run['report'] = {'kind': kind, 'at': time.strftime('%Y-%m-%dT%H:%M:%S%z'),
+                             'text': SECRET.sub('[redacted]', text)[:2000]}
 
 
 def cmd_owner(args, b):
@@ -1524,6 +1685,13 @@ def parser():
     s.add_argument('--peek', action='store_true', help='next: show without marking sent')
     s.add_argument('--status', choices=['new', 'sent', 'resolved'], help='list: only this status')
     s.add_argument('--apply', action='store_true', help='schema: run it against mstack_orchestrator (owner-approved)')
+    s = sub.add_parser('sessions', help='todo|observe|done|list: the hub chat\'s side of the My tasks CTAs (design 014)')
+    s.add_argument('action', choices=['todo', 'observe', 'done', 'list'])
+    s.add_argument('--session', help='done: the session the CTA was for')
+    s.add_argument('--result', help='done: what happened (shown as Last Action)')
+    s.add_argument('--state', choices=['active', 'archived', 'deleted'], help='done: the session\'s state now')
+    s.add_argument('--complete', action='store_true', help='observe: the list is every session, archived included')
+    s.add_argument('--self', dest='hub_session', help='observe: the hub\'s own session id (list_sessions leaves it out)')
     s = sub.add_parser('status-table', help='sync|show|rename: the owner\'s read-only "My tasks" table in Anytype (design 014)')
     s.add_argument('action', choices=['sync', 'show', 'rename'])
     s.add_argument('--full', action='store_true', help='sync: rewrite every row (overwrites hand edits now)')

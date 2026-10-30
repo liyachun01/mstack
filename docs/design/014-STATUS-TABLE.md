@@ -1,14 +1,15 @@
-# 014 — "My tasks": a personal read-only status table in Anytype, fed from the hub (MST-40, 2026-10-30)
+# 014 — "My tasks": the owner's table of sessions and issues in Anytype, fed from the hub (MST-40, 2026-10-30)
 
-Status: built (MST-40). Code `integrations/orchestrator/status_table.py`, wired in `integrations/orchestrator/cli.py`,
-tests `integrations/orchestrator/tests/test_status_table.py`. Not yet run against the live Anytype app (see
-"Not done").
+Status: built and live (MST-40). Code `integrations/orchestrator/status_table.py`, wired in
+`integrations/orchestrator/cli.py` (`status-table`, `sessions`), tests `integrations/orchestrator/tests/test_status_table.py`,
+hub playbook `.agents/skills/mstack-hub`.
 
 ## Why
 
 Following Linear across three projects (mstack, {{mstack:CLIENT_REPO}}, {{mstack:CLIENT_C_SITE}}), several teams and private boards is awkward.
-The owner wants one table to glance at. It's a view, not a second board: the earlier Linear-synced Anytype tables
-(design 005/006) were dropped, and nothing flows back.
+The owner wants one table to glance at, and to tidy up sessions from it: every orchestrator and worker chat,
+what it last reported, whether it is still open, and a CTA to continue, archive or delete it. It isn't a second
+board: the earlier Linear-synced Anytype tables (design 005/006) were dropped, and nothing flows back to Linear.
 
 ## Shape
 
@@ -16,22 +17,28 @@ The owner wants one table to glance at. It's a view, not a second board: the ear
 Linear ──(mirror, every 5 min per board)──▶ Postgres mstack_orchestrator
                                             orchestrator.issues  +  board_state runs / task_tables / tables
                                                         │
-                                       hub watcher step (every minute, automatic)
-                                                        │ one way, upsert by <board>/<issue>
-                                                        ▼
+   + runs / related / orchestrators / roles     hub watcher step (every minute, automatic)
+   + sessions_seen (from the hub chat)                  │ upsert by session/<id> or <board>/<issue>
+                                                        ▼        ▲ CTA (owner-set), one search per pass
                  Anytype channel "mstack" (was mstack-taskboard-test) ▸ "My tasks" (type Agent Task)
+                                                        │ CTAs and "observe sessions" wake the hub chat
+                                                        ▼
+                     hub chat: list_sessions → `sessions observe`; archive / delete / continue → `sessions done`
 ```
 
 - **Source:** the hub's Postgres. `orchestrator.issues` (the local Linear issue table that `mstack board mirror`
   keeps: every issue assigned to or created by the owner, private boards included) gives title, state, URL and
-  last update. Board state adds the worker session and scope (`runs`, latest dispatch per issue; `task_tables`) and
-  which boards are private (`tables` → each project's `taskboard.private`). Before each pass, any Linear board whose
+  last update. Board state adds the sessions: workers (`runs`), earlier chats on an issue (`related`), orchestrators
+  (`orchestrators` and each project's role registry, which also lists helpers), their reports (`runs[…].report`,
+  written by `board done`/`note`) and their app state (`sessions_seen`, from the hub chat). `tables` says which boards
+  are private (each project's `taskboard.private`). Before each pass, any Linear board whose
   issue table is older than 5 minutes is mirrored first, so boards without a registered orchestrator (mstack itself)
   stay current too.
 - **Sink:** a new collection "My tasks" in the board's existing channel, whose rows are objects of the existing
   "Agent Task" type (`agent_task`, `infra/taskboard/schema.json`). The type is brought up to date on the first
-  pass: schema properties the channel lacks are created (new: `task_scope`, "Scope"), and the table's columns the
-  type doesn't carry yet are added to it. No second type. Everything goes through the same macOS bridge
+  pass: schema properties the channel lacks are created (new: `task_scope` and the `session_*` properties), and the
+  table's columns the type doesn't carry yet are added to it. No second type. A layout version (`LAYOUT`) upgrades
+  an existing table in place when columns change. Everything goes through the same macOS bridge
   (`anytype_taskboard.py api`) and key (`.mstack/secrets/anytype-taskboard-test.key`) as the old board: no new
   grant, space or service. The old per-project collections and their objects are never read or written.
   The collection gets a Table view (first), a Board view grouped by status, and a sidebar widget.
@@ -42,31 +49,64 @@ Linear ──(mirror, every 5 min per board)──▶ Postgres mstack_orchestrat
 - **What the table remembers:** board_state key `status_table` holds the collection and widget ids, the object id
   and a fingerprint per row, and the pass times. With `hub.store: postgres` it lives in Postgres like the rest.
 
+## Rows
+
+One row per session, keyed `session/<id>`:
+- **worker**: every session in `runs` (the newest run when a session was adopted for several issues), with its
+  issue's columns; earlier chats on an issue (`adopt --related`) too, reported as such — usually ones to archive;
+- **orchestrator**: every session in the hub registry or a project's role registry (orchestrator, sub-orchestrator);
+- **helper**: from the role registries, with its worker's issue.
+
+An issue nobody works on keeps an issue row (`<board>/<issue>`): every open issue, plus closed ones the board handled,
+that changed in the last 30 days, or that are already in the table. When an issue gets its first session, its issue
+row becomes that session's row (same object, no orphan); an issue row its sessions make redundant is removed. Other
+rows are never deleted: closed issues stay as Done/Canceled. On 2026-10-30: 165 rows, 22 of them sessions.
+
 ## Columns
 
 | Column (Agent Task property) | From |
 |---|---|
-| Name | `<issue> <title>` |
+| Name | `<issue> <title>`; `Orchestrator <project>/<scope>`; `Helper: …` |
 | Issue (`linear_identifier`) | Linear identifier (MST-40, IRO-104, YEL-407 …) |
 | Project (`task_project`) | board name (`mstack`, `{{mstack:CLIENT_REPO}}`, `{{mstack:CLIENT_C_FOLDER}}`) |
-| Scope (`task_scope`, new) | the orchestrator scope that dispatched or adopted it, else the scope that planned it, else the mirror's focus scopes |
-| Status (`task_status`) | closed in Linear → Done / Canceled; else the board's phase for managed issues (Awaiting Approval, In Review …); else the Linear state if it is one of Backlog, Todo, In Progress, In Review; else its state type |
-| Worker session (`agent_session`) | the `local_…` id of the latest worker session on it |
+| Scope (`task_scope`) | the session's orchestrator scope, else the scope that planned the issue, else the mirror's focus scopes |
+| Status (`task_status`) | closed in Linear → Done / Canceled; else the board's phase for managed issues (Awaiting Approval, In Review …); else the Linear state if it is one of ours; else its state type |
+| Link (`linear_url`) | the Linear URL, only for public boards. Private boards ({{mstack:CLIENT_REPO}}, {{mstack:CLIENT_C_SITE}}) and unreadable configs get none |
 | Last update (`linear_updated_at`) | Linear `updatedAt` |
-| Link (`linear_url`) | the Linear URL, only for public boards. Private boards ({{mstack:CLIENT_REPO}}, {{mstack:CLIENT_C_SITE}}) and boards whose config can't be read get none |
+| Session (`agent_session`) | the `local_…` id |
+| Session Type (`session_type`) | orchestrator, worker, helper |
+| Agent (`session_agent`) | claude, codex, deepseek, other (from the run's runner; orchestrators and helpers are Claude sessions) |
+| Parent Session (`session_parent`) | the orchestrator a worker or helper reports to: its scope's, else the project's; blank for orchestrators |
+| Session State (`session_state`) | active, archived, deleted, from the hub chat's last look (blank until then) |
+| Session Report (`session_report`) | the latest `board done` summary or `board note` (600 characters); free text |
+| CTA (`session_cta`) | set by the owner: noop (default), continue, archive, delete, forbidden |
+| Last Action (`session_action`) | what the last CTA did, with its time |
 
-## Which rows
+## Written by the hub, except CTA
 
-Every open issue in the issue table. Closed issues are shown when the board handled them (managed or had a worker),
-when they changed in the last 30 days, or when they are already in the table. Rows are never deleted: a closed issue
-stays as Done/Canceled, and an issue that leaves the source keeps its last values. On the live data of 2026-10-30
-that is 131 of 141 issues.
+Each pass skips rows whose fingerprint hasn't changed. Once an hour, and on `mstack status-table sync --full`, every
+row is written again, so a hand edit in any other column lasts at most an hour. CTA is never written by a pass:
+it's the owner's column, and only the hub resets it (to noop, after acting).
 
-## Read-only
+## CTAs
 
-One way only. Each pass skips rows whose fingerprint hasn't changed (no Anytype calls at all when nothing changed).
-Once an hour, and on `mstack status-table sync --full`, every row is written again, so a hand edit in Anytype lasts
-at most an hour. Each row's body says it is written by the hub.
+- **Read:** after each pass, one search over the Agent Task type with `fields: [session_cta]` (paged, ~2 calls)
+  returns every row's CTA. A CTA on an issue row (no session) is reset to noop.
+- **forbidden:** the session is protected (`status_table.protected`): never archived, deleted or messaged through
+  the table, and it never shows up in `sessions todo`. Setting the CTA back to noop lifts it.
+- **continue, archive, delete:** wait in `status_table.ctas`. The hub watcher exits with `hub_work` when one waits
+  (or when session states are older than 15 minutes), which wakes the hub chat. `mstack sessions todo` hands them
+  out (again after `hub.resend_minutes` if not done) and refuses archive/delete of an orchestrator that still has
+  active workers (recorded as the Last Action, CTA reset). The hub chat carries them out with its session tools —
+  continue: SendMessage "Continue: the owner asked from My tasks."; archive: archive_session; delete:
+  delete_session, which the app always confirms with the owner — then reports with
+  `mstack sessions done --session <id> --result "…" [--state archived|deleted]`. That resets the CTA to noop at once
+  and the next pass shows the Last Action and the new state. Setting a waiting CTA back to noop cancels it.
+- **Session states:** the hub chat runs list_sessions (`include_archived`, `limit: 200`) and pipes it to
+  `mstack sessions observe --complete --self <hub id>`. Listed → active or archived; with `--complete`, a row's
+  session missing from the list → deleted. list_sessions only shows sessions on the hub's own connection, which is
+  where mstack's sessions run.
+- `mstack sessions list` shows waiting CTAs, protected sessions and the last states.
 
 ## Running it
 
@@ -92,7 +132,8 @@ Nobody runs it by hand: the table follows the work by itself.
 
 ## Not in scope
 
-Writing back to Postgres or Linear, per-project tables, new Anytype spaces or grants.
+Writing back to Linear, per-project tables, new Anytype spaces or grants; CTAs carried out without the hub chat
+(Windmill can't reach Claude Desktop sessions).
 
 ## Live setup (2026-10-30)
 
@@ -108,6 +149,12 @@ The table's state (`status_table` in board_state) is in Postgres. Until this bra
 watcher has older code and doesn't update the table; after merge it reloads itself and takes over.
 The live API returns a type's properties under `type_settings.property_definitions`; the fake in the tests now
 returns that shape.
+
+Sessions and CTAs (same day): the 7 `session_*` properties were created and added to the type and the views; 13
+issue rows became their worker's session rows and 9 session rows were added (165 rows, 22 sessions, nothing removed);
+every row's CTA set to noop. A first look at the sessions (52 listed) gave every session row a state except two old
+"obsolete" chats, left blank until the hub's first `--complete` look. Reports fill in from each worker's next
+`board done`/`note`; earlier reports live only on the issues.
 
 ## Questions resolved
 
@@ -126,5 +173,8 @@ returns that shape.
   key without a new route and a copy of the key into Windmill. That counts as a grant change under the setup guard,
   so it's a later option for the owner, not part of MST-40. The step is a plain function
   (`status_table_pass`), so a Windmill job could call the same code if that is approved.
+- **Sessions and actions (owner, 2026-10-30):** one row per session (orchestrators, workers, helpers), issue rows
+  only for issues without one; the hub chat carries out CTAs, since only a Claude chat can archive, delete or message
+  sessions; forbidden = protected; the report column is the latest `board done`/`note` text.
 - **"Overwritten on the next pass"** became "within the hour": rewriting all ~130 rows every minute through the
   rate-limited bridge is too heavy, so changed rows go at once and everything is rewritten hourly.
