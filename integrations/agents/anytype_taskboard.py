@@ -221,8 +221,12 @@ def main(argv):
         sub = argv[3].split("?", 1)[0].lstrip("/")
         if sub.startswith("v2") or ".." in sub.split("/"):
             sys.exit("Channel-relative path required")
-        print(json.dumps({"space_id": board.space,
-                          "body": board.call(argv[2], sub, json.loads(body) if body else None, query)}))
+        data = json.loads(body) if body else None
+        if sub == ".":          # the granted channel itself (e.g. PATCH {"name": …} renames it)
+            out = http(argv[2], "/v2/spaces/" + board.space, board.key, data, query)
+        else:
+            out = board.call(argv[2], sub, data, query)
+        print(json.dumps({"space_id": board.space, "body": out}))
     elif cmd == "capture":
         capture(Board(argv[1]), *argv[2:6])
     else:

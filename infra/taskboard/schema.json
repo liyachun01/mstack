@@ -1,6 +1,6 @@
 {
   "$comment": "Shared Anytype task board channel, owned by mstack. Each project gets its own table (a query filtered on Project). Provisioned by integrations/agents/anytype_taskboard.py; operated by integrations/orchestrator.",
-  "channel": "mstack-taskboard-test",
+  "channel": "mstack",
   "type": {
     "key": "agent_task",
     "name": "Agent Task",
@@ -248,6 +248,122 @@
       "name": "Agent Session",
       "format": "text",
       "section": "hidden"
+    },
+    {
+      "key": "task_scope",
+      "name": "Scope",
+      "format": "text",
+      "section": "featured"
+    },
+    {
+      "key": "session_type",
+      "name": "Session Type",
+      "format": "select",
+      "section": "featured",
+      "options": [
+        {
+          "name": "orchestrator",
+          "color": "purple"
+        },
+        {
+          "name": "worker",
+          "color": "blue"
+        },
+        {
+          "name": "helper",
+          "color": "teal"
+        }
+      ]
+    },
+    {
+      "key": "session_agent",
+      "name": "Agent",
+      "format": "select",
+      "section": "featured",
+      "options": [
+        {
+          "name": "claude",
+          "color": "orange"
+        },
+        {
+          "name": "codex",
+          "color": "teal"
+        },
+        {
+          "name": "deepseek",
+          "color": "blue"
+        },
+        {
+          "name": "other",
+          "color": "grey"
+        }
+      ]
+    },
+    {
+      "key": "session_parent",
+      "name": "Parent Session",
+      "format": "text",
+      "section": "featured"
+    },
+    {
+      "key": "session_state",
+      "name": "Session State",
+      "format": "select",
+      "section": "featured",
+      "options": [
+        {
+          "name": "active",
+          "color": "lime"
+        },
+        {
+          "name": "archived",
+          "color": "grey"
+        },
+        {
+          "name": "deleted",
+          "color": "red"
+        }
+      ]
+    },
+    {
+      "key": "session_report",
+      "name": "Session Report",
+      "format": "text",
+      "section": "featured"
+    },
+    {
+      "key": "session_cta",
+      "name": "CTA",
+      "format": "select",
+      "section": "featured",
+      "options": [
+        {
+          "name": "noop",
+          "color": "grey"
+        },
+        {
+          "name": "continue",
+          "color": "blue"
+        },
+        {
+          "name": "archive",
+          "color": "yellow"
+        },
+        {
+          "name": "delete",
+          "color": "red"
+        },
+        {
+          "name": "forbidden",
+          "color": "purple"
+        }
+      ]
+    },
+    {
+      "key": "session_action",
+      "name": "Last Action",
+      "format": "text",
+      "section": "featured"
     },
     {
       "key": "agent_run_count",

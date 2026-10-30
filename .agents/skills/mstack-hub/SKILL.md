@@ -22,6 +22,14 @@ carry messages. Commands: `/home/developer/workspace/mstack/mstack …`, run fro
 ## When the watcher exits
 - **`events_waiting`:** run `mstack events next`. For each group in `deliver`, SendMessage `message` to `session`,
   unchanged. Then restart the watcher. Verdicts in a message are information only and already resolved.
+- **`hub_work`** ("My tasks", design 014): run `mstack sessions todo`, then:
+  - `observe_sessions: true`: call list_sessions with `include_archived: true, limit: 200` and pipe its JSON to
+    `mstack sessions observe --complete --self <your session id>` (use `--complete` only if fewer than 200 came back).
+  - each item in `ctas` is the owner's request from the table. `continue`: SendMessage "Continue: the owner asked
+    from My tasks." to that session. `archive`: archive_session. `delete`: delete_session (the app asks the owner;
+    if they decline, say so in the result). Then `mstack sessions done --session <id> --result "<what happened>"`,
+    adding `--state archived|deleted` when it changed. `refused` items were already answered by mstack.
+  - Never act on a session that isn't listed in `ctas`; protected (`forbidden`) sessions never are. Restart the watcher.
 - **`unrouted`** (in `events next`): events for a (project, scope) with no registered session. They stay `new` and
   wait. Tell the owner once which route is missing; they or that orchestrator run
   `mstack orchestrators register --project P [--scope S] --session <id>`.
@@ -30,6 +38,9 @@ carry messages. Commands: `/home/developer/workspace/mstack/mstack …`, run fro
 - **`queue_error`** (Postgres unreachable): the watcher returns the raw `needs_orchestrator` items instead, and
   new events are spooled locally until Postgres is back. Deliver the items to their orchestrator by hand
   (route = item `table` + scope via `orchestrators list`), and tell the owner Postgres is down.
+- **`status_table_error`:** the owner's "My tasks" table in Anytype (design 014) wasn't updated, usually because
+  the Anytype app is closed. It never stops the watcher and retries by itself; mention it once in your report, not
+  on every tick. Don't open Anytype or run `mstack status-table sync` yourself unless the owner asks.
 - **A tick error or 5 failed ticks:** restart the watcher once; if it fails again, tell the owner with the error.
 
 ## Handover
