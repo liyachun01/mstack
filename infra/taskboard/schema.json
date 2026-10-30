@@ -233,6 +233,12 @@
       "format": "text"
     },
     {
+      "key": "source_url",
+      "name": "Source Link",
+      "format": "url",
+      "section": "featured"
+    },
+    {
       "key": "linear_url",
       "name": "Linear URL",
       "format": "url"

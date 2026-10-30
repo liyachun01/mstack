@@ -7,7 +7,8 @@ observations, and each project's role registry. Sink: one collection "My tasks" 
 
 Rows: one per session (orchestrator, worker, helper), keyed `session/<id>`; worker and helper rows also carry their
 issue. An issue with no session keeps an issue row, keyed `<board>/<issue>`. Every row says where it comes from
-(`item_source`: `<workspace>/<team>`, `session` or `hub`) and its scope (`—` when none applies). An issue's Linear
+(`item_source`: `<workspace>/<team>`, `session` or `hub`) with a link to it (`source_url`: a session's chat link,
+else the Linear issue URL) and its scope (`—` when none applies). An issue's Linear
 parent is shown as `parent_issue` and as the "Parent Task" relation to the parent's row; a shown issue's parent is
 always shown too.
 
@@ -26,7 +27,7 @@ from board import SCHEMA
 
 STATE_KEY = 'status_table'
 COLLECTION = 'My tasks'
-LAYOUT = 3                   # bump when properties, type fields or views change: an existing table is upgraded
+LAYOUT = 4                   # bump when properties, type fields or views change: an existing table is upgraded
 EVERY = 60                   # seconds between passes inside the hub watcher (no Anytype writes when nothing changed)
 BATCH = 40                   # rows written per watcher pass at most
 BACKLOG_EVERY = 15           # seconds before the next pass while rows are still waiting
@@ -35,12 +36,12 @@ RECENT_DAYS = 30             # closed issues the board never touched are shown t
 TYPE = SCHEMA['type']        # the existing Agent Task type (agent_task), reused
 SPEC = {p['key']: p for p in SCHEMA['properties']}
 STATUSES = [o['name'] for o in SPEC['task_status']['options']]
-# Table columns, in order: issue (id, parent, project, source, scope, status, link, last update), then the session.
-COLUMNS = ['linear_identifier', 'parent_issue', 'task_parent', 'task_project', 'item_source', 'task_scope', 'task_status',
-           'linear_url', 'linear_updated_at', 'agent_session', 'session_type', 'session_agent', 'session_parent', 'session_state', 'session_report',
+# Table columns, in order: issue (id, parent, project, source, source link, scope, status, link, last update), then the session.
+COLUMNS = ['linear_identifier', 'parent_issue', 'task_parent', 'task_project', 'item_source', 'source_url', 'task_scope',
+           'task_status', 'linear_url', 'linear_updated_at', 'agent_session', 'session_type', 'session_agent', 'session_parent', 'session_state', 'session_report',
            'session_cta', 'session_action']
 WRITTEN = [c for c in COLUMNS if c != 'session_cta']        # the sync never writes the owner's CTA
-CLEARABLE = ('task_scope', 'parent_issue', 'task_parent', 'linear_url', 'agent_session', 'session_parent',
+CLEARABLE = ('task_scope', 'parent_issue', 'task_parent', 'linear_url', 'source_url', 'agent_session', 'session_parent',
              'session_report', 'session_action')
 NO_SCOPE = '—'
 CTAS = [o['name'] for o in SPEC['session_cta']['options']]   # noop, continue, archive, delete, forbidden
@@ -49,6 +50,7 @@ OF_TYPE = {'backlog': 'Backlog', 'triage': 'Backlog', 'unstarted': 'Todo', 'star
            'completed': 'Done', 'canceled': 'Canceled', 'duplicate': 'Canceled'}
 CLOSED = ('completed', 'canceled', 'duplicate')
 REPORT_CHARS = 600
+CHAT_LINK = 'claude://claude.ai/epitaxy/%s'   # opens a session's chat in Claude Desktop, when the hub saw no link
 TITLED = re.compile(r'([A-Z][A-Z0-9]*-\d+)\b')  # a session titled "IRO-84: …" or "IRO-84 storage …" works on IRO-84
 
 ISSUES_SQL = ("SELECT row_to_json(i) FROM (SELECT board, identifier, team, app, parent, title, state, state_type, "
@@ -195,7 +197,8 @@ def desired(issues, board_state, sources, now=None, roles=None, boards=None):
         state = (seen.get(session) or {}).get('state')
         if state not in ('archived', 'deleted'):
             state = 'idle' if state == 'idle' and props.get('task_status') != 'In Review' else 'active'
-        props = {**props, 'agent_session': session, 'session_type': kind, 'session_agent': agent,
+        props = {**props, 'source_url': (seen.get(session) or {}).get('link') or CHAT_LINK % session,
+                 'agent_session': session, 'session_type': kind, 'session_agent': agent,
                  'session_parent': parent, 'session_state': state, 'session_report': short(report),
                  'session_action': (actions.get(session) or {}).get('text')}
         rows['session/' + session] = {'name': name, 'properties': {k: v for k, v in props.items() if v not in (None, '')}}
@@ -292,6 +295,7 @@ def desired(issues, board_state, sources, now=None, roles=None, boards=None):
         issue = by_issue[key]
         props, name = issue_props(issue['board'], issue['identifier'])
         props['task_scope'] = scope_of(issue['board'], issue['identifier'])
+        props['source_url'] = issue.get('url')
         rows[key] = {'name': name, 'properties': {k: v for k, v in props.items() if v not in (None, '')}}
     # Each issue's row (its own, else its newest worker's, else a helper's), so a child can point at its parent's.
     row_of = {k: k for k in rows if not k.startswith('session/')}

@@ -124,7 +124,7 @@ class Rows(unittest.TestCase):
         self.assertEqual(w['name'], 'MST-40 Title of MST-40')
         self.assertEqual(w['properties'], {
             'linear_identifier': 'MST-40', 'task_project': 'mstack', 'task_status': 'In Review',
-            'item_source': 'yyyymmdd/MST', 'task_scope': '—',
+            'item_source': 'yyyymmdd/MST', 'source_url': 'claude://claude.ai/epitaxy/local_w', 'task_scope': '—',
             'linear_updated_at': '2026-10-30T01:00:00Z', 'linear_url': 'https://linear.app/x/issue/MST-40',
             'agent_session': 'local_w', 'session_type': 'worker', 'session_agent': 'claude',
             'session_parent': 'local_morch', 'session_state': 'active', 'session_report': 'Built it. Tests pass.'})
@@ -154,7 +154,13 @@ class Rows(unittest.TestCase):
         self.assertEqual(rows['{{mstack:CLIENT_REPO}}/CAN-9']['properties'],               # an issue nobody works on yet
                          {'linear_identifier': 'CAN-9', 'task_project': '{{mstack:CLIENT_REPO}}', 'task_scope': 'staff-web',
                           'item_source': '{{mstack:CLIENT_ORG_B}}/CAN', 'task_status': 'Todo', 'linear_updated_at': '2026-10-30T01:00:00Z',
-                          'linear_url': 'https://linear.app/x/issue/CAN-9'})
+                          'linear_url': 'https://linear.app/x/issue/CAN-9', 'source_url': 'https://linear.app/x/issue/CAN-9'})
+
+    def test_a_session_row_links_to_its_chat_as_listed(self):
+        seen = dict(self.STATE, sessions_seen={'local_w': {'state': 'active', 'link': 'claude://claude.ai/epitaxy/w-1'}})
+        rows, _, _ = self.rows(seen)
+        self.assertEqual(rows['session/local_w']['properties']['source_url'], 'claude://claude.ai/epitaxy/w-1')
+        self.assertEqual(rows['session/local_api']['properties']['source_url'], 'claude://claude.ai/epitaxy/local_api')
 
     def test_rows_of_retired_or_unregistered_boards_are_left_out_and_retired(self):
         state = dict(self.STATE, runs={**self.STATE['runs'], 't5': {'table': 'test-market', 'issue': 'TM-1',
@@ -244,6 +250,8 @@ class Rows(unittest.TestCase):
         for key, row in rows.items():
             p = row['properties']
             self.assertTrue(p.get('item_source') and p.get('task_scope'), key)          # every row
+            self.assertEqual(p['source_url'], 'claude://claude.ai/epitaxy/' + p['agent_session']
+                             if key.startswith('session/') else p['linear_url'], key)
             if p.get('session_type') == 'orchestrator':
                 continue
             if p.get('linear_identifier') or not key.startswith('session/'):
@@ -509,6 +517,9 @@ class HubStep(unittest.TestCase):
         self.assertEqual(self.cli('sessions', 'list')['states'], {'local_o': 'idle', 'local_w': 'deleted'})
         self.cli('sessions', 'observe', stdin=json.dumps([{'sessionId': 'local_o', 'isArchived': False, 'isRunning': True}]))
         self.assertEqual(self.cli('sessions', 'list')['states'], {'local_o': 'active', 'local_w': 'deleted'})
+        self.cli('sessions', 'observe', stdin=json.dumps([{'sessionId': 'local_o', 'link': 'claude://claude.ai/epitaxy/o'}]))
+        self.cli('sessions', 'observe', stdin=json.dumps([{'sessionId': 'local_o', 'isRunning': True}]))   # link kept
+        self.assertEqual(cli.read_state()['sessions_seen']['local_o']['link'], 'claude://claude.ai/epitaxy/o')
         self.owner_sets(ids['local_o'], 'archive')                                 # its worker is gone now
         self.cli('status-table', 'sync')
         self.assertEqual([c['session'] for c in self.cli('sessions', 'todo')['ctas']], ['local_o'])
