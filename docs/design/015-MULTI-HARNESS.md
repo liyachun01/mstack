@@ -1,7 +1,10 @@
 # 015 — Multi-harness workers: DeepSeek Harness first, OpenCode second (MST-54, 2026-10-30)
 
-Status: investigation and plan (MST-54). Phase-1 step 1 is done: dsh 0.2.0-rc.2 headless qualified on a throwaway
-repo (MST-56, see [Phase-1 qualification](#phase-1-qualification-mst-56-2026-10-30)). Every other setup step below
+Status: investigation and plan (MST-54). Phase-1 steps 1–3 are done: dsh 0.2.0-rc.2 headless qualified on a throwaway
+repo (MST-56, see [Phase-1 qualification](#phase-1-qualification-mst-56-2026-10-30)), the mstack side built (MST-57)
+and wired to the real dsh through a launcher (MST-62, see [Real launcher](#phase-1-step-4-real-launcher-mst-62-2026-10-30)).
+The first real issue run (step 4) waits for the owner's 👍; since 2026-10-30 DeepSeek Harness is lower priority
+(orchestrators move to a dedicated host app, MST-66; OpenCode is dropped). Every other setup step below
 is still a proposal that goes through `.agents/skills/mcp-stack-setup-guard/SKILL.md` with the owner's explicit OK.
 
 ## Goal
@@ -232,17 +235,73 @@ copied from that run.
 
 ### Still open
 
-- **Launch environment.** The manifest calls `dsh` on PATH. The qualified launch (`env -i`, `DSH_HOME` =
-  `state/worker-home`, `DEEPSEEK_API_KEY` from `.secrets/deepseek-worker.key`, telemetry off, the
-  `worker/worker.cordis.yml` overlay) needs a headless launcher (`deepseek_launch.py` or a wrapper); then only
-  `command[0]` changes. Whether dsh takes two `--patch` flags (worker overlay + mstack's MCP patch) is unverified.
-- **Stdio MCP rows** in the patch (`transport: stdio`, `command`, `args`) were not part of the qualification.
+- ~~**Launch environment.**~~ Done in MST-62 (`dsh_launch.py`, below). Two `--patch` flags compose (offline check).
+- **Stdio MCP rows** in the patch (`transport: stdio`, `command`, `args`) compose in `--dump-config`; that a server
+  actually starts was not tested (no model run yet).
 - **User-level `~/.agents/skills`** leak into workers (MST-56); a clean `HOME` is a later choice.
 - The hub chat can't act on "My tasks" CTAs for CLI sessions yet (continue = `forward`, archive = `stop` could be
   wired), and the run-log link is a `file://` path on the VM.
 
 Out of scope for phase 1: ChatGPT/Codex workers (the `codex` manifest exists; the CLI is uninstalled), the
 orchestrator itself on DeepSeek, and any UI install.
+
+## Phase-1 step 4: real launcher (MST-62, 2026-10-30)
+
+Code and tests only; **no model call**. The first real issue run waits for the owner's 👍 on MST-62's ask.
+
+### Launcher
+
+[`integrations/agents/dsh_launch.py`](../../integrations/agents/dsh_launch.py) starts dsh with the MST-56 settings.
+The `dsh` manifest now calls it (`{python} {stack}/integrations/agents/dsh_launch.py --profile headless {mcp} {resume}
+--json {brief}`; `registry.render` gained `{stack}`), so `cli.py work`, resume and stop are unchanged.
+
+| Piece | Value |
+|---|---|
+| Program | Pinned Node 24.19.0 + `@deepseek-ai/dsh` 0.2.0-rc.2 `lib/bin.js`, resolved from the existing mise installs (`deepseek_launch.installed_tool_root`); refuses another dsh version. Never installs or updates. |
+| Environment | Built from nothing: `PATH` (pinned Node + `/usr/bin:/bin`), `HOME`, `LANG`, `DSH_HOME`, `DSH_TELEMETRY_DISABLED=1`, `DSH_TELEMETRY_MODE=DISABLED`, `NODE_DISABLE_COMPILE_CACHE=1`, `DEEPSEEK_API_KEY`, plus the caller's `MSTACK_*` task binding. Nothing else of the caller's (Linear keys etc.) reaches dsh. |
+| State root | The **main** mstack checkout (`git rev-parse --git-common-dir`), also when the code runs from a task worktree, since `.secrets/` and `infra/.../state/` are ignored and exist only there. |
+| `DSH_HOME` | `<main>/infra/harnesses/deepseek/state/worker-home` (must exist; never `~/.dsh`). |
+| Key | `<main>/.secrets/deepseek-worker.key`; refused unless a regular 0600 file holding an `sk-` key. |
+| Patches | `infra/harnesses/deepseek/worker/worker.cordis.yml` first, then the caller's (mstack's per-run MCP patch). |
+| Profiles | `headless` (workers), `acp` and `sdk` (long-lived agents over stdio, the base for MST-64-style use). |
+| Start | `exec` (the launcher process becomes dsh), so `board stop`'s SIGTERM to the process group reaches dsh directly. |
+
+Modes:
+
+- `--dry-run` prints the exact argv, environment (key as `<redacted>`) and cwd; starts nothing.
+- `--check` runs dsh's own `--dump-config` on the composed profile (no model call) and fails unless
+  `session-log-deepseek` is `enabled: false` and `tool-web`, `web`, `web-search-deepseek`, `web-fetch-http` are
+  disabled. It also lists the `mstack-*` MCP rows found.
+
+Result on this VM (2026-10-30): `--check` passes with the overlay alone, and with the overlay plus a generated
+`dsh-mcp.patch.yml` (2 patches, row `mstack-headroom` present), which answers "does dsh take two `--patch` flags".
+`worker-home` mtimes were unchanged afterwards.
+
+### Tests
+
+- `integrations/agents/tests/test_dsh_launch.py`: clean env and patch order, `acp` profile, dry-run hides the key,
+  refusal of a loose/missing key and a missing `DSH_HOME`, state root = main checkout.
+- The fake-dsh orchestrator tests (MST-57) now run **through the launcher**: `MSTACK_DSH_FAKE` replaces only
+  `node bin.js`, `MSTACK_DSH_STATE_ROOT` points at a synthetic key and home. They also check the environment dsh got.
+- `test_registry`: the manifest renders to the launcher.
+
+### First real run (proposed, not run)
+
+Posted on MST-62 with `board ask`: candidates MST-48 (recommended; `done --doc` relative path), MST-37 (retry
+`IncompleteRead`; 35/36 duplicates), MST-63 (`status_lag` when already equal). Before it, this branch is merged
+(the board state is per checkout, so `work` must run from main), `dsh` is added to `taskboard.workers`, and the
+chosen issue's plan names `Model: DeepSeek V4 Flash (dsh headless)`. Command: `./mstack board dispatch --project
+mstack --runner dsh`. Cap: Flash only, under US$1, enforced by `board stop` at 3M input tokens (cached + uncached),
+100k output tokens or 45 minutes; one run, no automatic retry. The result, a receipt under `runtime/` and the
+`mstack-models` "available" line follow that run.
+
+### Questions resolved (MST-62)
+
+- Wrapper or manifest change? A launcher; the manifest only swaps `command[0]`, so long-lived agents reuse it.
+- Two `--patch` flags? Yes, they compose (`--check`).
+- Run the first real issue from the task branch? No: the board state lives in the checkout, so merge first.
+- Priority (owner, 2026-10-30): DeepSeek Harness is lower priority; finish launcher + dry-run + tests, merge as is,
+  and run the real issue only after the owner's 👍.
 
 ## Phase-1 qualification (MST-56, 2026-10-30)
 
