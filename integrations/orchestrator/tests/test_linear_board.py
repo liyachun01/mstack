@@ -92,7 +92,8 @@ class FakeLinear:
         i['assignee'] = {'id': assignee}
         n = {'id': 'n%d' % len(self.notes), 'type': kind, 'createdAt': at, 'actor': {'id': author[0], 'name': author[1]},
              'issue': {'id': issue, 'identifier': i['identifier'], 'title': i['title'], 'url': i['url'],
-                       'team': {'key': 'MST'}, 'assignee': i['assignee']}, 'comment': None}
+                       'description': i['description'], 'priority': i['priority'], 'parent': None,
+                       'children': {'nodes': []}, 'team': {'key': 'MST'}, 'assignee': i['assignee']}, 'comment': None}
         if body is not None:
             c = self.comment(issue, body)
             n['comment'] = {'id': c['id'] + issue[-4:], 'body': body, 'createdAt': at,
@@ -364,7 +365,15 @@ class LinearBoardFlow(unittest.TestCase):
         tick = self.tick()
         need = tick['needs_orchestrator']
         self.assertEqual([(n['kind'], n['issue']) for n in need], [('new_issue', 'MST-951')])
-        self.assertIn('board propose', need[0]['do'])
+        self.assertIn('board propose', need[0]['do'])                               # complete: plan, never start
+        self.assertIn('Nothing starts unless', need[0]['do'])
+        self.assertEqual((need[0]['triage']['priority'], need[0]['triage']['missing']), ('Medium', []))
+        thin = self.old_issue(n=952, description='fix it')
+        self.fake.issues[thin]['priority'] = 0
+        self.fake.notify('issueAssignedToYou', thin)
+        gate = self.tick()['needs_orchestrator'][0]                                  # triage gate (owner, 2026-10-30)
+        self.assertEqual(gate['triage']['missing'], ['priority', 'scope/description'])
+        self.assertIn('do not plan or start it yet', gate['do'])
         self.assertEqual(self.tick()['needs_orchestrator'], [])                     # deduped per assignment
         self.assertEqual(self.cli('status', '--project', 'repo')['tasks'][-1]['status'], 'Backlog')   # nothing started
         self.fake.notify('issueAssignedToYou', new, assignee='someone-else')       # reassigned away: nothing

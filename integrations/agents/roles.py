@@ -117,7 +117,10 @@ STATUS_RULE = ('**Linear status at every stage** (owner, 2026-10-30; private boa
                'pushes it, so use its commands rather than editing Linear. Approved or building → In Progress; landed but '
                'not on Preview → In Progress; live on Preview for the consumer (`merged --verify "…"`) → In Review; Done '
                'only where the scope allows it (`never_done` scopes leave it to the consumer). Delayed or blocked: keep '
-               'the status and note why. A `status_lag` event means Linear lags the board: run its `do` line.')
+               'the status and note why. A `status_lag` event means Linear lags the board: run its `do` line. '
+               '**Triage gate:** an issue from Linear needs a priority, an assignee and a description of what and '
+               'where; read its hierarchy first, then only plan, in priority order. Nothing starts unless the owner, '
+               'or the product owner in an issue comment, asks for it.')
 READ_REPLIES = ('Owner replies with content are yours to read, not matched by wording: record your reading with '
                 '`%s --task <ISSUE> approve|reject|changes`. An OK for a side action is not plan approval.')
 

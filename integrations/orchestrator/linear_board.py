@@ -94,7 +94,8 @@ ME = '''query { viewer { id } }'''
 TRIGGER_TYPES = {'issueAssignedToYou': 'new_issue', 'issueCommentMention': 'mention', 'issueMention': 'mention'}
 NOTIFY = '''query($since: DateTimeOrDuration, $types: [String!]) { viewer { id }
   notifications(first: 100, filter: {createdAt: {gt: $since}, type: {in: $types}}) { nodes { id type createdAt
-    ... on IssueNotification { issue { id identifier title url team { key } assignee { id } }
+    ... on IssueNotification { issue { id identifier title url description priority team { key } assignee { id name }
+        parent { identifier } children(first: 20) { nodes { identifier } } }
       comment { id body createdAt user { id name } } actor { id name } } } } }'''
 CREATE = '''mutation($input: IssueCreateInput!) { issueCreate(input: $input) { issue { id identifier } } }'''
 UPDATE = '''mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }'''
@@ -417,7 +418,8 @@ class LinearBoard:
                 if not (self.all_issues or not (self.focus or self.exclude) or self.in_focus(issue['identifier'], link)):
                     continue
                 item = {'kind': kind, 'id': n['id'], 'task': issue['id'], 'issue': issue['identifier'],
-                        'title': issue.get('title'), 'url': issue.get('url'), 'at': n['createdAt'], 'app': link.app}
+                        'title': issue.get('title'), 'url': issue.get('url'), 'at': n['createdAt'], 'app': link.app,
+                        'triage': triage(issue)}
                 if kind == 'new_issue':
                     if (issue.get('assignee') or {}).get('id') != me:
                         continue                                   # reassigned away again since
@@ -554,6 +556,22 @@ class LinearBoard:
 
     def tidy_views(self, collection):
         pass
+
+
+MIN_BRIEF = 20      # characters of description below which an issue says too little about what and where (a first, rough check)
+
+
+def triage(issue):
+    """The triage gate for an issue that reached the board from Linear (owner, 2026-10-30): not every issue is
+    worked at once. Priority, assignee and a description saying what and where (the scope) are required; the
+    hierarchy is read first. `missing` lists what the product owner still has to add before anyone plans it."""
+    priority = {v: k for k, v in PRIORITY.items()}.get(issue.get('priority'))
+    missing = [field for field, ok in (('priority', priority), ('assignee', (issue.get('assignee') or {}).get('id')),
+                                       ('scope/description', len((issue.get('description') or '').strip()) >= MIN_BRIEF))
+               if not ok]
+    return {'priority': priority, 'urgent': priority == 'Urgent', 'missing': missing,
+            'parent': (issue.get('parent') or {}).get('identifier'),
+            'children': [c['identifier'] for c in ((issue.get('children') or {}).get('nodes') or [])]}
 
 
 def links_of(settings):

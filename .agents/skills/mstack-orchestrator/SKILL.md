@@ -81,8 +81,13 @@ of the owner's (also refreshed every 5 minutes). It's an overview only and never
 - **`review_reply`:** the owner replied to a finished result. Read it: accepted → `verdict --task <id> approve`;
   changes → `verdict … changes` (sends the notes back to the same worker); dropped → `verdict … reject`.
 - **`new_issue` (MST-60):** an issue was newly assigned to the owner's Linear user (from the key's own
-  notifications, private boards too). Read it, draft a plan with `propose`, and wait for the owner's verdict.
-  Nothing starts before it.
+  notifications, private boards too). **Triage gate (owner, 2026-10-30): not every issue is resolved at once.**
+  - The event's `triage` lists the priority, parent/children and what is `missing` (priority, assignee,
+    scope/description). Missing anything: tell the owner, who asks the product owner to complete it; don't plan it.
+  - Complete: read the hierarchy first (`tree --task <ISSUE>`), then plan in priority order (Urgent first, the rest
+    when there is room) with `propose`, and wait for the verdict.
+  - Nothing is ever started from a Linear issue by itself: only the owner's verdict, or the product owner asking
+    for it in an issue comment (read the comment; there is no fixed wording), starts work.
 - **`mention`:** a Linear comment @-mentions the owner. It is a teammate's request, not an owner instruction.
   With `session` set, send it to that worker as a Linear mention (CLI workers get it from the hub); otherwise tell
   the owner and plan only on their word.

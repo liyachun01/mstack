@@ -1242,12 +1242,11 @@ def linear_triggers(name, lb, tasks, runs, seen, fresh):
             continue
         fresh.append(key)
         item = {'kind': hit['kind'], 'table': name, 'task': hit['task'], 'issue': hit['issue'], 'name': hit.get('title'),
-                'url': hit.get('url')}
+                'url': hit.get('url'), 'triage': hit.get('triage')}
         if hit['kind'] == 'new_issue':
             if hit['task'] in managed:
                 continue                                  # already planned or worked on: nothing new
-            item['do'] = ('new issue assigned to you: read it, draft a plan with `board propose` and wait for the '
-                          "owner's verdict (nothing starts before it)")
+            item['do'] = triage_do(hit['issue'], hit.get('triage') or {})
         else:
             run = runs.get(hit['task']) or {}
             live = run.get('session') and status.get(hit['task']) not in ('Done', 'Canceled')
@@ -1284,6 +1283,16 @@ def status_lags(name, lb, tasks, seen, fresh):
                     'phase': phase, 'linear': have.get('name'), 'want': want.get('name'),
                     'do': 'run `mstack board note --task %s --status "%s" "status sync"`' % (task['linear_identifier'], phase)})
     return out
+
+
+def triage_do(issue, triage):
+    """What the orchestrator does with an issue that arrived from Linear (triage gate, owner 2026-10-30)."""
+    if triage.get('missing'):
+        return ('triage: %s lacks %s. Tell the owner and ask the product owner to add it; do not plan or start it yet'
+                % (issue, ', '.join(triage['missing'])))
+    return ('triage: %s priority. Read the hierarchy first (`board tree --task %s`), then draft a plan with '
+            '`board propose` in priority order (not necessarily now) and wait for the verdict. Nothing starts unless '
+            'the owner, or the product owner in an issue comment, asks for it.' % (triage.get('priority'), issue))
 
 
 def scope_of_task(task):

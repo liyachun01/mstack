@@ -275,6 +275,14 @@ key per tick (`linear_board.shared`). The key's user *is* the owner, so no addre
 - The first read of a board only records a baseline (`notify_since`), so old notifications start nothing; later
   reads go back at most a day (the seen-keys drop repeats), on an hour boundary so every scope shares one read.
 
+**Triage gate** (owner, 2026-10-30: not every issue needs to be resolved at once). A `new_issue` event carries
+`triage`: priority, urgent, parent, children and `missing` (priority, assignee, scope/description: a description of
+at least 20 characters, a first rough check to refine). Incomplete: the orchestrator asks the owner to get the
+product owner to complete it and does not plan. Complete: it reads the hierarchy (`board tree`), then plans in
+priority order and waits for the verdict. Nothing starts from an issue by itself; only the owner's verdict, or the
+product owner asking in an issue comment (read by the orchestrator, no fixed wording), starts work. This is product
+behaviour, so every project on mstack ({{mstack:CLIENT_REPO}} included) has it.
+
 **Status at every stage.** `LinearBoard.set` moves the Linear status with the phase, through a phase → Linear map.
 Public boards keep the phase's own name. Private boards (`PRIVATE_STATUS`) write only the status field:
 
@@ -318,6 +326,7 @@ counts", a side-action OK, approved the whole plan because it started with "OK".
 - *Is "accepted" Done in Linear on a private board?* No, it isn't landed yet; `merged` moves it.
 - *Split into sub-issues?* Not needed: one issue, one commit per part (approval fix, triggers, status).
 
-**Left for the owner:** set `never_done: true` and `landing: "clientapp-dev-sb"` on {{mstack:CLIENT_REPO}}'s customer-api scope
+**Left for the owner:** approve the IRO issue that tells the product owner about the creation rules (priority,
+assignee, what and where); set `never_done: true` and `landing: "clientapp-dev-sb"` on {{mstack:CLIENT_REPO}}'s customer-api scope
 (and `never_done` on portal-web if it is backend too); a hub restart is not needed (watchers re-exec after merge).
 
