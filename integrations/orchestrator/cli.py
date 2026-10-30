@@ -862,15 +862,17 @@ def status_table_on():
     return STATE == DEFAULT_STATE and hub_settings().get('status_table', True) is not False
 
 
-def private_boards():
-    """Board name → True when its rows carry no Linear link: private boards, and any board whose config
-    can't be read (never leak a link by mistake)."""
+def board_sources():
+    """Board name → {teams: {team key: Linear workspace}, scopes: its taskboard.orchestrators}, for the table's
+    Item Source and Scope columns. A board whose config can't be read gets nothing (team key alone, no route)."""
     out = {}
     for name, entry in read_state().get('tables', {}).items():
         try:
-            out[name] = bool(project_settings(entry).get('private'))
+            settings = project_settings(entry)
         except (ValueError, OSError, KeyError):
-            out[name] = True
+            continue
+        out[name] = {'teams': {l['team']: l['workspace'] for _, l in links_of(settings) if l.get('team') and l.get('workspace')},
+                     'scopes': settings.get('orchestrators') or {}}
     return out
 
 
@@ -913,7 +915,7 @@ def _status_table_pass(full, limit):
     known = current.get(status_table.STATE_KEY) or {}
     full = full or time.time() - known.get('last_full', 0) >= status_table.FULL_EVERY
     table = status_table.StatusTable(STATUS_CALL or anyboard.macctl)
-    rows, takes, retire = status_table.desired(issues, current, private_boards(), roles=project_roles(),
+    rows, takes, retire = status_table.desired(issues, current, board_sources(), roles=project_roles(),
                                                boards=shown_boards())
     try:
         known, counts = table.sync(rows, known, full, limit, takes, retire)

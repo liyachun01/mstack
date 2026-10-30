@@ -256,6 +256,28 @@
       "section": "featured"
     },
     {
+      "key": "parent_issue",
+      "name": "Parent Issue",
+      "format": "text",
+      "section": "featured"
+    },
+    {
+      "key": "item_source",
+      "name": "Item Source",
+      "format": "select",
+      "section": "featured",
+      "options": [
+        {
+          "name": "session",
+          "color": "blue"
+        },
+        {
+          "name": "hub",
+          "color": "purple"
+        }
+      ]
+    },
+    {
       "key": "session_type",
       "name": "Session Type",
       "format": "select",
