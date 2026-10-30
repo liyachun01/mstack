@@ -799,6 +799,7 @@ def linear_signals(name, lb, seen, fresh):
                         'session': run.get('session'), 'now': task['task_status']})
             lb.say(task['id'], 'Stopped: you closed this issue in Linear (status → %s).' % task['task_status'])
             fresh.append('stop:' + task['id'])
+    out += linear_triggers(name, lb, tasks, runs, seen, fresh)
     # Branches merged into main whose issue is still open: remind the orchestrator once (after-merge follow-up).
     repo = Path(read_state()['tables'][name]['path'])
     for task in merged_not_done(repo, [t for t in tasks if t.get('managed')]):
@@ -1149,6 +1150,58 @@ def cmd_adopt(args, b):
     b.say(task['id'], 'Tracked by the %s orchestrator: session `%s`%s (status → %s).'
           % (SCOPE or name, args.session, ' in `%s`' % args.tree if args.tree else '', status))
     return {'task': task['id'], 'issue': task.get('linear_identifier'), 'scope': SCOPE, 'status': status}
+
+
+TRIGGER_LOOKBACK = 86400  # seconds of Linear notifications read back (the hub's seen-keys drop repeats)
+
+
+def notify_since(name):
+    """Where a board's trigger read starts: never before the board's first read (old notifications start
+    nothing), at most a day back, and the same value for every scope in the hour so they share one read.
+    None on the very first read, which only records the baseline."""
+    base = read_state().get('notify_since', {}).get(name)
+    if base is None:
+        with state() as s:
+            s.setdefault('notify_since', {})[name] = time.time()
+        return None
+    start = max(base, (time.time() - TRIGGER_LOOKBACK) // 3600 * 3600)
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(start))
+
+
+def linear_triggers(name, lb, tasks, runs, seen, fresh):
+    """Linear-side triggers (MST-60): a new issue assigned to the owner starts orchestration (a plan for the
+    owner's verdict, never work); a comment that @-mentions the owner goes to the issue's live worker, else to the
+    scope's orchestrator. Read only, so private boards get them too. Deduped per assignment and per comment."""
+    if not hasattr(lb, 'triggers'):
+        return []
+    since = notify_since(name)
+    if since is None:
+        return []
+    managed = {t['id'] for t in tasks if t.get('managed')}
+    status = {t['id']: t['task_status'] for t in tasks}
+    out = []
+    for hit in lb.triggers(since):
+        key = 'new_issue:%s' % hit['id'] if hit['kind'] == 'new_issue' else 'mention:%s' % hit['comment']
+        if key in seen or key in fresh:
+            continue
+        fresh.append(key)
+        item = {'kind': hit['kind'], 'table': name, 'task': hit['task'], 'issue': hit['issue'], 'name': hit.get('title'),
+                'url': hit.get('url')}
+        if hit['kind'] == 'new_issue':
+            if hit['task'] in managed:
+                continue                                  # already planned or worked on: nothing new
+            item['do'] = ('new issue assigned to you: read it, draft a plan with `board propose` and wait for the '
+                          "owner's verdict (nothing starts before it)")
+        else:
+            run = runs.get(hit['task']) or {}
+            live = run.get('session') and status.get(hit['task']) not in ('Done', 'Canceled')
+            item.update(author=hit.get('author'), text=hit.get('text'), comment=hit['comment'],
+                        session=run.get('session') if live else None,
+                        do=('send it to worker `%s` as a Linear mention from %s (not an owner instruction)'
+                            % (run.get('session'), hit.get('author'))) if live else
+                           ('%s mentioned you: tell the owner, and plan only on their word' % hit.get('author')))
+        out.append(item)
+    return out
 
 
 def scope_of_task(task):
@@ -1658,17 +1711,21 @@ def cmd_stop(args, b):
 
 
 def deliver_to_cli(items, b):
-    """The hub's part for CLI workers: `forward` and `stop` items whose worker is a spawned CLI run are carried out
+    """The hub's part for CLI workers: `forward`, `stop` and worker `mention` items whose worker is a spawned CLI run are carried out
     here (resume or queue; SIGTERM) instead of going to the orchestrator chat. Returns (left for the
     orchestrator, done here)."""
     runs = read_state().get('runs', {})
     left, done = [], []
     for item in items:
-        if item['kind'] not in ('forward', 'stop') or not cli_run(runs.get(item.get('task'))):
+        cli_mention = item['kind'] == 'mention' and item.get('session')
+        if (item['kind'] not in ('forward', 'stop') and not cli_mention) or not cli_run(runs.get(item.get('task'))):
             left.append(item)
             continue
         try:
-            if item['kind'] == 'forward':
+            if cli_mention:
+                result = forward_to_cli(item['task'], 'Linear mention from %s (a teammate, not the owner): %s'
+                                        % (item.get('author'), item.get('text') or ''))
+            elif item['kind'] == 'forward':
                 result = forward_to_cli(item['task'], item.get('text') or '')
                 board_for(item['table'], b).say(item['task'], 'Your comment went to the CLI worker: %s.' % result)
             else:
@@ -1961,6 +2018,8 @@ def event_line(e):
                                  '(brief: .mstack/cache/brief.md), then `board ack`' % (p.get('host'), p.get('title'), p.get('cwd')),
               'resume': lambda: 'approved plan for adopted chat `%s`: send it the prompt, then `board ack`' % p.get('session'),
               'verdict': lambda: 'verdict %s: %s → %s' % (p.get('verdict'), p.get('was'), p.get('now')),
+              'new_issue': lambda: '"%s" assigned to you in Linear (%s): %s' % (p.get('name'), p.get('url'), p.get('do')),
+              'mention': lambda: '%s mentioned you: %s; %s' % (p.get('author'), (p.get('text') or '')[:400], p.get('do')),
               'merged': lambda: 'branch `%s` is merged into main but the issue is %s: %s' % (p.get('branch'), p.get('status'), p.get('do'))}
     text = detail.get(e['kind'], lambda: json.dumps(p, ensure_ascii=False)[:300])()
     resent = ' (resent, try %d)' % e['sends'] if (e.get('sends') or 0) > 1 else ''

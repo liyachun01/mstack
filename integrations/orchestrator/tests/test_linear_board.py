@@ -19,7 +19,7 @@ ME = 'user-me'
 
 class FakeLinear:
     def __init__(self):
-        self.issues, self.labels, self.n, self.attachments = {}, [], 0, {}
+        self.issues, self.labels, self.n, self.attachments, self.notes = {}, [], 0, {}, []
         self.states = [{'id': 's-' + t, 'type': t, 'name': t.title(), 'position': i} for i, t in
                        enumerate(['backlog', 'unstarted', 'started', 'completed', 'canceled'])]
 
@@ -29,6 +29,9 @@ class FakeLinear:
                 'inverseRelations': {'nodes': i.get('blockedBy', [])}, 'comments': {'nodes': i['comments']}}
 
     def post(self, query, v):
+        if 'notifications(' in query:
+            return {'viewer': {'id': ME}, 'notifications': {'nodes': [n for n in self.notes
+                    if n['createdAt'] > v['since'] and n['type'] in v['types']]}}
         if 'viewer' in query:
             return {'viewer': {'id': ME}}
         if 'teams(' in query:
@@ -82,6 +85,20 @@ class FakeLinear:
         c.append({'id': 'c%d' % len(c), 'body': body, 'createdAt': '2026-%04d' % len(c),
                   'reactionData': [{'emoji': e, 'userIds': [ME]} for e in reactions]})
         return c[-1]
+
+    def notify(self, kind, issue, body=None, author=('u-po', 'Product Owner'), at='2099-01-01T00:00:00Z', assignee=ME):
+        """A notification for the key's user (MST-60): issueAssignedToYou or issueCommentMention."""
+        i = self.issues[issue]
+        i['assignee'] = {'id': assignee}
+        n = {'id': 'n%d' % len(self.notes), 'type': kind, 'createdAt': at, 'actor': {'id': author[0], 'name': author[1]},
+             'issue': {'id': issue, 'identifier': i['identifier'], 'title': i['title'], 'url': i['url'],
+                       'team': {'key': 'MST'}, 'assignee': i['assignee']}, 'comment': None}
+        if body is not None:
+            c = self.comment(issue, body)
+            n['comment'] = {'id': c['id'] + issue[-4:], 'body': body, 'createdAt': at,
+                            'user': {'id': author[0], 'name': author[1]}}
+        self.notes.append(n)
+        return n
 
     def labels_of(self, issue):
         return sorted(l['name'] for l in self.labels if l['id'] in self.issues[issue]['labelIds'])
@@ -334,6 +351,45 @@ class LinearBoardFlow(unittest.TestCase):
             self.assertEqual(cli.main(['plan', '--project', 'repo', '--title', 'New', '--plan', '-'],
                                       cli.anyboard.Board(call=None)), 1)
         self.assertIn('private board', out.getvalue())
+
+    # ---- MST-60: Linear triggers ----
+    def test_new_issue_assigned_to_the_owner_starts_orchestration_once(self):
+        self.auto()
+        old = self.old_issue(n=950)
+        self.fake.notify('issueAssignedToYou', old, at='2000-01-01T00:00:00Z')      # before the first read: history
+        self.assertEqual(self.tick()['needs_orchestrator'], [])                     # first read: baseline only
+        self.assertEqual(self.tick()['needs_orchestrator'], [])
+        new = self.old_issue(n=951)
+        self.fake.notify('issueAssignedToYou', new)
+        tick = self.tick()
+        need = tick['needs_orchestrator']
+        self.assertEqual([(n['kind'], n['issue']) for n in need], [('new_issue', 'MST-951')])
+        self.assertIn('board propose', need[0]['do'])
+        self.assertEqual(self.tick()['needs_orchestrator'], [])                     # deduped per assignment
+        self.assertEqual(self.cli('status', '--project', 'repo')['tasks'][-1]['status'], 'Backlog')   # nothing started
+        self.fake.notify('issueAssignedToYou', new, assignee='someone-else')       # reassigned away: nothing
+        self.assertEqual(self.tick()['needs_orchestrator'], [])
+
+    def test_mention_goes_to_the_live_worker_else_the_scope_orchestrator(self):
+        cfg = json.loads((self.repo / '.mstack/stack.json').read_text()); cfg['taskboard']['private'] = True
+        (self.repo / '.mstack/stack.json').write_text(json.dumps(cfg))
+        self.scoped(**{'api': {'apps': ['*'], 'exclude': ['MST-961']}, 'portal': {'apps': ['*'], 'focus': ['MST-961']}})
+        self.auto()
+        busy, idle = self.old_issue(n=960, state='s-started'), self.old_issue(n=961)
+        self.cli('adopt', '--project', 'repo', '--scope', 'api', '--task', 'MST-960', '--session', 'local_w')
+        tick = lambda scope: self.cli('tick', '--project', 'repo', '--scope', scope)['needs_orchestrator']
+        with patch.object(cli, 'LINEAR_EVERY', 0), patch.object(cli, 'MIRROR_EVERY', 10 ** 9):
+            tick('api')                                                             # baseline
+            self.fake.notify('issueCommentMention', busy, body='@me can you check the ETA?')
+            self.fake.notify('issueCommentMention', idle, body='@me portal needs this')
+            self.fake.notify('issueCommentMention', idle, body='note to self', author=(ME, 'Me'))   # own: ignored
+            api = [n for n in tick('api') if n['kind'] == 'mention']
+            portal = [n for n in tick('portal') if n['kind'] == 'mention']
+            self.assertEqual(tick('api') + tick('portal'), [])                      # deduped per comment
+        self.assertEqual([(n['issue'], n['session'], n['author']) for n in api], [('MST-960', 'local_w', 'Product Owner')])
+        self.assertIn('not an owner instruction', api[0]['do'])
+        self.assertEqual([(n['issue'], n['session'], n['text']) for n in portal], [('MST-961', None, '@me portal needs this')])
+        self.assertEqual(self.fake.state_of(idle), 'unstarted')                     # a mention starts nothing
 
     def test_related_sessions_are_listed_but_never_workers(self):
         old = self.old_issue(n=900, state='s-completed')

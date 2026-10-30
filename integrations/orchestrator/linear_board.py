@@ -86,6 +86,13 @@ ONE = '''query($id: String!) { issue(id: $id) { %s } }''' % FIELDS
 TEAM = '''query($key: String!) { teams(first: 1, filter: {key: {eq: $key}}) { nodes {
   id states(first: 50) { nodes { id type position } } labels(first: 100) { nodes { id name } } } } }'''
 ME = '''query { viewer { id } }'''
+# The key's own Linear user is the owner (MST-60): its notifications say which issues were assigned to it and
+# which comments mention it, in every team the key sees. Read only, so private boards use it too.
+TRIGGER_TYPES = {'issueAssignedToYou': 'new_issue', 'issueCommentMention': 'mention', 'issueMention': 'mention'}
+NOTIFY = '''query($since: DateTimeOrDuration, $types: [String!]) { viewer { id }
+  notifications(first: 100, filter: {createdAt: {gt: $since}, type: {in: $types}}) { nodes { id type createdAt
+    ... on IssueNotification { issue { id identifier title url team { key } assignee { id } }
+      comment { id body createdAt user { id name } } actor { id name } } } } }'''
 CREATE = '''mutation($input: IssueCreateInput!) { issueCreate(input: $input) { issue { id identifier } } }'''
 UPDATE = '''mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }'''
 COMMENT = '''mutation($input: CommentCreateInput!) { commentCreate(input: $input) { comment { id } } }'''
@@ -197,6 +204,18 @@ class Link:
         if self._me is None:
             self._me = self.post(ME, {})['viewer']['id']
         return self._me
+
+    def notifications(self, since):
+        """(viewer id, owner notifications of the trigger types since `since`); one read per key per tick."""
+        key = ('notify', self.kid, since)
+        if SHARED is not None and key in SHARED:
+            return SHARED[key]
+        got = self.post(NOTIFY, {'since': since, 'types': sorted(TRIGGER_TYPES)})
+        found = (got['viewer']['id'], got['notifications']['nodes'])
+        self._me = self._me or found[0]
+        if SHARED is not None:
+            SHARED[key] = found
+        return found
 
     def state_id(self, status):
         want = STATE_TYPE[status]
@@ -357,6 +376,35 @@ class LinearBoard:
             for r in (c.get('reactionData') or []):
                 reactions[r.get('emoji', '')] = reactions.get(r.get('emoji', ''), 0) + len(r.get('userIds') or [1])
             out.append({'id': c['id'], 'order': c['createdAt'], 'text': c['body'], 'reactions': reactions})
+        return out
+
+    def triggers(self, since):
+        """New issues assigned to the owner and comments mentioning them, in this board's teams and scope
+        (MST-60). Each: {kind: new_issue|mention, id: notification id, task, issue, title, url, ...}; mentions
+        also carry the comment id, author and text. The owner's own comments never count."""
+        out = []
+        for link in self.links:
+            me, nodes = link.notifications(since)
+            for n in sorted(nodes, key=lambda n: n['createdAt']):
+                issue, kind = n.get('issue') or {}, TRIGGER_TYPES.get(n.get('type'))
+                if not kind or (issue.get('team') or {}).get('key') != link.conf['team']:
+                    continue
+                if not (self.all_issues or not (self.focus or self.exclude) or self.in_focus(issue['identifier'], link)):
+                    continue
+                item = {'kind': kind, 'id': n['id'], 'task': issue['id'], 'issue': issue['identifier'],
+                        'title': issue.get('title'), 'url': issue.get('url'), 'at': n['createdAt'], 'app': link.app}
+                if kind == 'new_issue':
+                    if (issue.get('assignee') or {}).get('id') != me:
+                        continue                                   # reassigned away again since
+                    item['assignee'] = me
+                else:
+                    comment = n.get('comment') or {}
+                    author = comment.get('user') or n.get('actor') or {}
+                    if author.get('id') == me:
+                        continue
+                    item.update(comment=comment.get('id') or 'issue:%s' % n['id'], author=author.get('name'),
+                                text=(comment.get('body') or '').strip())
+                out.append(item)
         return out
 
     # ---- writing ---------------------------------------------------------
