@@ -176,3 +176,70 @@ class SharedReads(unittest.TestCase):
         self.fake.post = post
         self.assertEqual(cli.rate_note({}, logged), '')
         self.assertEqual(logged, {})
+
+
+class VerdictsOnce(unittest.TestCase):
+    """MST-41 follow-up: a verdict is applied and queued once, whatever the routes and watchers."""
+    setUp, cli = flow.LinearBoardFlow.setUp, flow.LinearBoardFlow.cli
+    scoped = SharedReads.scoped
+
+    def in_review(self):
+        task = self.cli('plan', '--project', 'repo', '--scope', 'one', '--title', 'T', '--agent', 'claude-desktop',
+                        '--plan', '-', stdin='p')['task']
+        self.fake.comment(task, '👍')
+        self.cli('poll', '--project', 'repo', '--scope', 'one')
+        self.cli('adopt', '--project', 'repo', '--scope', 'one', '--task', task, '--session', 'local_w')
+        self.cli('done', '--task', task, '--size', 'small', '--summary', 'did it')
+        self.fake.issues[task]['comments'][-1]['reactionData'] = [{'emoji': '👍', 'userIds': [flow.ME]}]
+        return task
+
+    def accepted(self, task):
+        return [c for c in self.fake.issues[task]['comments'] if 'Accepted' in c['body']]
+
+    def test_two_routes_over_one_board_apply_and_queue_a_verdict_once(self):
+        self.scoped('one', 'two')
+        task = self.in_review()
+        with patch.object(cli, 'LINEAR_EVERY', 0):
+            tick = self.cli('tick', '--hub')
+        self.assertEqual([(v['task'], v['now']) for v in tick['verdicts']], [(task, 'Done')])
+        self.assertEqual(len(self.accepted(task)), 1)
+        events = [e for e in cli.board_store().events() if e['kind'] == 'verdict']
+        self.assertEqual(len(events), 1)
+        self.assertEqual(json.loads(cli.STATE.read_text())['task_tables'][task]['scope'], 'one')   # scope kept
+
+    def test_a_second_watcher_with_a_stale_read_does_not_apply_it_again(self):
+        self.scoped('one')
+        task = self.in_review()
+        stale = json.loads(json.dumps([self.fake.node(i) for i in self.fake.issues.values()]))
+        self.cli('poll', '--project', 'repo', '--scope', 'one')             # the first watcher applies it
+        live = self.fake.post
+        self.fake.post = lambda q, v: ({'issues': {'nodes': stale, 'pageInfo': {'hasNextPage': False}}}
+                                       if q.lstrip().startswith('query') and 'issues(' in q else live(q, v))
+        self.assertEqual(self.cli('poll', '--project', 'repo', '--scope', 'one'), [])   # rechecked: already Done
+        self.assertEqual(len(self.accepted(task)), 1)
+
+    def test_the_same_verdict_queues_once(self):
+        row = {'table': 'repo', 'task': 't1', 'was': 'In Review', 'now': 'Done', 'verdict': 'approved', 'ask': 'c3'}
+        first = cli.board_store().enqueue(cli.to_events([], [row]))
+        again = cli.board_store().enqueue(cli.to_events([], [dict(row)]))
+        self.assertEqual(first, again)
+        other = cli.board_store().enqueue(cli.to_events([], [dict(row, ask='c9')]))   # a new ask is a new verdict
+        self.assertNotEqual(first, other)
+
+    def test_done_posts_its_ask_before_in_review(self):
+        self.scoped('one')
+        task = self.cli('plan', '--project', 'repo', '--scope', 'one', '--title', 'T', '--plan', '-', stdin='p')['task']
+        self.fake.comment(task, '👍')                                        # the plan's approval
+        self.cli('poll', '--project', 'repo', '--scope', 'one')
+        self.cli('adopt', '--project', 'repo', '--scope', 'one', '--task', task, '--session', 'local_w')
+        seen = []
+        real = linear_board.LinearBoard.set
+
+        def spy(board, t, **props):
+            if props.get('task_status') == 'In Review':
+                seen.append(self.fake.issues[task]['comments'][-1]['body'])
+            return real(board, t, **props)
+        with patch.object(linear_board.LinearBoard, 'set', spy):
+            self.cli('done', '--task', task, '--size', 'small', '--summary', 'did it')
+        self.assertIn('finished', seen[0])            # a poll in between sees the new ask, not the plan's 👍
+        self.assertEqual(self.cli('poll', '--project', 'repo', '--scope', 'one'), [])

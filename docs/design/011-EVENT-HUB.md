@@ -134,6 +134,23 @@ state (`.mstack/evidence/taskboard-test.json`) and private journals. That's why 
 - **Counter:** the tick output has `linear_calls` (requests by team), and the watcher line prints it, so an
   hour of logs shows who calls Linear.
 
+**Follow-up after the merge: duplicate verdict events.** In the live queue, verdict ids 11 and 15 were the same
+verdict (fddd7a66, In Review → Done), and id 9 repeated id 4 (d4fc71ca) 30 minutes later.
+- *11/15:* two processes applied the verdict at the same moment. Their journal rows interleave within 30 ms
+  (`Done`, `Done`, `Accepted`, `Accepted`), most likely the hub and a per-scope watcher that ran while the hub
+  lock was briefly free between hub restarts. `poll` had no lock and no re-read before acting. Now `poll` holds
+  `poll.<board>.lock`, and before it moves a task it reads the task again past every cache (`LinearBoard.fresh`:
+  Linear and the journal). It skips the task when another process got there first.
+- *4 → 9:* a real second application. `done` set In Review before posting its "finished" ask, and a poll in
+  between found In Review under the plan's ask. That ask already had the owner's 👍 (09:29), so the poll accepted
+  it straight away. The ask then put the issue back to In Review, and the owner's next 👍 accepted it again.
+  `done` now posts the ask first.
+- The hub polls each board's verdicts **once per tick, board-wide** (no scope). Before, it polled once per route.
+  A board-wide poll never erases the scope that planned a task (`task_tables`), and its verdict and replan events
+  are routed to the task's own scope, not to the route that ran the poll.
+- Verdict events carry a dedupe key `verdict:<task>:<was>:<now>:<ask id>`, so a repeat returns the existing row.
+  A verdict on a new ask is a new event.
+
 **Questions resolved:**
 - *Share the board read across processes through Postgres?* No. While the hub runs, only the hub reads Linear,
   so an in-process share per tick is enough. Two fallback watchers on scopes of one board (no hub) still read
