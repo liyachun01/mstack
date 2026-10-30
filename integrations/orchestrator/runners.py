@@ -78,24 +78,38 @@ def command(runner, brief, worktree, project=None, servers=(), session=None, cac
     return registry.render(host, mcp=mcp, resume=resume, brief=brief, cwd=worktree, notify=NOTIFY)
 
 
+STREAM = {'kind_keys': ['type', 'event', 'kind'], 'session_events': ['session'],
+          'session_keys': ['sessionId', 'session_id', 'id', 'session.id'], 'final_events': ['final'],
+          'text_keys': ['text', 'content', 'message'], 'error_events': ['error'],
+          'end_events': [{'type': 'status', 'phase': 'turn_end'}], 'end_reason_keys': ['reason.kind'],
+          'completed_reasons': ['completed'], 'blocked_events': ['tool_result'], 'result_keys': ['result', 'error'],
+          'blocked_patterns': [], 'usage_keys': ['usage']}
+
+
 def can_resume(runner, project=None):
     return bool((hosts(project).get(runner) or {}).get('resume'))
 
 
-STREAM = {'kind_keys': ['type', 'event', 'kind'], 'session_events': ['session'],
-          'session_keys': ['session_id', 'sessionId', 'id', 'session.id'], 'final_events': ['final'],
-          'text_keys': ['text', 'content', 'message'], 'error_events': ['error']}
+def sandboxed(runner, project=None):
+    """The host can't `git commit` in a worktree or call `mstack board` (dsh workspace-write, MST-56):
+    `work` commits and reports for it after each turn."""
+    return 'sandboxed' in ((hosts(project).get(runner) or {}).get('capabilities') or [])
 
 
 class Stream:
-    """Reads a host's NDJSON event stream (manifest `stream`), line by line: the session id, the final text and
-    errors. Lines that aren't JSON objects (stderr, banners) are kept as plain output. Field names come from the
-    manifest, so a harness that renames an event needs a manifest edit, not code."""
+    """Reads a host's NDJSON event stream (manifest `stream`), line by line: the session id, how the turn ended,
+    the final text, actions the host refused (sandbox, no approval channel), errors and token usage. Lines that
+    aren't JSON objects (stderr, banners) are kept as plain output. Field names come from the manifest, so a harness
+    that renames an event needs a manifest edit, not code.
+
+    A host with a stream finished its turn only when an end event arrives: dsh exits 0 after SIGTERM too, with an
+    empty `final` and no `turn_end` (MST-56). Without a stream, the exit code decides."""
     def __init__(self, runner, project=None):
         host = hosts(project).get(runner) or {}
         self.on = 'stream' in host
         self.conf = {**STREAM, **(host.get('stream') or {})}
         self.session, self.final, self.errors, self.plain, self.exit = None, None, [], [], None
+        self.ended, self.blocked, self.usage, self.calls = None, [], {}, {}
 
     def _get(self, event, keys):
         for key in keys:
@@ -116,21 +130,47 @@ class Stream:
             if line.strip():
                 self.plain.append(line.rstrip())
             return None
-        kind = self._get(event, self.conf['kind_keys'])
-        if kind in self.conf['final_events']:
-            self.final = self._get(event, self.conf['text_keys']) or self.final
-        elif kind in self.conf['error_events']:
-            self.errors.append(self._get(event, self.conf['text_keys']) or json.dumps(event)[:300])
-        elif kind in self.conf['session_events'] and not self.session:
-            self.session = self._get(event, self.conf['session_keys'])
+        conf = self.conf
+        for key in conf['usage_keys']:
+            if isinstance(event.get(key), dict):
+                for name, n in event[key].items():
+                    if isinstance(n, int):
+                        self.usage[name] = self.usage.get(name, 0) + n
+        if any(all(event.get(k) == v for k, v in match.items()) for match in conf['end_events']):
+            self.ended = self._get(event, conf['end_reason_keys']) or 'ended'
+            return None
+        kind = self._get(event, conf['kind_keys'])
+        if kind in conf['final_events']:
+            self.final = self._get(event, conf['text_keys']) or self.final
+        elif kind in conf['error_events']:
+            self.errors.append(self._get(event, conf['text_keys']) or json.dumps(event)[:300])
+        elif kind in conf['blocked_events']:
+            outcome = self._get(event, conf['result_keys']) or ''
+            if any(p.lower() in outcome.lower() for p in conf['blocked_patterns']):
+                what = event.get('tool') or self.calls.get(event.get('callId'), '')
+                self.blocked.append(('%s: ' % what if what else '') + ' '.join(outcome.split())[:300])
+        elif kind == 'tool_call' and event.get('callId'):
+            command = (event.get('input') or {}).get('command') if isinstance(event.get('input'), dict) else None
+            self.calls[event['callId']] = '%s `%s`' % (event.get('tool'), str(command)[:120]) if command else event.get('tool')
+        elif kind in conf['session_events'] and not self.session:
+            self.session = self._get(event, conf['session_keys'])
             return self.session
         return None
 
+    def completed(self):
+        """The turn ran to its end: an end event with a completed reason, or (no stream) exit code 0."""
+        if self.on:
+            return self.ended in self.conf['completed_reasons']
+        return self.exit == 0
+
     def summary(self):
-        """What the run said last: its final text, else its errors, else the tail of its plain output."""
-        if self.final:
-            return self.final
-        return '\n'.join(self.errors or self.plain)
+        """What the run said last: its final text, else its errors, else the tail of its plain output; then the
+        actions the host refused, as blockers for the owner."""
+        text = self.final or '\n'.join(self.errors or self.plain)
+        if self.blocked:
+            text += ('\n\nBlocked (the sandbox refused these and there is no approval channel; the owner decides):\n'
+                     + '\n'.join('- ' + b for b in dict.fromkeys(self.blocked)))
+        return text
 
 
 def handoff(runner, title, worktree, brief, project=None):

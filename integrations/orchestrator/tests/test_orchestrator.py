@@ -673,12 +673,20 @@ class OrchestratorTests(unittest.TestCase):
         a, tree, argv_log = self.dsh_task()
         result = self.work(a, tree)
         session = result['session']
-        self.assertTrue(session.startswith('fake-'))
-        self.assertEqual((result['exit'], result['commits'], result['turns']), (0, 1, 1))
+        self.assertTrue(session.startswith('session-'))
+        self.assertEqual((result['exit'], result['commits'], result['turns'], result['completed']), (0, 1, 1, True))
+        self.assertEqual(result['committed'], 1)                    # the sandboxed host can't: `work` commits
+        log = subprocess.run(['git', '-C', str(tree), 'log', '-1', '--format=%an|%s'], capture_output=True, text=True)
+        self.assertEqual(log.stdout.strip(), 'mstack dsh worker|dsh: Fake dsh finished: Task: Add cart')
+        self.assertEqual(json.loads(cli.STATE.read_text())['runs'][a]['report']['kind'], 'done')
         self.assertIn('Fake dsh finished: Task:', self.b.threads[a][-1]['text'])     # summary from the final event
         self.assertEqual(self.b.objects[a]['task_status'], 'In Review')
         run = json.loads(cli.STATE.read_text())['runs'][a]
         self.assertEqual((run['session'], run['native_session'], run['live']), ('dsh:' + session, session, False))
+        self.assertEqual(run['usage'], {'inputTokens': 100, 'outputTokens': 20, 'cacheReadTokens': 900})
+        brief = (tree / '.mstack/cache/brief.md').read_text()
+        self.assertIn('do not run `git commit` or `mstack board`', brief)
+        self.assertNotIn(' done --task ', brief)
         first = self.calls(argv_log)[0]
         self.assertEqual((first[:2], first[-2]), (['--profile', 'headless'], '--json'))   # argv[0] is not logged
         self.assertNotIn('--session-id', first)
@@ -695,6 +703,7 @@ class OrchestratorTests(unittest.TestCase):
         last = self.calls(argv_log)[-1]
         self.assertEqual(last[last.index('--session-id') + 1], session)
         self.assertIn('Rename the module please', last[-1])
+        self.assertIn('do not run `git commit`', last[-1])
         self.assertEqual((result['session'], result['commits']), (session, 2))
         self.assertNotIn('queued', json.loads(cli.STATE.read_text())['runs'][a])
 
@@ -714,6 +723,34 @@ class OrchestratorTests(unittest.TestCase):
         result = self.work(a, tree)
         self.assertEqual(result['finish'], 'skipped: the worker already reported done')
         self.assertEqual(len(self.b.threads[a]), before)
+
+    def test_dsh_refused_action_is_reported_as_a_blocker(self):
+        a, tree, _ = self.dsh_task(FAKE_DSH_BLOCKED='1')
+        result = self.work(a, tree)
+        self.assertTrue(result['completed'])
+        self.assertIn('no approval channel', result['blocked'][0])
+        self.assertIn('git commit -m x', result['blocked'][0])
+        ask = self.b.threads[a][-1]['text']
+        self.assertIn('Blocked (the sandbox refused these', ask)
+        self.assertEqual(self.b.objects[a]['task_status'], 'In Review')
+
+    def test_dsh_sigterm_exits_0_but_counts_as_stopped(self):
+        a, tree, _ = self.dsh_task(FAKE_DSH_TERM=str(cli.STATE))
+        before = len(self.b.threads[a])
+        result = self.work(a, tree)
+        self.assertEqual((result['exit'], result['completed'], result['finish']), (0, False, 'skipped: stopped'))
+        self.assertEqual(result['committed'], 0)                   # an interrupted turn is not committed
+        self.assertEqual(len(self.b.threads[a]), before)
+        self.assertEqual(self.b.objects[a]['task_status'], 'In Progress')
+
+    def test_dsh_turn_without_turn_end_is_reported_not_finished(self):
+        a, tree, _ = self.dsh_task()
+        with patch.object(cli.runners.Stream, 'completed', return_value=False):
+            result = self.work(a, tree)
+        self.assertEqual(result['finish'], 'skipped: turn did not complete')
+        self.assertIn('turn did not complete', self.b.threads[a][-1]['text'])
+        self.assertFalse(self.b.threads[a][-1]['text'].startswith(board.ASK))
+        self.assertEqual(self.b.objects[a]['task_status'], 'In Progress')
 
     def test_back_from_review_dispatch_resumes_the_dsh_session(self):
         a, tree, _ = self.dsh_task()
@@ -773,6 +810,41 @@ class OrchestratorTests(unittest.TestCase):
         self.run_cli('dispatch', '--project', 'market')
         with self.assertRaises(ValueError):
             cli.stop_cli(a)
+
+
+class DshStreamTests(unittest.TestCase):
+    """runners.Stream on event lines as dsh 0.2.0-rc.2 printed them in MST-56 (runs 05-ask-wt and 07-sigterm)."""
+    ASK = ['{"type": "session", "sessionId": "session-9515c3e0", "cwd": "/w/repo-wt"}',
+           '{"type": "status", "phase": "turn_start", "turn": 1}',
+           '{"type": "tool_call", "callId": "c2", "tool": "bash", "input": {"command": "echo run5 > /w/outside.txt", '
+           '"sandbox_permissions": "danger-full-access"}}',
+           '{"type": "tool_result", "callId": "c2", "status": "error", "result": "Error: sandbox escalation to '
+           '\\"danger-full-access\\" requires approval, but no approval channel is available"}',
+           '{"type": "status", "phase": "step_end", "turn": 1, "step": 2, "usage": {"inputTokens": 152, "outputTokens": 190}}',
+           '{"type": "status", "phase": "turn_end", "turn": 1, "reason": {"kind": "completed"}}',
+           '{"type": "final", "text": "Attempt 2 was refused."}']
+    TERM = ['{"type": "session", "sessionId": "session-ba54efcc", "cwd": "/w/repo"}',
+            '{"type": "status", "phase": "turn_start", "turn": 1}',
+            '{"type": "tool_call", "callId": "c1", "tool": "bash", "input": {"command": "sleep 60"}}',
+            '{"type": "final", "text": ""}']
+
+    def stream(self, lines, exit_code=0):
+        stream = cli.runners.Stream('dsh')
+        found = [x for x in map(stream.feed, lines) if x]
+        stream.exit = exit_code
+        return stream, found
+
+    def test_refused_escalation_is_a_blocker_in_a_completed_turn(self):
+        stream, found = self.stream(self.ASK)
+        self.assertEqual(found, ['session-9515c3e0'])
+        self.assertTrue(stream.completed())
+        self.assertEqual(stream.usage, {'inputTokens': 152, 'outputTokens': 190})
+        self.assertIn('bash `echo run5 > /w/outside.txt`: Error: sandbox escalation', stream.blocked[0])
+        self.assertIn('Attempt 2 was refused.\n\nBlocked', stream.summary())
+
+    def test_sigterm_run_exits_0_without_turn_end(self):
+        stream, _ = self.stream(self.TERM, exit_code=0)
+        self.assertEqual((stream.ended, stream.completed(), stream.final), (None, False, None))
 
 
 class BridgeRetryTests(unittest.TestCase):

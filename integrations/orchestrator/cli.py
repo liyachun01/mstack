@@ -477,7 +477,7 @@ def revisions(messages):
     return out
 
 
-def brief_for(b, task_id, table, tree, tools=()):
+def brief_for(b, task_id, table, tree, tools=(), headless=False):
     task = b.get(task_id)
     try:
         apps = project_settings(read_state()['tables'][table]).get('apps') or {}
@@ -495,15 +495,18 @@ def brief_for(b, task_id, table, tree, tools=()):
            *['- ' + r for r in revised], ''] if revised else []),
         'Owner notes:', *(['- ' + n for n in notes] or ['- (none)']), '',
         'Rules:',
-        '- Work only in %s: a git worktree on its own branch. Commit your changes there.' % tree,
+        *(['- ' + HEADLESS, '- Work only in %s: a git worktree on its own branch.' % tree,
+           '- You cannot ask mid-run: decide within the approved plan; questions go in your final summary.'] if headless else
+          ['- Work only in %s: a git worktree on its own branch. Commit your changes there.' % tree]),
         *(['- This task belongs to app [%s]; its code is in %s.' % (task.get('task_app'), tree/app_path)]
           if app_path else []),
         '- Do not merge, push, or touch other worktrees or the main checkout.',
-        '- If scope or plan changes, tell the owner on the issue:',
-        '  %s note --task %s "what changed"' % (board, task_id),
-        '- When finished, report for review (this moves the issue to In Review):',
-        '  %s done --task %s --summary "what changed and what is left" --doc <path>' % (board, task_id),
-        '  (medium and big issues need the doc and a consolidated issue description; a small one passes --size small)',
+        *([] if headless else [
+            '- If scope or plan changes, tell the owner on the issue:',
+            '  %s note --task %s "what changed"' % (board, task_id),
+            '- When finished, report for review (this moves the issue to In Review):',
+            '  %s done --task %s --summary "what changed and what is left" --doc <path>' % (board, task_id),
+            '  (medium and big issues need the doc and a consolidated issue description; a small one passes --size small)']),
         *(['', 'mstack tools in this session (MCP):'] + ['- %s: %s' % (t['name'], t.get('hint', ''))
                                                          for t in tools] if tools else [])])
 
@@ -603,7 +606,8 @@ def prepare(b, repo, task, table, runner=None):
         (tree/'.claude/settings.local.json').write_text(local.read_text())
     servers, skipped = registry.worker_servers(repo)
     tools, refused = wire_mcp(repo, tree, runner, servers) if runner else ([], [])
-    brief = brief_for(b, task['id'], table, tree, [s for s in servers if s['name'] in tools])
+    brief = brief_for(b, task['id'], table, tree, [s for s in servers if s['name'] in tools],
+                      headless=bool(runner) and runners.sandboxed(runner, repo))
     if workspace_repos(settings):
         brief += ('\n\n## Workspace\nThis project is several repos. Your task folder is `%s`; each repo you change gets '
                   'its own worktree inside it on branch `%s`. Have: %s. Add one with `%s/mstack board worktree --task %s '
@@ -1462,7 +1466,12 @@ def cli_run(run):
     return bool(run) and 'log' in run and not run.get('handoff') and not run.get('adopted')
 
 
-def take_queued(task):
+HEADLESS = ('You run headless in a sandbox: do not run `git commit` or `mstack board` (both are refused there). '
+            'mstack commits your changes on the task branch and posts your final answer when your turn ends. End '
+            'with a short summary: what changed, what is left, and anything the owner must decide.')
+
+
+def take_queued(task, sandboxed=False):
     """The owner comments waiting for a CLI worker, as the next turn's prompt; None (and the run marked not live)
     when there are none. One lock, so a comment can't slip in between the check and the end of the run."""
     with state() as s:
@@ -1471,8 +1480,25 @@ def take_queued(task):
         if not queued or run.get('stopped'):
             run['live'] = False
             return None
-    return ('The owner commented on your issue (from Linear). Act on it, then report with `mstack board note` or '
-            '`mstack board done` as before:\n\n' + '\n\n'.join('- ' + q['text'] for q in queued))
+    how = HEADLESS if sandboxed else 'Then report with `mstack board note` or `mstack board done` as before.'
+    return ('The owner commented on your issue (from Linear). Act on it. %s\n\n' % how
+            + '\n\n'.join('- ' + q['text'] for q in queued))
+
+
+def commit_turn(tree, runner, message):
+    """For a sandboxed host (MST-56: dsh can't commit in a worktree): commit what its turn changed, from outside
+    the sandbox, on the task branch. A multi-repo task folder commits each repo worktree. Returns commits made."""
+    bases = sorted(p.name[5:] for p in (tree/'.mstack/cache').glob('base.*'))
+    made = 0
+    for repo in [tree/name for name in bases] or [tree]:
+        git(repo, 'add', '-A', '--', '.', ':(exclude).mstack', ':(exclude).mcp.json', ':(exclude).claude')
+        if subprocess.run(['git', '-C', str(repo), 'diff', '--cached', '--quiet']).returncode == 0:
+            continue                                  # nothing staged in this repo
+        title = (message or '').strip().splitlines()[0][:72] if (message or '').strip() else 'work turn'
+        git(repo, '-c', 'user.name=mstack %s worker' % runner, '-c', 'user.email=%s@mstack.local' % runner,
+            'commit', '-q', '-m', '%s: %s' % (runner, title), '-m', SECRET.sub('[redacted]', message or '')[:4000])
+        made += 1
+    return made
 
 
 def run_turn(argv, work_dir, env, stream, out_file):
@@ -1510,17 +1536,18 @@ def cmd_work(args, b):
         run = dict(run)
     work_dir = Path(run.get('cwd') or tree)
     native = run.get('native_session')
+    boxed = runners.sandboxed(args.runner, repo)
     prompt = brief
     if args.resume:
         if not native:
             raise ValueError('Task %s has no recorded session to resume' % args.task)
-        prompt = take_queued(args.task) or ('The owner replied to your review; their notes are in the updated brief '
-                                            'below. Continue the same task.\n\n' + brief)
+        prompt = take_queued(args.task, boxed) or ('The owner replied to your review; their notes are in the updated '
+                                                   'brief below. Continue the same task.\n\n' + brief)
         with state() as s:
             s['runs'][args.task]['live'] = True
     out_file = Path(run['log']).with_suffix('.stream.log') if run.get('log') else tree/'.mstack/cache/run.stream.log'
     out_file.parent.mkdir(parents=True, exist_ok=True)
-    turns, stream = [], None
+    turns, stream, committed, usage = [], None, 0, {}
     while prompt is not None:
         started = time.time()
         stream = runners.Stream(args.runner, repo)
@@ -1530,19 +1557,37 @@ def cmd_work(args, b):
             native = native or found
             with state() as s:
                 s['runs'][args.task].update(session='%s:%s' % (args.runner, native), native_session=native)
-        turns.append(stream.exit)
-        prompt = take_queued(args.task) if native and runners.can_resume(args.runner, repo) else None
+        turns.append({'exit': stream.exit, 'ended': stream.ended, 'completed': stream.completed(),
+                      'blocked': len(stream.blocked)})
+        for name, n in stream.usage.items():
+            usage[name] = usage.get(name, 0) + n
+        if boxed and stream.completed():
+            committed += commit_turn(tree, args.runner, stream.final)
+        prompt = take_queued(args.task, boxed) if native and runners.can_resume(args.runner, repo) else None
         if prompt is None:
             with state() as s:
-                s['runs'][args.task]['live'] = False
+                s['runs'][args.task].update(live=False, **({'usage': usage} if usage else {}))
     output = SECRET.sub('[redacted]', stream.summary().strip())
-    report = (read_state().get('runs', {}).get(args.task) or {}).get('report') or {}
-    result = {'task': args.task, 'exit': turns[-1], 'turns': len(turns), 'session': native, 'output_tail': output[-4000:]}
-    if (read_state().get('runs', {}).get(args.task) or {}).get('stopped'):
+    run = read_state().get('runs', {}).get(args.task) or {}
+    report = run.get('report') or {}
+    last = turns[-1]
+    result = {'task': args.task, 'exit': last['exit'], 'turns': len(turns), 'session': native,
+              'completed': last['completed'], 'blocked': [b for b in dict.fromkeys(stream.blocked)],
+              'committed': committed, 'output_tail': output[-4000:]}
+    if run.get('stopped'):
         return {**result, 'finish': 'skipped: stopped'}
+    if not last['completed']:
+        # Not a crash to hide and not a finished turn: tell the owner, keep the issue In Progress (a comment resumes it).
+        b.say(args.task, '**%s** turn did not complete (%s, exit %s) on session `%s`. Comment to resume it, or close '
+                         'the issue to stop it.%s' % (args.runner, last['ended'] or 'no turn end', last['exit'], native,
+                                                      '\n\n' + output[-1200:] if output else ''))
+        record_report(args.task, 'note', 'turn did not complete: ' + output[-500:])
+        return {**result, 'finish': 'skipped: turn did not complete'}
     if report.get('kind') == 'done' and report.get('ts', 0) >= started:
         return {**result, 'finish': 'skipped: the worker already reported done'}
-    result['commits'] = finish(b, args.task, tree, args.runner, output, turns[-1])
+    result['commits'] = finish(b, args.task, tree, args.runner, output, last['exit'])
+    if boxed:
+        record_report(args.task, 'done', output)
     return result
 
 

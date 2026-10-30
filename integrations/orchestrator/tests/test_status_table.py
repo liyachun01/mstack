@@ -116,15 +116,15 @@ class Rows(unittest.TestCase):
         return st.desired(issues or self.ISSUES, state or self.STATE, self.BOARDS, NOW, self.ROLES)
 
     def test_spawned_cli_session_row_links_its_run_log(self):
-        dsh = {'table': 'mstack', 'issue': 'MST-40', 'runner': 'dsh', 'session': 'dsh:fake-1', 'native_session': 'fake-1',
+        dsh = {'table': 'mstack', 'issue': 'MST-40', 'runner': 'dsh', 'session': 'dsh:session-1', 'native_session': 'session-1',
                'log': '/w/.mstack/cache/runs/mst-40.log', 'live': True, 'dispatched_at': '2026-10-30T11:00:00+0800'}
-        state = {**self.STATE, 'runs': {'t9': dsh}, 'sessions_seen': {'dsh:fake-1': {'state': 'deleted'}}}
-        props = self.rows(state)[0]['session/dsh:fake-1']['properties']
+        state = {**self.STATE, 'runs': {'t9': dsh}, 'sessions_seen': {'dsh:session-1': {'state': 'deleted'}}}
+        props = self.rows(state)[0]['session/dsh:session-1']['properties']
         self.assertEqual((props['session_agent'], props['session_state'], props['source_url']),
                          ('deepseek', 'active', 'file:///w/.mstack/cache/runs/mst-40.log'))
-        ended = self.rows({**state, 'runs': {'t9': {**dsh, 'live': False}}})[0]['session/dsh:fake-1']['properties']
+        ended = self.rows({**state, 'runs': {'t9': {**dsh, 'live': False}}})[0]['session/dsh:session-1']['properties']
         self.assertEqual(ended['session_state'], 'active')         # MST-40 waits for review: shown active
-        stopped = self.rows({**state, 'runs': {'t9': {**dsh, 'stopped': 'x'}}})[0]['session/dsh:fake-1']['properties']
+        stopped = self.rows({**state, 'runs': {'t9': {**dsh, 'stopped': 'x'}}})[0]['session/dsh:session-1']['properties']
         self.assertEqual(stopped['session_state'], 'archived')
         self.assertEqual([st.agent_of(r) for r in ('dsh', 'opencode', 'codex', None)], ['deepseek', 'other', 'codex', 'claude'])
 

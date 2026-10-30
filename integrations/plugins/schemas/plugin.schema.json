@@ -113,7 +113,7 @@
       "items": {
         "type": "string"
       },
-      "description": "Optional contract features, e.g. agent: notify, resume; board: reactions; memory.long: hybrid-search."
+      "description": "Optional contract features, e.g. agent: notify, resume, json-events, sandboxed (the host can't commit or call `mstack board`; `work` commits and reports after each turn); board: reactions; memory.long: hybrid-search."
     },
     "expose": {
       "type": "array",
@@ -220,6 +220,55 @@
             "type": "string"
           },
           "description": "event kinds that report an error (default [\"error\"])"
+        },
+        "end_events": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "description": "events that end a turn, each a set of field values to match (default [{\"type\": \"status\", \"phase\": \"turn_end\"}]). A host with a stream counts a turn as finished only when one of these arrives, never from its exit code."
+        },
+        "end_reason_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "fields of the end event naming why the turn ended (default [\"reason.kind\"])"
+        },
+        "completed_reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "end reasons that mean the turn completed (default [\"completed\"])"
+        },
+        "blocked_events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "event kinds that report a tool's outcome (default [\"tool_result\"])"
+        },
+        "result_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "fields of those events holding the outcome text (default [\"result\", \"error\"])"
+        },
+        "blocked_patterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "case-insensitive substrings of an outcome that mean the host refused the action (sandbox, no approval channel); reported to the owner as blockers"
+        },
+        "usage_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "fields holding per-request token usage, summed per turn (default [\"usage\"])"
         }
       }
     }
