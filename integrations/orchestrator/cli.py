@@ -216,12 +216,12 @@ def add_resources(b, table, task, docs):
     return [d for d in docs if b.add_resource(task, base + d, d)]
 
 
-def set_status(b, task, status, linear=..., explicit=False, **props):
+def set_status(b, task, status, linear=..., back=False, explicit=False, **props):
     """Board phase; on a Linear board also its Linear status (`linear`: an explicit target, None to leave Linear).
     A phase change ends a recorded block (adopt --stage blocked)."""
     unblock(task)
     if hasattr(b, 'linear_target'):
-        b.set(task, task_status=status, linear=linear, explicit=explicit, **props)
+        b.set(task, task_status=status, linear=linear, back=back, explicit=explicit, **props)
     else:
         b.set(task, task_status=status, **props)
 
@@ -499,7 +499,8 @@ def apply_verdict(b, task, status, verdict):
         raise ValueError('no %r verdict for a task in %s' % (verdict, status))
     now, text = VERDICTS[(status, verdict)]
     # Private: accepted is not landed yet, so Linear stays In Progress until `merged`.
-    set_status(b, task, now, linear=None if now == 'Done' and getattr(b, 'journal', None) else ...)
+    set_status(b, task, now, linear=None if now == 'Done' and getattr(b, 'journal', None) else ...,
+               back=status == 'In Review' and now == 'Todo')      # sent back: the one move Linear may go backwards
     b.say(task, text)
     return now
 
@@ -1206,7 +1207,7 @@ def cmd_adopt(args, b):
                                                 'session': args.session, 'tree': args.tree, 'cwd': args.tree,
                                                 'issue': task.get('linear_identifier'),
                                                 'parent': task.get('parent'),
-                                                'adopted': True}
+                                                'adopted': True, 'stage': adopt_stage_name(task, args.stage, status)}
         mark_active(s, args.session)
     remember(task['id'], name, task.get('linear_identifier'))
     reason = ': %s' % SECRET.sub('[redacted]', args.reason)[:300] if args.reason else ''
@@ -1247,6 +1248,11 @@ def adopt_stage(task, stage=None):
     if 'review' in (task.get('linear_state') or '').lower():
         return ADOPT_STAGES['preview']
     return ADOPT_STAGES['building']
+
+
+def adopt_stage_name(task, stage, status):
+    """The stage recorded on the run (its stamp: the lag check trusts only phases a stamped adopt or a dispatch set)."""
+    return stage or {'Awaiting Approval': 'planning', 'In Review': 'preview', 'In Progress': 'building'}.get(status, status.lower())
 
 
 TRIGGER_LOOKBACK = 86400  # seconds of Linear notifications read back (the hub's seen-keys drop repeats)
@@ -1300,33 +1306,38 @@ def linear_triggers(name, lb, tasks, runs, seen, fresh):
     return out
 
 
-LAG_PHASES = ('Todo', 'In Progress')   # phases whose Linear status is fixed by the board alone (In Review may be
-                                       # finished-not-landed or on Preview, so it is never flagged)
+LAG_PHASES = ('In Progress',)   # the one phase whose Linear status the board alone fixes: Todo may be delayed on
+                                # purpose, and In Review may be finished-not-landed or on Preview
 
 
 def status_lags(name, lb, tasks, seen, fresh):
-    """Managed issues whose Linear status lags the board phase (MST-58), flagged once per (issue, phase, state).
-    Closed issues are the consumer's and never flagged."""
+    """Managed issues whose Linear status is *behind* the board (MST-58), flagged once per (issue, phase, state).
+    Only In Progress work the board itself started (a dispatch, or an adopt stamped `building`) counts; an issue
+    held with a reason (`adopt --stage blocked`, `note --hold`), a closed one, or one Linear already has further
+    along (In Review) is never flagged. The `do` line moves Linear to exactly the `want` state."""
     if not hasattr(lb, 'linear_target'):
         return []
     out = []
-    blocked = read_state().get('blocked', {})
+    st = read_state()
+    blocked, runs = st.get('blocked', {}), st.get('runs', {})
     for task in tasks:
         phase, target = task['task_status'], lb.linear_target(task['task_status'])
-        if task['id'] in blocked:
-            continue                                      # blocked with a recorded reason: Linear kept on purpose
+        run = runs.get(task['id']) or {}
+        if task['id'] in blocked or not run or (run.get('adopted') and run.get('stage') != 'building'):
+            continue                                      # held on purpose, or a phase no stamped step set
         if not task.get('managed') or phase not in LAG_PHASES or not target or task.get('linear_state_type') in linear_board.CLOSED:
             continue
         link = lb.owner_of[task['id']]
         want = link.state_for(target)
         have = lb.cache[task['id']]['state']
         key = 'lag:%s:%s:%s' % (task['id'], phase, have.get('id'))
-        if want['id'] == have.get('id') or key in seen:
-            continue
+        if key in seen or linear_board.rank(want) <= linear_board.rank(have):
+            continue                                      # in step, or Linear is already further along
         fresh.append(key)
         out.append({'kind': 'status_lag', 'table': name, 'task': task['id'], 'issue': task['linear_identifier'],
                     'phase': phase, 'linear': have.get('name'), 'want': want.get('name'),
-                    'do': 'run `mstack board note --task %s --status "%s" "status sync"`' % (task['linear_identifier'], phase)})
+                    'do': 'run `mstack board note --task %s --push-status "Linear %s → %s"` (or `note --hold "<why>"` '
+                          'if it waits on purpose)' % (task['linear_identifier'], have.get('name'), want.get('name'))})
     return out
 
 
@@ -1921,9 +1932,19 @@ def cmd_note(args, b):
             b.push_status(ident, args.status, explicit=True)
             with state() as s:
                 s.setdefault('blocked', {})[ident] = 'Linear set to %s by note: %s' % (args.status, text[:200])
-        moves = pushed(b)
-        if moves:
-            out['linear_status'] = moves
+    if args.hold is not None or args.push_status:
+        task = b.get(args.task)
+        ident = task.get('id') or args.task
+        with state() as s:
+            if args.hold:
+                s.setdefault('blocked', {})[ident] = SECRET.sub('[redacted]', args.hold)[:300]
+            elif args.hold is not None:
+                s.get('blocked', {}).pop(ident, None)
+        if args.push_status and hasattr(b, 'push_status'):
+            b.push_status(ident, b.linear_target(task.get('task_status')))
+    moves = pushed(b) if args.status or args.push_status else []
+    if moves:
+        out['linear_status'] = moves
     return out
 
 
@@ -2387,6 +2408,10 @@ def parser():
     s.add_argument('--status', choices=['Backlog', 'Todo', 'In Progress', 'In Review', 'Done', 'Canceled'],
                    help='set the stage explicitly: Linear gets exactly this status (on private boards too, status field '
                         'only); Todo and Backlog change Linear only and hold the issue (never dispatched or flagged)')
+    s.add_argument('--push-status', action='store_true',
+                   help="move Linear to the current phase's status (never backwards); the fix a status_lag event names")
+    s.add_argument('--hold', metavar='REASON',
+                   help='delayed or blocked on purpose: keep Linear as it is and never flag it ("" releases the hold)')
     s = sub.add_parser('merged', help='after merge and push: docs as Resources, one note, Done (or In Review with --verify)')
     s.add_argument('--task', required=True, help='issue id or MST-123')
     s.add_argument('--project', help='the board, when the issue has no run or plan recorded here')
