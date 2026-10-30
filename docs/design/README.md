@@ -37,4 +37,4 @@ For changing live status, use [the canonical handover](../HANDOVER.md).
 15. [Multi-harness workers](015-MULTI-HARNESS.md) (MST-54, plan): DeepSeek Harness headless workers first, OpenCode
     second, the four spawn-path gaps, and a survey of session-manager UIs.
 17. [{{mstack:CLIENT_C_APP}} orchestrators](017-AIRBUILD-ORCHESTRATORS.md) (MST-66, plan): orchestrators as {{mstack:CLIENT_C_APP}} Team Agents
-    woken by chat messages through the user API token, actions run by mstack's conductor, phase 1 on mstack's board.
+    woken through {{mstack:CLIENT_C_APP}}'s public MCP server, actions run by mstack's conductor, phase 1 on mstack's board.

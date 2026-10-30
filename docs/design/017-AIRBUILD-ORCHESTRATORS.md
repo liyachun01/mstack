@@ -1,9 +1,16 @@
 # 017 — Orchestrators hosted in {{mstack:CLIENT_C_APP}} (MST-66, 2026-10-30)
 
-Status: investigation and plan. Nothing in {{mstack:CLIENT_C_APP}} production, its repos or its accounts was changed, and no paid
-model was called. {{mstack:CLIENT_C_APP}} was read only from the {{mstack:CLIENT_C_FOLDER}} workspace checkouts (`backend`, `worker-platform`,
-`{{mstack:CLIENT_C_SITE}}`, `{{mstack:CLIENT_C_APP}}`). Every step marked ★ needs the owner's OK. Steps that touch {{mstack:CLIENT_C_APP}} accounts also go
-through the setup guard. {{mstack:CLIENT_C_APP}} product work goes to the YEL board through the {{mstack:CLIENT_C_SITE}} orchestrator.
+Status: investigation and plan. {{mstack:CLIENT_C_APP}} is treated as **a product mstack uses**, not as code (owner, 2026-10-30:
+"Don't read {{mstack:CLIENT_C_APP}} Repo, I have {{mstack:CLIENT_C_APP}} desktop app"). An earlier draft drew on the {{mstack:CLIENT_C_APP}} source; it was
+withdrawn, and nothing from it is used here. Sources are only:
+- the public site (`{{mstack:CLIENT_C_SITE}}`, `{{mstack:CLIENT_C_SITE}}/docs/mcp/`);
+- what the installed **{{mstack:CLIENT_C_APP}} for Mac 1.3** app bundle exposes (Info.plist, App Intents metadata, the bundled
+  local-environment tools and skills), read without opening or driving the app;
+- product facts from the {{mstack:CLIENT_C_SITE}} orchestrator.
+
+Nothing in {{mstack:CLIENT_C_APP}} was changed or called, and no paid model ran. Steps marked ★ need the owner's OK, and an
+OAuth sign-in or driving the app's UI is one of them. {{mstack:CLIENT_C_APP}} product asks go to YEL through the {{mstack:CLIENT_C_SITE}}
+orchestrator.
 
 Builds on [011](011-EVENT-HUB.md) (Postgres hub queue), [014](014-STATUS-TABLE.md) ("My tasks"),
 [015](015-MULTI-HARNESS.md) (runner plugins) and 016 (DeepSeek orchestrators: mailbox, conductor, action block,
@@ -14,166 +21,119 @@ flow using {{mstack:CLIENT_C_APP}} production app: make orchestrators live in {{
 
 ## Short answer
 
-- **Yes, {{mstack:CLIENT_C_APP}} can host the orchestrator today, with no {{mstack:CLIENT_C_APP}} product change.** An {{mstack:CLIENT_C_APP}} Team Agent is a
-  long-lived, cloud-hosted agent. It wakes when a message arrives in its channel, keeps its session and `MEMORY.md`
-  on a persistent volume, has Bash, git and the network inside a gVisor sandbox, and runs any catalog model. That
-  includes cheap ones and the owner's own key (`byok:custom`, e.g. DeepSeek's official API).
-- **The hub wakes it by sending a chat message.** {{mstack:CLIENT_C_APP}}'s user API token (the MCP connector's
-  `{{mstack:CLIENT_C_FOLDER}}-api-v1` token, built in the backend) can send to a channel and long-poll for replies
-  (`POST …/messages/wait`). A message sent with it wakes Agents "exactly as one typed in the app". mstack adds an
-  **{{mstack:CLIENT_C_APP}} adapter** to 016's conductor. The adapter posts each mailbox batch to the orchestrator Agent's DM and
-  reads its replies back.
-- **The Agent never touches this machine.** It gets the context it needs inside the message (and in attachments
-  when large). It ends its turn with 016's `mstack-actions` block. The conductor, on this machine, validates every
-  action and runs it with `mstack board`. Linear keys, Postgres and git stay here, and nothing on the VM is exposed
-  to the internet in phase 1.
-- **The owner gets an orchestrator console for free:** the {{mstack:CLIENT_C_APP}} app on iPhone, iPad and Mac. They can chat
-  with the orchestrator, get push alerts when it finishes (`chat.settled`), and see one thread per orchestrator.
-- **Agent-to-agent messaging stays in the hub mailbox** (016), not in {{mstack:CLIENT_C_APP}} channels. So an {{mstack:CLIENT_C_APP}}
-  orchestrator can talk to a Claude Desktop or dsh worker, and the other way round.
-- **Phase 1:** one Agent, `@mstack-orch`, runs mstack's own board, first in shadow mode, then live. Workers stay
-  on this machine (Claude Desktop or dsh) because they need its git worktrees.
+- **Very likely yes, through {{mstack:CLIENT_C_APP}}'s public MCP server.** `https://mcp.{{mstack:CLIENT_C_SITE}}/mcp` (OAuth, "nothing to
+  install and no key to copy") lets an outside client act as the owner. It can talk to Agents, catch up on a
+  Project, run the Team ("hire or edit Agents") and share files. It **waits for replies** ("Agents can take a few
+  minutes, and the assistant keeps waiting"). That is exactly a wake-and-collect channel.
+- **mstack's conductor (016) becomes an MCP client of {{mstack:CLIENT_C_APP}}.** For each mailbox batch it sends a message to the
+  orchestrator Agent and waits for the reply. The Agent ends its turn with 016's `mstack-actions` block, and the
+  conductor validates and runs it with `mstack board` here. Linear keys, git and Postgres stay on this machine,
+  and nothing on the VM is exposed.
+- **The owner's console is the {{mstack:CLIENT_C_APP}} app** (Mac, iPhone, iPad): chat with the orchestrator, see its work, and
+  give verdicts. A Mac fallback for waking exists without any token: the app's **Shortcuts actions** "Send
+  Message" and "Send Files" (`shortcuts run`).
+- **Agent-to-agent messaging stays in the hub mailbox** (016), so an {{mstack:CLIENT_C_APP}} orchestrator can talk to Claude
+  Desktop or dsh workers.
+- **Phase 1** starts with a read-only qualification ★: connect an MCP client, list its tools and send one test
+  message. Then one Agent, `@mstack-orch`, runs mstack's own board in shadow mode, then live. Workers stay on this
+  machine.
+- **What still needs the owner's answer** is listed in section 6 (models, Agent instructions, outbound HTTP,
+  state, stop, cost).
 
-## 1. What {{mstack:CLIENT_C_APP}} offers today
+## 1. What {{mstack:CLIENT_C_APP}} offers, as a user sees it
 
-Sources: `backend/AGENTS.md`, `backend/docs/{agent-team-sandbox,chat,mcp,byok,default-model,billing,token-usage,
-environment-local,team-workers}.md`, `backend/team/models.json`, plus the other repos' docs (summarised below).
+### From the public site (`{{mstack:CLIENT_C_SITE}}`)
 
-### Agents, sandboxes and models
-
-| Topic | What exists |
+| Topic | What it says |
 |---|---|
-| Agent | A **Team member** (`team_members` row) made from a template. Owners can hire a `custom` Agent with their own name, role, bio and instructions (`POST /api/teams/:teamID/members` with overrides). Its `agentID` is its @handle. The model is chosen per member or from the account default. |
-| Runtime | The **{{mstack:CLIENT_C_APP}}Environment** program, one per Team. Each enabled Agent is a KWWK bot worker process (a Swift agent loop) with read, write, edit, grep, find, ls, Bash and sub-agents, plus `bot_*` chat tools (cards, `ask_question`, status). The bundled CLIs are `git` (works on the volumes), `runbuild`, `simulator`, `asc`, `imagegen`, `modelgen`, `website` and `storeshot`. |
-| Sandbox | **Cloud Team:** one GKE Autopilot Pod per Team under gVisor, created on demand (warm pool, seconds to wake). Agents run as a shared unprivileged uid; there are no GCP or K8s credentials inside. **Local Team:** the same Environment as a child process of the owner's Mac app, running as the owner's user with no isolation. It is online only while the app runs. |
-| Persistence | JuiceFS volumes: one Team state volume (each Agent's workspace, `MEMORY.md`, KWWK session store and notification cursor) and one volume per Project (`/projects/<id>`, a normal git working copy). Memory and processes can be thrown away; the volumes are the only state. |
-| Lifetime | Decided by heartbeats. The Pod stays up while an Agent is busy (`self/activity`) or the app is in the foreground (`presence`), then 300 s more. A message to a stopped Team starts the Pod (wake outbox, retried, "wake never lost"). |
-| Models | `team/models.json`: Grok 4.6/4.7, GPT-5.6/6.x (Luna from $0.10/$0.50 per M tokens), Claude Sonnet/Opus 5/5.5 and Fable, Kimi K3, GLM 5.2/5.3 (5.3 Flash $0.075/$0.25). They are served through the backend's OpenRouter proxy. BYOK (`byok:` prefix) sends traffic straight to the provider with the account's own login, and `byok:custom` points at any OpenAI- or Anthropic-compatible endpoint (one per account). DeepSeek isn't in the catalog; `byok:custom` with DeepSeek's API key covers it. |
-| Search | Exa search and contents through the backend (`/api/llm/v1/search`, `/contents`). |
+| Agents | "AI agents to build your app and handle App Review", covering product, design, engineering, growth and marketing. They "submit, respond, fix, and resubmit". |
+| Where they run | "Teams can run on a Mac or in the cloud … Switch anytime. The same brief and project context move with you." |
+| Plans | **Free** $0: 1 cloud VM hour a month, BYOK ("provider usage is billed by your AI provider"). **Pro** $20: 40 VM hours, included tokens. **Max** $200: 480 VM hours, more tokens, projects in parallel. **Enterprise** $2,000: custom hours and token pool, shared seats, self-hosted backend. |
+| Models | No model names on the site. Included tokens on Pro and Max; BYOK on every plan. |
+| MCP server (`/docs/mcp/`) | URL `https://mcp.{{mstack:CLIENT_C_SITE}}/mcp`. OAuth sign-in in the browser. Clients: Claude (web, desktop, Claude Code), ChatGPT, Cursor, Codex, and any remote-MCP-over-HTTP client with OAuth. It acts **as you**, in the Teams you belong to; owner-only acts stay owner-only. Messages sent through it "are yours". It waits for replies. Reading never marks a chat as read. Deletes happen only on explicit request. You disconnect it under "Connected apps" on {{mstack:CLIENT_C_SITE}}. "The connection is free. Work your Agents do counts against your {{mstack:CLIENT_C_APP}} plan." The page lists capabilities, not tool names: talking to Agents, catching up on a Project, running the Team ("Hire a designer Agent and add it to the Recipes project"), sharing files. Nothing about stopping or pausing an Agent. |
 
-### Create, message, resume, stop
+### From the installed Mac app (bundle only, app not opened)
 
-| Action | API | Auth |
+| Surface | What is there | Use for mstack |
 |---|---|---|
-| List Teams, channels, members | `GET /api/teams`, `GET /api/chat/teams/{t}/channels`, `…/members` | user session or user API token |
-| Create an Agent | `POST /api/teams/{t}/members` (template + overrides; the `custom` template for our own) | owner; opened to the API token in MCP phase 1b ("hire and edit Agents") |
-| Edit instructions or model | member override routes, phase 1b | owner |
-| **Message (wake)** | `POST /api/chat/teams/{t}/channels/{c}/messages` with an `Idempotency-Key`. A DM (`dm.<agentID>`) wakes that Agent without the Selector. A Project channel runs the Selector (an extra LLM call); the host and @mentions always get it. | user session or API token |
-| Read replies | `GET …/channels/{c}/messages?after=…` | same |
-| **Wait for replies** | `POST /api/chat/teams/{t}/messages/wait`: up to 20 channels, each from its own sequence, ≤30 s per call, ignores the caller's own messages | same |
-| Resume | Nothing to do: the session lives on the volume, so the next message continues it. A Pod restart is a cold start that reloads the session. | — |
-| Stop | No "cancel this turn" for users. Remove the Agent (`DELETE …/members/{agentID}`); enable or disable only in the admin surface. Not sending is how you pause. | owner |
-| Turn finished | Agents keep a 👀 status that lasts 10 s and is renewed while they work. When it clears, the channel is *settled* and the owner gets a `chat.settled` push. | members sync |
+| URL scheme | `{{mstack:CLIENT_C_FOLDER}}://` | Possibly deep links to a chat for "My tasks" (paths unknown; question). |
+| **App Intents (Shortcuts)** | `Send Message` (text, agent, files), `Send Files` (files, agent, text), `Open Chat` (agent) | A token-free way to wake an Agent from the Mac with `shortcuts run`. The owner makes one shortcut ★. It is one-way: there is no "read reply" intent, and the app must be on the Mac. |
+| Local environment | The app bundles the environment that runs a **local Team** on the Mac, with tools for Agents: `git`, `gh` (with a credential helper and GitHub token script), `jq`, `browser` (cloud browser), `workers` (AirHost and the app products), `password-book`, `artifact` publishing, `runbuild`, `simulator`, `asc`, `imagegen`, `audiogen`, `videogen`, `modelgen`, `website`, `storeshot` | Agents can use git and GitHub themselves, and some kind of credential store exists (`password-book`; what it holds is a question). |
+| System skills | 21, mostly app building (iOS, AirHost backends, analytics, purchases, App Store). One, `daily-report`, mentions "your daily **Schedule** comes due". | Agents seem to support **scheduled turns** (question). |
 
-The user API token (`{{mstack:CLIENT_C_FOLDER}}-api-v1.`, 1 h access + 30-day rotating refresh) comes from OAuth 2.1 with PKCE at
-`https://{{mstack:CLIENT_C_SITE}}/oauth/*`. It is open to dynamic client registration. It acts as the user who granted it, in
-every Team they belong to, on an allowlist of routes. It never moves read cursors, and it is revoked on its own.
-The backend has the principal, the OAuth server and the wait service (`ChatMessageWaitService`), and about 70
-routes accept the token. Whether `mcp.{{mstack:CLIENT_C_SITE}}` and the OAuth pages are live in production is to be confirmed
-(question 1 below).
+### From the {{mstack:CLIENT_C_SITE}} orchestrator (product knowledge, unverified)
 
-### Tools, MCP, outbound network
-
-- **No custom MCP servers per Agent.** The runtime has its own tool set. Skills are **global**: `team/sync.sh`
-  publishes them to every Team, and production needs `--allow-production`. A per-Team or per-Agent skill doesn't
-  exist. The way to give an Agent a playbook today is its instructions (`role_prompt` override), files it keeps
-  in its workspace, and the messages it receives.
-- **Network out:** Agents install dependencies and fetch from the web inside the sandbox. Reaching an arbitrary
-  HTTPS host from a cloud Team, for example an mstack API behind a tunnel, is still to be confirmed (question 5).
-- **{{mstack:CLIENT_C_APP}}'s own MCP connector** (`{{mstack:CLIENT_C_FOLDER}}-mcp` Worker at `mcp.{{mstack:CLIENT_C_SITE}}`) goes the other way: it lets an
-  *outside* agent (Claude, Grok …) use {{mstack:CLIENT_C_APP}} chats as the user. mstack can use the same API without MCP.
-
-### Triggers and the worker platform
-
-- **No external triggers besides chat.** There are no user-defined inbound webhooks and no scheduled or proactive
-  Agent turns; the backend's crons are system tasks. Posting a message with the user API token is the only way an
-  outside system starts a turn.
-- **worker-platform (`apps.{{mstack:CLIENT_C_SITE}}`)** is Cloudflare Workers for Platforms: plain ESM JS apps with D1, a public
-  `fetch` handler (so it can receive webhooks), and crons (one minute at least, 60 s per run, at most once,
-  missed runs not caught up). It has no resident processes and no per-worker secret store yet
-  (`workers env set` is on its roadmap). It **can't host the conductor**: the conductor needs this machine's git,
-  Linear keys and Postgres, and a long-running loop. AirRouter (its metered AI proxy) has DeepSeek V4.1 Flash only
-  as a free-preset fallback, not for Agents.
-- The app's own ExecPlans include `TeamIssueDelivery` (Claude sessions delivering YEL issues from Linear). It is
-  the closest product precedent and worth a look by the {{mstack:CLIENT_C_SITE}} orchestrator before A-items are filed.
-
-### Auth and cost
-
-- The admin surface (`/api/admin`, behind Cloudflare Zero Trust) is out of bounds for mstack. Its service token
-  is for {{mstack:CLIENT_C_APP}}'s own maintenance, and mstack never uses it.
-- **Billing** is per user: per-feature plan quotas plus a prepaid credit balance in micro-USD. Platform inference
-  is metered at upstream cost times a multiplier. BYOK traffic never charges credits. Token usage per Team, Agent
-  and model is readable at `GET /api/teams/{t}/token-usage`.
-- **A wake costs** one agent turn (KWWK system prompt + role + the message; the prefix stays stable, so it is
-  cached), plus a Pod held for the turn and 300 s after it. A DM has no Selector call; a Project-channel message
-  adds one.
+- Local and cloud Agents both exist in production (open YEL bugs refer to each).
+- Custom Agents exist (YEL bugs about their avatars). A broader "add custom agent" item is still in YEL's Backlog.
+- It knows of no per-Team skills, no custom MCP servers per Agent, and no outbound hook when an Agent replies. It
+  doesn't know whether cloud Agents can reach any HTTPS host.
 
 ## 2. Design: mstack orchestrators as {{mstack:CLIENT_C_APP}} Agents
 
 ```
 Linear ──(hub tick, MST-41/60)──▶ Postgres mailbox (016: orchestrator.queue + orchestrator.agents)
                                           │
-                     conductor (016), adapter per harness
-                     ├─ dsh adapter: dsh --session-id …            (016)
-                     └─ {{mstack:CLIENT_C_FOLDER}} adapter ──HTTPS, user API token──▶ {{mstack:CLIENT_C_APP}} backend
-                                                   │  POST dm.mstack-orch messages (wakes the Agent)
+                     conductor (016), one adapter per harness
+                     ├─ dsh adapter:      dsh --session-id …                       (016)
+                     └─ {{mstack:CLIENT_C_FOLDER}} adapter: MCP client of https://mcp.{{mstack:CLIENT_C_SITE}}/mcp (OAuth as the account)
+                                                   │  "send a message to @mstack-orch" (wakes it)
                                                    ▼
-                                         {{mstack:CLIENT_C_APP}} Team "mstack" ── Agent @mstack-orch (cloud Pod)
+                                     {{mstack:CLIENT_C_APP}} Team ── Agent @mstack-orch (cloud or local)
                                                    │  reply ending in ```mstack-actions```
-                     ◀──── messages/wait ──────────┘
+                     ◀──── "wait for the reply" ───┘
    validate → `mstack board propose|ask|dispatch|forward|stop|note|…` → mail to other agents → resolve events
 ```
 
 ### 2.1 The `{{mstack:CLIENT_C_FOLDER}}` host and runner plugin
 
-A third host kind beside `spawn` (argv) and `handoff` (Claude Desktop), with transport `chat`.
+A third host kind beside `spawn` (argv) and `handoff` (Claude Desktop), with transport `mcp-client`.
 
 ```json
-{"name": "{{mstack:CLIENT_C_FOLDER}}", "joint": "agent", "transport": "chat", "status": "planned",
- "summary": "{{mstack:CLIENT_C_APP}} Team Agent, woken by a DM, replies read by the conductor",
- "endpoint": "https://server.{{mstack:CLIENT_C_SITE}}", "auth": {"secret": ".mstack/secrets/{{mstack:CLIENT_C_FOLDER}}.json"},
+{"name": "{{mstack:CLIENT_C_FOLDER}}", "joint": "agent", "transport": "mcp-client", "status": "planned",
+ "summary": "{{mstack:CLIENT_C_APP}} Agent, woken and read through {{mstack:CLIENT_C_APP}}'s public MCP server",
+ "endpoint": "https://mcp.{{mstack:CLIENT_C_SITE}}/mcp", "auth": {"oauth": ".mstack/secrets/{{mstack:CLIENT_C_FOLDER}}-oauth.json"},
  "capabilities": ["resume", "actions-block", "owner-chat"],
  "requires": {"settings": ["team", "agent"]}}
 ```
 
-- **Where it lives:** `integrations/plugins/builtin/{{mstack:CLIENT_C_FOLDER}}/plugin.json`, and a client in
-  `integrations/orchestrator/{{mstack:CLIENT_C_FOLDER}}.py` (send, wait, read, attachment upload, token refresh). No new dependency:
-  plain `urllib`, like `linear.py`.
-- **Config:** `taskboard.orchestrators.<scope>.agent` gets `{"harness": "{{mstack:CLIENT_C_FOLDER}}", "team": "<team id>",
-  "agent": "mstack-orch", "model": "…"}`. The address stays `orch:mstack`; the native session is
-  `{{mstack:CLIENT_C_FOLDER}}:<team>/<agentID>` in `orchestrator.agents`.
-- **Secrets:** `.mstack/secrets/{{mstack:CLIENT_C_FOLDER}}.json` (0600) holds the OAuth client id, refresh token and access token.
-  The refresh token rotates, and the file is rewritten atomically on each refresh. A reused refresh token revokes
-  the grant, so only one process (the conductor, under `conductor.lock`) ever refreshes.
-- **`runners.py`:** `kind('{{mstack:CLIENT_C_FOLDER}}') == 'chat'`. `dispatch` refuses it as a *worker* host in phase 1 (workers
-  need local worktrees). `can_resume` is true, and `sandboxed` is true (no `mstack board`, no git here).
-- **"My tasks" (014):** the orchestrator row gets `session_agent: {{mstack:CLIENT_C_FOLDER}}` (a new value beside claude, codex,
-  deepseek, other). Its link is the {{mstack:CLIENT_C_APP}} DM, if the app has a deep link (question for YEL), else the
-  conductor's turn log.
+- **Code:** the manifest goes in `integrations/plugins/builtin/{{mstack:CLIENT_C_FOLDER}}/plugin.json`. The client goes in
+  `integrations/orchestrator/{{mstack:CLIENT_C_FOLDER}}.py`; it reuses `integrations/plugins/mcp_client.py` and adds streamable-HTTP
+  and OAuth (dynamic registration + PKCE, refresh). It maps the adapter's four needs (send, wait, read recent,
+  attach a file) onto whatever tool names `tools/list` returns. Those names are pinned in config after
+  qualification (P1), not guessed in code.
+- **Config:** `taskboard.orchestrators.<scope>.agent` gets `{"harness": "{{mstack:CLIENT_C_FOLDER}}", "team": "…", "agent":
+  "mstack-orch"}`. The mailbox address stays `orch:mstack`; the native session is `{{mstack:CLIENT_C_FOLDER}}:<team>/<agent>` in
+  `orchestrator.agents`.
+- **Secrets:** `.mstack/secrets/{{mstack:CLIENT_C_FOLDER}}-oauth.json` (0600) holds the client registration and tokens. Only the
+  conductor (under `conductor.lock`) refreshes, since refresh tokens usually rotate.
+- **`runners.py`:** `kind('{{mstack:CLIENT_C_FOLDER}}') == 'mcp-client'`. `dispatch` refuses it as a *worker* host in phase 1.
+  `sandboxed` is true: the Agent can't run `mstack board` or commit here.
+- **Fallback transport `shortcuts`** (Mac only): wake via `macctl run shortcuts run "mstack → {{mstack:CLIENT_C_APP}}"` with the
+  batch as input. Replies then come back only through the owner's app, or through 2.3 phase B. Keep it for the case
+  where the MCP sign-in can't be used for automation.
+- **"My tasks" (014):** the orchestrator row gets `session_agent: {{mstack:CLIENT_C_FOLDER}}` (a new value) and an `{{mstack:CLIENT_C_FOLDER}}://`
+  link if one exists, else the conductor's turn log.
 
 ### 2.2 How the hub wakes the Agent
 
-1. The hub tick (unchanged) writes events. 016's mailbox gives each one a recipient (`orch:mstack`).
-2. The conductor takes the batch for `orch:mstack` (one turn at a time, `batch_wait` 30 s, cap 20) and renders
-   one message:
-   - a first line `mstack hub · batch 7f3c · events 412, 413`, so the Agent and the owner can tell hub mail from
-     the owner's own messages (`content.via` is recorded but not shown to Agents);
-   - per event: kind, issue, title, status, the owner's words, and the thread excerpt the action needs;
-   - when the context is over about 8 KB: the full threads as a `.md` attachment (`create_attachment_upload` →
-     `PUT` → `complete`), referenced in the text. Agents download attachments themselves.
-3. It sends the message with `Idempotency-Key = sha256(address, event ids)`, so a retry never double-sends. A 202
-   (Pod cold-starting) counts as delivered. A 503 `chat_wake_failed` puts the batch back in the queue with an
-   attempt count.
-4. It waits with `messages/wait` on `dm.mstack-orch` from the sequence of its own message. It collects the
-   Agent's messages until one holds an `mstack-actions` block, or until the Agent's status has cleared and no
-   new message has come for 60 s, or `max_turn_seconds` passes (see 2.3).
-
-The Agent's KWWK base prompt makes it say a line first and a line per milestone. That is fine: the owner sees
-progress in the app, and the conductor reads only the block.
+1. The hub tick (unchanged) writes events; 016's mailbox gives each a recipient (`orch:mstack`).
+2. The conductor takes one batch per recipient (one turn at a time, `batch_wait` 30 s, cap 20) and renders one
+   message:
+   - a first line `mstack hub · batch 7f3c · events 412, 413`, because MCP messages "are yours", so the Agent
+     can't otherwise tell hub mail from the owner typing;
+   - per event: kind, issue, title, status, the owner's words and the thread excerpt the action needs;
+   - a `.md` file through the MCP "share files" tools when the context is large.
+3. It waits through the MCP server for the Agent's reply, up to `max_turn_seconds`. The Agent may write several
+   messages (an acknowledgement, progress). The turn ends at the message holding an `mstack-actions` block. If the
+   wait ends without one, the conductor asks once ("your turn ended without an actions block"); after three
+   failed attempts it sends `wake_failed` to the owner and pauses the Agent.
+4. A retried send must not post twice. If the send tool takes an idempotency key, use
+   `sha256(address, event ids)`; if it doesn't, the conductor reads the chat first and skips a batch header it
+   already sent.
 
 ### 2.3 How the Agent runs `mstack board` actions
 
-The Agent can't reach this machine's git, Linear keys or Postgres, and it shouldn't. Two steps:
+The Agent can't reach this machine's git, Linear keys or Postgres, and shouldn't.
 
 **Phase A: action block in the reply (phase 1, nothing exposed).** The same contract as 016, so one parser and one
 validator serve dsh and {{mstack:CLIENT_C_APP}}:
@@ -186,93 +146,65 @@ validator serve dsh and {{mstack:CLIENT_C_APP}}:
 ```
 ````
 
-- The conductor validates each action (schema, the agent's scope, the role's allowlist, milestone gates such as
-  shadow mode). It stores `(event ids, action hash)` before running, and runs it with `mstack board`.
-- After running, it reacts on the Agent's message (`PUT …/messages/{seq}/reactions`): ✅ all ran, ⚠️ some were
-  refused. The refusals go into the next batch ("your action 2 was refused: task not in scope").
-- A turn that ends without a block gets one follow-up in the same DM ("your turn ended without an actions block").
-  If that also fails, the batch goes back with an attempt count; after 3 attempts, `wake_failed` goes to the
-  owner and the Agent is paused.
-- **Read tools in phase A** are prefetched: the conductor puts `board thread`, `tree` and `status` output for
-  the batch's issues into the message or attachment. If the Agent needs more, it asks with
-  `{"do": "fetch", "what": "thread", "task": "MST-70"}`, and the conductor answers in the next message (one extra
-  turn).
+- The conductor validates each action (schema, scope, the role's allowlist, shadow-mode gate), records
+  `(event ids, action hash)` before running it, and runs it with `mstack board`.
+- It reports refused actions in the next batch ("action 2 refused: task not in scope"). It reacts ✅/⚠️ on the
+  Agent's message if the MCP server offers reactions.
+- Read needs are prefetched: `board thread`, `tree` and `status` for the batch's issues go into the message. More
+  is asked for with `{"do": "fetch", …}` and comes in the next message (one extra turn).
 
-**Phase B: a narrow mstack agent API (later, owner's OK ★).** It is the same action set as HTTP tools the Agent
-calls from Bash with `curl` mid-turn, so it can look things up without an extra turn:
+**Phase B: a narrow mstack agent API (later, owner's OK ★, only if Agents can make outbound HTTPS calls).** It is
+the same action set over HTTP, called by the Agent mid-turn (curl from its shell), served by the conductor and
+published through the existing agentgateway (a new route, a hashed per-agent key, an allowlist, rate limits,
+access logs) plus a tunnel. The key would go in the Agent's credential store, if `password-book` is one, never in
+chat. The action block stays as the fallback.
 
-- `POST /agents/v1/{address}/actions` and `GET /agents/v1/{address}/{thread|tree|status|mail}`. It is served by
-  the conductor and published through the existing agentgateway: a new route, a hashed per-agent key, an
-  allowlist, rate limits and access logs, as for `/mcp/projects/…`. A Cloudflare tunnel publishes it, because the
-  sandbox is on GKE, not on this network. The key sits in the Agent's workspace (a 0600 file the Agent reads), is
-  bound to one address and its scope, and is rotatable.
-- It needs: outbound HTTPS from the cloud sandbox to that host (question 5), a public route to the VM (a new
-  exposure, setup guard), and a way to give the Agent its key without putting it in chat history (the workspace
-  file is written once by the Agent from a one-time message, which is weak; see gap A4).
-- The action block stays as the fallback.
-
-**Rejected for phase 1:** a local Team on the owner's Mac, where Bash runs as the owner and could reach the VM
-(`orb run …/mstack board`). It needs no exposure, but it is online only while the {{mstack:CLIENT_C_APP}} app is open on the
-Mac (the same failure as today's chats) and runs a model with the owner's full shell. Keep it as the fallback if
-cloud networking or cost blocks phase B.
-
-**Also rejected:** running the conductor on worker-platform, with a cron posting mail through the token. It has no
-long-running loop and no secret store, and it can't reach this machine anyway.
+**Local-Team variant (option, not the default).** A local Team runs on the owner's Mac. If its Agents' shell can
+reach the VM, they could call `mstack board` (or a narrow wrapper) directly, with no exposure. But it works only
+while the {{mstack:CLIENT_C_APP}} app is open on the Mac, the same weakness as today's chats.
 
 ### 2.4 Agent-to-agent messaging through the hub
 
 - **The channel is 016's mailbox**, with addresses `orch:<project>[/<scope>]`, `worker:<ISSUE>`, `owner` and
-  `dock`. Every harness is just an adapter: the {{mstack:CLIENT_C_APP}} adapter for {{mstack:CLIENT_C_APP}} Agents, dsh resume for dsh, and the
-  Claude dock or hub chat for Claude Desktop sessions.
-- An {{mstack:CLIENT_C_APP}} orchestrator's `send` action becomes a mailbox row. A worker's `worker_report` (its turn ended or
-  `done`) becomes a mailbox row for `orch:mstack`, so it reaches the {{mstack:CLIENT_C_APP}} Agent in its next batch.
-- **Not {{mstack:CLIENT_C_APP}} channels between agents.** Two mstack orchestrators as Agents in one {{mstack:CLIENT_C_APP}} Project channel
-  could @mention each other. But that skips mstack's ordering, dedupe, ack and audit, costs a Selector call, and
-  only works inside one Team. Allow it later only as an optimisation for agents in the same Team, still mirrored
-  to the mailbox.
-- **The owner** can message the Agent directly in the app. The Agent treats any message without the
-  `mstack hub` first line as the owner's: requests, private-mode verdicts and "merge MST-70". Its actions still go
-  through the conductor, so an owner verdict typed in the app becomes `board owner …` run by the conductor, as in
-  016's `mstack chat`.
-  - The conductor must also read the owner's messages in that DM: the wait call ignores the caller's own
-    messages, and the caller is the owner. It does this by also reading `messages?after=` on each wake. That
-    stays sound once a separate mstack account sends (A1).
+  `dock`. Each harness is an adapter: MCP for {{mstack:CLIENT_C_APP}}, `--session-id` resume for dsh, and the dock or hub chat for
+  Claude Desktop.
+- A `send` action becomes a mailbox row. A worker's `worker_report` reaches `orch:mstack` in its next batch.
+- **Not {{mstack:CLIENT_C_APP}} group chats between agents.** That skips mstack's ordering, dedupe, ack and audit, and only works
+  inside one Team. It could be added later as an optimisation for agents in the same Team, still mirrored to the
+  mailbox.
+- **The owner** can message the Agent in the app. Messages without the `mstack hub` header are the owner's:
+  requests, private-mode verdicts, "merge MST-70". The Agent's resulting actions still go through the conductor,
+  which also reads recent messages in that chat on each wake ("catch up"), so owner messages typed while the
+  Agent was idle are seen.
 
 ### 2.5 Which account and Team
 
 | Option | Pros | Cons |
 |---|---|---|
-| **(a) A dedicated `mstack` {{mstack:CLIENT_C_APP}} account** owning its own cloud Team "mstack", with the owner invited as a member ★ | Hub mail shows as "mstack", the owner's own messages as the owner. The token can't reach the owner's product Team or Apple accounts. Billing and usage are separate. The Team roster is only orchestrators. | A new account (an invite if registration is gated), a second plan or credit balance, and the owner joins a second Team in the app. |
-| (b) A custom Agent in the owner's existing cloud Team | No new account. | The token acts as the owner everywhere, including App Store tools. Hub messages look like the owner's. It mixes with the product Agents (default roster and host rules). A cloud Team is limited to one per user. |
-| (c) A local Team on the Mac | No Pod cost; can reach the VM | See 2.3 (offline with the app, no isolation). |
+| **(a) A dedicated mstack {{mstack:CLIENT_C_APP}} account** with its own Team, the owner invited ★ | Hub mail shows as "mstack", the owner's messages as the owner. The MCP sign-in can't reach the owner's product Team. Separate plan and usage. | A second account and plan; the owner switches Teams in the app. |
+| (b) An Agent in the owner's current Team | No new account. | The MCP connection acts as the owner everywhere, including App Store work. Hub messages look like the owner's. It mixes with the product Agents. |
+| (c) A local Team on the Mac | Uses the Mac, not VM hours. | Online only while the app is open. |
 
-**Recommendation: (a).** It is the only option where a leaked mstack token can't touch the owner's product
-work.
+**Recommendation: (a)**, if the plan allows a second account. Otherwise (b) with the hub header.
 
 ### 2.6 The orchestrator's playbook inside {{mstack:CLIENT_C_APP}}
 
-- **Instructions** (`custom` template overrides, set with the hire/edit routes): a short role card (013: an
-  orchestrator plans and dispatches, never does the work), the action-block contract, the scope, and "hub mail
-  first line vs the owner". The judgment rules from `.agents/skills/mstack-orchestrator` go in **condensed**,
-  without the Claude Desktop tool parts (SendMessage, start_session), which the conductor replaces.
-- **Longer material** (the full skill, Linear status rules, size rules): a `PLAYBOOK.md` attachment in the first
-  message. The Agent saves it to its workspace and refers to it, and the conductor re-sends it when its hash
-  changes. This is a stopgap until per-Team skills exist (gap A2).
-- **Memory:** the Agent's own `MEMORY.md` on the Team volume. Linear and the journal stay the truth; the conductor
-  prefetches them every wake.
-- **Rotation:** when usage passes `rotate_at_tokens`, the conductor asks for a handover note (an action), removes
-  and re-hires the Agent with the same handle, and seeds it with `board handover` plus the note. That stays
-  manual until {{mstack:CLIENT_C_APP}} has a "reset session" (gap A3).
+- **Instructions:** custom Agents exist; how long their instructions may be is a question. They get a short role
+  card (013: plans and dispatches, never does the work), the action-block contract, the scope, and the hub-header
+  rule.
+- **Long material** (the condensed `mstack-orchestrator` skill without the Claude Desktop tool parts) is sent as a
+  `PLAYBOOK.md` file in the first message and re-sent when its hash changes, until {{mstack:CLIENT_C_APP}} offers per-Team skills.
+- **Memory:** whatever the Agent keeps (question). Linear and the journal stay the truth, and the conductor
+  prefetches them every wake, so the Agent needs little memory.
+- **Rotation:** after `rotate_at_tokens`, the conductor asks for a handover note and replaces the Agent (or resets
+  its chat, if possible), seeding it with `board handover`.
 
 ### 2.7 Cost guardrails (016's, adapted)
 
-- No wake without mail. Batching (30 s, 20 items). Context prefetched, so turns are short. DM, not a Project
-  channel, so there is no Selector call.
-- Model per scope in config. The default for phase 1 is the owner's choice (question 3).
-- The conductor's own budget: `max_turn_seconds`, a daily turn cap and `budget_day`, computed from {{mstack:CLIENT_C_APP}}'s
-  token usage (`GET /api/teams/{t}/token-usage`, read after each turn) and the catalog prices. Over budget, the
-  mail is `held` and the owner is told once. {{mstack:CLIENT_C_APP}}'s credit balance is the hard stop for platform models.
-- Pod time: one turn plus 300 s. Bursts are batched, so a busy day holds the Pod for minutes, not hours.
+- No wake without mail. Batching (30 s, 20 items). Prefetched context, so turns are short.
+- Caps per agent: `max_turn_seconds`, a daily turn cap, `budget_day`.
+- {{mstack:CLIENT_C_APP}}'s cost is the plan's VM hours plus tokens, or BYOK provider billing. How a woken cloud Agent consumes VM
+  hours (per turn, or a minimum hold) decides whether a busy day fits in Pro's 40 hours (question).
 
 ## 3. Gaps
 
@@ -280,67 +212,75 @@ work.
 
 | # | Work | Notes |
 |---|---|---|
-| M1 | 016's mailbox and conductor core (`orchestrator.agents`, recipient and sender columns, `message`, `owner_message`, `worker_report`, `wake_failed` kinds, the turn loop, action validator, execute-once log) | Shared with the dsh path; needs the schema migration ★. |
-| M2 | `{{mstack:CLIENT_C_FOLDER}}` plugin + `{{mstack:CLIENT_C_FOLDER}}.py` client (send, wait, read, attachments, reactions, token refresh) | Tests against a fake {{mstack:CLIENT_C_APP}} server; never production in tests. |
-| M3 | OAuth bootstrap: `mstack {{mstack:CLIENT_C_FOLDER}} login` runs DCR + PKCE once in the owner's browser and stores the refresh token | Owner signs in and approves ★. |
-| M4 | Rendering: batch → message (+ attachment), playbook delivery by hash | |
-| M5 | Shadow mode: actions logged, not run; daily compare with the Claude orchestrator's actions | As 016 M2. |
+| M1 | 016's mailbox and conductor core (`orchestrator.agents`, recipient and sender, new kinds, turn loop, validator, execute-once log) | Shared with the dsh path; schema migration ★. |
+| M2 | MCP client: streamable HTTP + OAuth (DCR, PKCE, refresh) in `mcp_client.py`; `{{mstack:CLIENT_C_FOLDER}}.py` adapter | Tests against a fake MCP server; no {{mstack:CLIENT_C_APP}} calls in tests. |
+| M3 | `mstack {{mstack:CLIENT_C_FOLDER}} login` (one-time browser sign-in) and `mstack {{mstack:CLIENT_C_FOLDER}} qualify` (list tools, send one test message, wait, save a receipt) | Owner signs in ★. |
+| M4 | Rendering (batch → message + file), playbook delivery by hash, hub header | |
+| M5 | Shadow mode: actions logged, not run; daily comparison with the Claude orchestrator | As 016 M2. |
 | M6 | "My tasks" `session_agent: {{mstack:CLIENT_C_FOLDER}}`, `mstack agents list/log/pause` | 014 / 016. |
-| M7 | Skills: `mstack-orchestrator` (an {{mstack:CLIENT_C_APP}} variant of the role card), `mstack-models` (an {{mstack:CLIENT_C_FOLDER}} row), `mstack-hub` (hub chat retired once the conductor runs) | |
-| M8 | Phase B agent API + gateway route + tunnel | Later; setup guard ★. |
+| M7 | Skills: `mstack-orchestrator` ({{mstack:CLIENT_C_APP}} role card variant), `mstack-models` ({{mstack:CLIENT_C_FOLDER}} row), `mstack-hub` (retired once the conductor runs) | |
+| M8 | Shortcuts fallback transport | Only if P1 shows the MCP path can't be automated. |
+| M9 | Phase B agent API + gateway route + tunnel | Later; setup guard ★. |
 
-### {{mstack:CLIENT_C_APP}} product work (for YEL, through the {{mstack:CLIENT_C_SITE}} orchestrator; mstack never edits these repos)
+### {{mstack:CLIENT_C_APP}} product asks (for YEL, through the {{mstack:CLIENT_C_SITE}} orchestrator; mstack never edits these repos)
 
-| # | Ask | Why | Workaround until then |
-|---|---|---|---|
-| A1 | **Scoped API tokens**: one Team or one channel, no App Store, Simulator or management | Least privilege for automation | A dedicated account (2.5 a) |
-| A2 | **Per-Team (or per-Agent) skills**, published by the Team owner | The playbook without global `team/sync.sh` | Instructions + `PLAYBOOK.md` attachment |
-| A3 | **Turn control for owners and tokens**: cancel the current run, reset or compact the session | Stuck turns, rotation | Remove and re-hire the Agent |
-| A4 | **Per-Agent secrets** (a value the Agent's tools can read, never shown in chat) | Phase B key | Workspace file from a one-time message |
-| A5 | **Outbound allowlist or egress per Team** (or a confirmed answer that egress is open) | Phase B calls to mstack | Phase A only |
-| A6 | **A turn-end signal for token clients**: a "run finished" event in `messages/wait` or a webhook on `chat.settled` | Cleaner than the actions block plus a timeout | Actions block + status timeout |
-| A7 | **Custom MCP servers per Agent** (remote, streamable HTTP, with a per-Agent header) | Phase B as real tools instead of curl | curl from Bash |
-| A8 | **A deep link to an Agent's DM** | "My tasks" row link | The conductor's turn log |
-| A9 | Confirm whether `mcp.{{mstack:CLIENT_C_SITE}}` / OAuth / `messages/wait` are live in production, and the plan and credit setup for an automation account | Phase 1 depends on it | Staging (`staging-server.{{mstack:CLIENT_C_SITE}}`) for the dry run ★ |
+Filed only once P1 shows which are real.
+
+| # | Ask | Why |
+|---|---|---|
+| A1 | Scoped connections: limit an MCP connection to one Team or one Agent | Least privilege for automation |
+| A2 | Mark messages sent through a connection as such, visibly, to Agents | The hub header is a convention, not a guarantee |
+| A3 | Per-Team skills or long Agent instructions | The playbook without a file in chat |
+| A4 | Stop, cancel or reset an Agent's turn or session, through MCP | Stuck turns, rotation |
+| A5 | A turn-finished signal in the wait tool | Cleaner than the actions block plus a timeout |
+| A6 | Per-Agent secrets and outbound HTTP to an allowlisted host, or custom MCP servers per Agent | Phase B |
+| A7 | A documented `{{mstack:CLIENT_C_FOLDER}}://` deep link to an Agent's chat | "My tasks" link |
+| A8 | A "read latest reply" Shortcuts action | Makes the Mac fallback two-way |
 
 ## 4. Phase-1 build plan: one {{mstack:CLIENT_C_APP}}-hosted orchestrator for mstack's own board
 
 | Step | What | Exit check | Rollback |
 |---|---|---|---|
-| P0 | Owner verdict on this doc. Questions 1–6 answered; A9 confirmed through the {{mstack:CLIENT_C_SITE}} orchestrator | answers in the thread | — |
-| P1 | M1 + M2 + M4 in code with a **fake {{mstack:CLIENT_C_APP}} server** and fake board; no network | tests green; `conductor run --dry-run` against the live queue with `--peek` | don't start it |
-| P2 ★ | Account and Team: create the `mstack` account (or use option b), its cloud Team, hire `@mstack-orch` (custom, model per question 3), invite the owner; `mstack {{mstack:CLIENT_C_FOLDER}} login` | the owner sees the Agent in the app; the token can list exactly that Team | remove the Agent; revoke the grant |
-| P3 ★ | **Shadow mode** for `orch:mstack`: real mailbox batches go to the Agent, its actions are logged, not run; the Claude orchestrator chat keeps acting | 20 events or a week; plan quality and cost per event compared | stop the conductor |
-| P4 ★ | **Live** for mstack's own board: actions run; workers still Claude Desktop (via the dock or hub chat) or dsh | a full cycle `/plan → propose → 👍 → dispatch → done → review` with no Claude orchestrator turn | `agents pause orch:mstack`; re-register the Claude chat |
-| P5 | Decide phase B (agent API), a second scope, and {{mstack:CLIENT_C_APP}}-hosted *workers* (Project volume + git push credentials) | owner verdict | — |
+| P0 | Owner verdict on this doc; section 6 answered | answers in the thread | — |
+| P1 ★ | **Qualify the MCP path**, read-only plus one test message: build M2 + M3; the owner signs in; `tools/list`; send "ping" to a test Agent and wait for the reply; record tool names, limits and timings in a receipt | receipt saved; the adapter's four needs are covered by real tools | revoke under Connected apps |
+| P2 | M1 + M4 in code against a fake MCP server built from the P1 receipt | tests green; `conductor run --dry-run` on the live queue with `--peek` | don't start it |
+| P3 ★ | Account and Team (2.5), hire `@mstack-orch` (model per question 2), send the playbook | the owner sees the Agent in the app | remove the Agent |
+| P4 ★ | **Shadow mode** for `orch:mstack`: real batches, actions logged, not run; the Claude orchestrator keeps acting | 20 events or a week; plan quality and cost per event compared | stop the conductor |
+| P5 ★ | **Live** on mstack's board; workers still Claude Desktop or dsh | a full `/plan → propose → 👍 → dispatch → done → review` cycle with no Claude orchestrator turn | `agents pause orch:mstack`; re-register the Claude chat |
+| P6 | Decide phase B, a second scope, and {{mstack:CLIENT_C_APP}}-hosted workers (Agents have `git` and `gh`) | owner verdict | — |
 
-What phase 1 does not include: other projects' boards, {{mstack:CLIENT_C_APP}} workers, phase B, and any {{mstack:CLIENT_C_APP}} product change.
-Product asks go to YEL as separate issues.
+Not in phase 1: other projects' boards, {{mstack:CLIENT_C_APP}} workers, phase B, any {{mstack:CLIENT_C_APP}} product change.
 
 ## 5. Risks
 
-- **Production dependency.** The orchestrator stops when {{mstack:CLIENT_C_APP}} is down or a runtime release breaks the KWWK
-  loop. The mailbox holds mail, and rollback to a Claude chat is one registry change.
-- **Output contract.** The Agent writes chat messages in a register the base prompt sets for people. The actions
-  block competes with that style. Shadow mode measures how reliably it comes.
-- **Selector and host rules** don't apply in a DM, but a Team needs a host Agent. In option (a) the orchestrator
-  is the Team's host, so any Project channel created later wakes it. Don't create Projects in that Team.
-- **Token power.** Even option (a)'s token can hire Agents and invite people in its Team. Until A1, keep the
-  account empty of anything else.
-- **Cost visibility** lags: token usage is rolled up each minute. Budgets use the rolled-up numbers plus a safety
-  margin.
-- **Chat history holds board context** (issue text, threads) in {{mstack:CLIENT_C_APP}}'s database. mstack's own board is fine.
-  A client board (private mode) would put client data into {{mstack:CLIENT_C_APP}}. Decide per board before P5.
+- **Unknown tool contract.** The MCP page doesn't list tool names. P1 fixes that before any code depends on it,
+  and the adapter maps names from config.
+- **Automation on a personal sign-in.** The connection acts as a person. Option (a) keeps that person a dedicated
+  account.
+- **Output contract.** Agents talk to people. Shadow mode measures how reliably the actions block comes.
+- **Production dependency.** When {{mstack:CLIENT_C_APP}} is down, mail waits in the mailbox, and rollback to a Claude chat is
+  one registry change.
+- **Data placement.** Batches put issue text into {{mstack:CLIENT_C_APP}}'s chat history. That is fine for mstack's own board; a
+  client's private board would need its own decision before P6.
+- **Cost visibility.** VM hours and tokens are seen in {{mstack:CLIENT_C_APP}}, not by mstack, until there is a usage readout.
 
 ## 6. Questions for the owner
 
-1. **Account:** a dedicated `mstack` {{mstack:CLIENT_C_APP}} account and Team (recommended), or a custom Agent in your current
-   Team?
-2. **Staging first?** Run P2–P3 against `staging-server.{{mstack:CLIENT_C_SITE}}`, then production, or go straight to production?
-3. **Model** for `@mstack-orch`: a cheap platform model (GLM 5.3 Flash, GPT-6 Luna), Claude Sonnet 5.5 for plan
-   quality, or `byok:custom` with the DeepSeek key? That key is one endpoint per account, which favours a
-   dedicated account.
-4. **Budget:** a daily cap for the orchestrator, and who pays: credits on the mstack account, or BYOK.
-5. **Console:** is the {{mstack:CLIENT_C_APP}} app enough as your orchestrator console (chat, verdicts, push), or should a
-   Claude chat stay as a relay?
-6. **dsh path:** keep MST-62 parked as the fallback adapter (it shares the conductor), or stop it?
+About the product (what the app and the docs don't say):
+1. Can a script use the MCP server unattended after one sign-in (does the connection refresh, and how long does
+   it last)? And what are its tool names (or may mstack sign in once to list them, ★ P1)?
+2. **Models:** which models can an Agent run, can each Agent have its own, and does BYOK accept DeepSeek's API?
+3. **Custom Agents:** can one be given long instructions (a few KB)? Do Agents keep memory or their chat session
+   between wakes, and for how long?
+4. **Outbound:** can a cloud Agent call an HTTPS endpoint or an MCP server of ours? What is `password-book` (a
+   secret store Agents can read)?
+5. **Stop and schedule:** can an Agent's turn be stopped or its session reset? Do Agents have Schedules (the
+   daily-report skill mentions one)?
+6. **Cost:** how does a woken cloud Agent use VM hours (per turn, or a minimum)? Which plan is this on?
+
+About the plan:
+7. **Account:** a dedicated mstack account and Team (recommended), or an Agent in your current Team?
+8. **May mstack do P1:** sign in to `mcp.{{mstack:CLIENT_C_SITE}}` once (you approve in the browser), list the tools and send one
+   test message?
+9. **Console:** is the {{mstack:CLIENT_C_APP}} app enough as your orchestrator console, or should a Claude chat stay as a relay?
+10. **dsh path:** keep MST-62 parked as the fallback adapter (it shares the conductor), or stop it?
