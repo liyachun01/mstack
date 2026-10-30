@@ -31,7 +31,15 @@ Linear ──(mirror, every 5 min per board)──▶ Postgres mstack_orchestrat
   last update, team, app code and Linear parent. Board state adds the sessions: workers (`runs`), earlier chats on an issue (`related`), orchestrators
   (`orchestrators` and each project's role registry, which also lists helpers), their reports (`runs[…].report`,
   written by `board done`/`note`) and their app state (`sessions_seen`, from the hub chat). Each project's
-  `taskboard` links give each team's Linear workspace, and `taskboard.orchestrators` routes app codes to scopes. Before each pass, any Linear board whose
+  `taskboard` links give each team's Linear workspace, and `taskboard.orchestrators` routes app codes to scopes.
+  A session's observed title also names its issue: a title that
+  starts with an identifier on a shown board ("IRO-84: …", "IRO-84 storage …") labels its row, even for a session
+  adopted for other issues or started outside dispatch (no run), and takes over that issue's row (MST-46). The hub
+  must keep `title`, `isArchived` and `isRunning` when it pipes list_sessions to `observe`. `tables` also says
+  which boards are shown: only registered Linear boards. Rows of
+  a retired (Anytype-backed, such as test-market) or unregistered board are left out, and any the table still holds
+  are archived (MST-46). The old per-project collections were archived on 2026-10-30, so "My tasks" is the channel's
+  only table. Before each pass, any Linear board whose
   issue table is older than 5 minutes is mirrored first, so boards without a registered orchestrator (mstack itself)
   stay current too.
 - **Sink:** a new collection "My tasks" in the board's existing channel, whose rows are objects of the existing
@@ -87,7 +95,7 @@ a parent that goes away clears both columns.
 | Session Type (`session_type`) | orchestrator, worker, helper |
 | Agent (`session_agent`) | claude, codex, deepseek, other (from the run's runner; orchestrators and helpers are Claude sessions) |
 | Parent Session (`session_parent`) | the orchestrator a worker or helper reports to: its scope's, else the project's; blank for orchestrators |
-| Session State (`session_state`) | active, archived, deleted, from the hub chat's last look (blank until then) |
+| Session State (`session_state`) | archived or deleted only when the hub chat saw it so; **idle** when last seen not running a turn and its issue isn't In Review; every other session (running, never observed yet, just acked/adopted, or In Review) is **active** (owner rules, 2026-10-30, MST-46). Issue-only rows (no session) have no state: filter views with "Session State is not archived, deleted" (empty passes), not "is active" |
 | Session Report (`session_report`) | the latest `board done` summary or `board note` (600 characters); free text |
 | CTA (`session_cta`) | set by the owner: noop (default), continue, archive, delete, forbidden |
 | Last Action (`session_action`) | what the last CTA did, with its time |
@@ -113,7 +121,7 @@ it's the owner's column, and only the hub resets it (to noop, after acting).
   `mstack sessions done --session <id> --result "…" [--state archived|deleted]`. That resets the CTA to noop at once
   and the next pass shows the Last Action and the new state. Setting a waiting CTA back to noop cancels it.
 - **Session states:** the hub chat runs list_sessions (`include_archived`, `limit: 200`) and pipes it to
-  `mstack sessions observe --complete --self <hub id>`. Listed → active or archived; with `--complete`, a row's
+  `mstack sessions observe --complete --self <hub id>`. Listed → active (`isRunning`), idle or archived (list_sessions shows no queued messages, so "unchecked work" is approximated by In Review); with `--complete`, a row's
   session missing from the list → deleted. list_sessions only shows sessions on the hub's own connection, which is
   where mstack's sessions run.
 - `mstack sessions list` shows waiting CTAs, protected sessions and the last states.

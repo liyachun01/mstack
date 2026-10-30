@@ -14,6 +14,7 @@ plan and who works; these commands do the deterministic parts:
            CLI hosts are spawned; desktop hosts get a launch spec (handoff)
   done     a worker in any host reports its task ready for review
   note     reverse path: a session or worker updates the issue
+  merged   after merge and push: docs as the issue's Resources, one note, Done (or In Review with --verify)
   status   one table at a glance
   sync     reconcile a linked table with Linear (pull, push or full)
   link     link a table to Linear with an entry of the owner's .secrets/linear.csv
@@ -187,15 +188,71 @@ def board_of_task(task, b):
     return board_for(name, b, scope) if name in st.get('tables', {}) else b
 
 
+def docs_base(table):
+    """The project's taskboard.docs_url ('' when unset or the table is unknown)."""
+    entry = read_state().get('tables', {}).get(table or '')
+    return project_settings(entry).get('docs_url', '') if entry else ''
+
+
 def doc_links(table, docs):
     """'Docs: [path](url)' for paths under the project's taskboard.docs_url, so Linear links to the
     repo's docs instead of carrying long text. Empty when no docs were given."""
     if not docs:
         return ''
-    base = ''
-    if table in read_state().get('tables', {}):
-        base = project_settings(read_state()['tables'][table]).get('docs_url', '')
+    base = docs_base(table)
     return '\n\nDocs: ' + ', '.join('[%s](%s%s)' % (d, base, d) if base else '`%s`' % d for d in docs)
+
+
+def add_resources(b, table, task, docs):
+    """Each doc as a Resource on the Linear issue (taskboard.docs_url + path), skipping ones already there.
+    Returns the docs added; nothing on Anytype or private boards, or without a docs_url."""
+    base = docs_base(table)
+    if not docs or not base or not hasattr(b, 'add_resource'):
+        return []
+    return [d for d in docs if b.add_resource(task, base + d, d)]
+
+
+def main_branch(repo):
+    """The repo's main branch: what origin/HEAD points at, else main or master."""
+    head = git(repo, 'symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD', check=False)
+    if head:
+        return head.split('/', 1)[1]
+    for name in ('main', 'master'):
+        if git(repo, 'rev-parse', '--verify', '--quiet', 'refs/heads/' + name, check=False):
+            return name
+    return 'main'
+
+
+def run_base(run):
+    """The commit a run's worktree started from, if recorded."""
+    path = Path(run['tree'])/'.mstack/cache/base' if run.get('tree') else None
+    return path.read_text().strip() if path and path.is_file() else None
+
+
+def merged_not_done(repo, tasks):
+    """Tasks whose branch is merged into the local main branch with work of its own, but which are not Done:
+    the after-merge follow-up (`board merged`) was forgotten. A branch counts as having work when its tip is off
+    main's first-parent line (a --no-ff merge) or differs from the commit its worktree started from."""
+    main = main_branch(repo)
+    tips = dict(line.split(' ', 1)[::-1] for line in git(
+        repo, 'for-each-ref', 'refs/heads', '--format=%(objectname) %(refname:short)', check=False).splitlines())
+    if main not in tips:
+        return []
+    merged = set(git(repo, 'branch', '--merged', main, '--format=%(refname:short)', check=False).splitlines())
+    line = None
+    runs = read_state().get('runs', {})
+    out = []
+    for t in tasks:
+        branch = t.get('branch')
+        if t.get('task_status') in ('Done', 'Canceled') or not branch or branch == main or branch not in merged:
+            continue
+        if line is None:
+            line = set(git(repo, 'rev-list', '--first-parent', main, check=False).splitlines())
+        base = run_base(runs.get(t['id']) or {})
+        if tips[branch] in line and (not base or base == tips[branch]):
+            continue                                  # a branch with no work of its own sits on main's line
+        out.append(t)
+    return out
 
 
 SIZES = ('small', 'medium', 'big')
@@ -661,6 +718,13 @@ def run_key(task):
     return next((k for k, r in runs.items() if r.get('issue') == task), task)
 
 
+def mark_active(st, session):
+    """A session ack/adopt just recorded is live: show it as active in My tasks before the next observe."""
+    if session:
+        st.setdefault('sessions_seen', {})[session] = {**(st.get('sessions_seen') or {}).get(session, {}),
+                                                       'state': 'active', 'at': time.strftime('%Y-%m-%dT%H:%M:%S%z')}
+
+
 def cmd_ack(args, b):
     """The orchestrator started the host session for a handoff, or resumed an adopted worker: stop offering it."""
     key = run_key(args.task)
@@ -672,6 +736,7 @@ def cmd_ack(args, b):
             raise ValueError('Task %s is worked by adopted session %s' % (args.task, run['session']))
         run['session'] = args.session
         run['resumed'] = True
+        mark_active(s, args.session)
     return {'task': key, 'session': args.session}
 
 
@@ -694,7 +759,8 @@ def linear_signals(name, lb, seen, fresh):
     issues you closed while a worker still had them."""
     runs = read_state().get('runs', {})
     out = []
-    for task in lb.tasks():
+    tasks = lb.tasks()
+    for task in tasks:
         messages = lb.messages(task['id'])
         mine = [m for m in messages if not m['text'].startswith(anyboard.MARK)]
         last_bot = max([m['order'] for m in messages if m['text'].startswith(anyboard.MARK)] or [''])
@@ -717,6 +783,14 @@ def linear_signals(name, lb, seen, fresh):
                         'session': run.get('session'), 'now': task['task_status']})
             lb.say(task['id'], 'Stopped: you closed this issue in Linear (status → %s).' % task['task_status'])
             fresh.append('stop:' + task['id'])
+    # Branches merged into main whose issue is still open: remind the orchestrator once (after-merge follow-up).
+    repo = Path(read_state()['tables'][name]['path'])
+    for task in merged_not_done(repo, [t for t in tasks if t.get('managed')]):
+        if 'merged:' + task['id'] not in seen:
+            out.append({'kind': 'merged', 'table': name, 'task': task['id'], 'issue': task['linear_identifier'],
+                        'branch': task['branch'], 'status': task['task_status'],
+                        'do': 'run `mstack board merged --task %s --doc <docs>`' % task['linear_identifier']})
+            fresh.append('merged:' + task['id'])
     return out
 
 
@@ -802,6 +876,12 @@ def board_sources():
     return out
 
 
+def shown_boards():
+    """The boards "My tasks" shows: registered Linear boards. Anytype-backed tables (test-market) are retired from
+    automation, and an unregistered board has no entry at all."""
+    return {name for name, entry in read_state().get('tables', {}).items() if is_linear(entry)}
+
+
 def status_table_pass(full=False, limit=None):
     """One pass: refresh stale Linear issue tables, then upsert the rows into "My tasks". Only one pass runs at a
     time (hub watcher, a manual sync): another one is skipped, never run in parallel, so a row is never created twice."""
@@ -835,7 +915,8 @@ def _status_table_pass(full, limit):
     known = current.get(status_table.STATE_KEY) or {}
     full = full or time.time() - known.get('last_full', 0) >= status_table.FULL_EVERY
     table = status_table.StatusTable(STATUS_CALL or anyboard.macctl)
-    rows, takes, retire = status_table.desired(issues, current, board_sources(), roles=project_roles())
+    rows, takes, retire = status_table.desired(issues, current, board_sources(), roles=project_roles(),
+                                               boards=shown_boards())
     try:
         known, counts = table.sync(rows, known, full, limit, takes, retire)
         counts['ctas'] = take_ctas(table, known, rows)
@@ -932,8 +1013,8 @@ def cmd_sessions(args, b):
             else:
                 ready.append({k: c.get(k) for k in ('session', 'cta', 'name', 'type')})
         return {'observe_sessions': work['observe_sessions'], 'ctas': ready, 'refused': refused,
-                'how': 'observe_sessions: list_sessions(include_archived: true, limit: 200), pipe the JSON to '
-                       '`mstack sessions observe --complete`. For each CTA: continue → SendMessage "Continue: the owner '
+                'how': 'observe_sessions: list_sessions(include_archived: true, limit: 200), pipe the JSON (each row '
+                       'keeping at least sessionId, title, isArchived, isRunning) to `mstack sessions observe --complete`. For each CTA: continue → SendMessage "Continue: the owner '
                        'asked from My tasks." to the session; archive → archive_session; delete → delete_session (the app '
                        'asks the owner). Then `mstack sessions done --session <id> --result "<what happened>"`.'}
     if args.action == 'observe':
@@ -945,8 +1026,10 @@ def cmd_sessions(args, b):
             for row in listed:
                 ident = row.get('sessionId') or row.get('id')
                 if ident:
-                    seen[ident] = {'state': 'archived' if row.get('isArchived') else 'active', 'at': stamp,
-                                   'title': (row.get('title') or '')[:120]}
+                    # idle: not archived and not running a turn (MST-46); status_table still shows In Review as active.
+                    live = 'active' if row.get('isRunning') else 'idle'
+                    seen[ident] = {'state': 'archived' if row.get('isArchived') else live, 'at': stamp,
+                                   'title': (row.get('title') or seen.get(ident, {}).get('title') or '')[:120]}
             listed_ids = {row.get('sessionId') or row.get('id') for row in listed}
             gone = []
             if args.complete:                       # a full listing: our sessions missing from it were deleted
@@ -1040,6 +1123,7 @@ def cmd_adopt(args, b):
                                                 'issue': task.get('linear_identifier'),
                                                 'parent': task.get('parent'),
                                                 'adopted': True}
+        mark_active(s, args.session)
     remember(task['id'], name, task.get('linear_identifier'))
     b.say(task['id'], 'Tracked by the %s orchestrator: session `%s`%s (status → %s).'
           % (SCOPE or name, args.session, ' in `%s`' % args.tree if args.tree else '', status))
@@ -1389,8 +1473,10 @@ def cmd_done(args, b):
         summary += '\n\n(Forced past the docs check; still missing: %s.)' % '; '.join(missing)
     tree = Path(run['tree']) if run.get('tree') else None      # adopted sessions may have no recorded worktree
     commits = finish(b, key, tree, run.get('runner') or 'worker', summary)
+    added = add_resources(b, table_of_task(key), key, args.doc)
     record_report(key, 'done', summary)
-    return {'task': key, 'status': 'In Review', 'commits': commits, 'size': size, 'forced': bool(missing)}
+    return {'task': key, 'status': 'In Review', 'commits': commits, 'size': size, 'forced': bool(missing),
+            'resources_added': added}
 
 
 def cmd_note(args, b):
@@ -1398,10 +1484,73 @@ def cmd_note(args, b):
     text = SECRET.sub('[redacted]', sys.stdin.read() if args.text == '-' else args.text).strip()
     who = {'in': '%s ← owner (session)', 'out': '%s → (session)', 'note': '%s'}[args.direction] % args.agent
     b.say(args.task, '%s: %s%s' % (who, text[:1800], doc_links(table_of_task(args.task), args.doc)))
+    added = add_resources(b, table_of_task(args.task), args.task, args.doc)
     record_report(run_key(args.task), 'note', text)
     if args.status:
         b.set(args.task, task_status=args.status)
-    return {'task': args.task, 'posted': True, 'status': args.status}
+    return {'task': args.task, 'posted': True, 'status': args.status, 'resources_added': added}
+
+
+def cmd_merged(args, b):
+    """After merge and push: check the commit is on the pushed main, add the docs as the issue's Resources, post
+    one short note, and set Done (or keep In Review with --verify "what is left")."""
+    key = run_key(args.task)
+    run = read_state().get('runs', {}).get(key) or {}
+    if args.project:
+        table, entry = table_of(args.project)
+        b = board_for(table, b)
+        remember(args.task, table)
+    else:
+        table = table_of_task(key) or table_of_task(args.task)
+        if not table:
+            raise ValueError('Task %s is not on a registered board: pass --project' % args.task)
+        entry = read_state()['tables'][table]
+        b = board_of_task(key, b)
+    repo = Path(entry['path'])
+    task = b.get(args.task)
+    main = main_branch(repo)
+    remote = 'origin/' + main
+    branch = task.get('branch') or run.get('branch')
+    tip = git(repo, 'rev-parse', '--verify', '--quiet', 'refs/heads/%s^{commit}' % branch, check=False) if branch else ''
+    commit = git(repo, 'rev-parse', '--verify', '--quiet', (args.commit or tip or '') + '^{commit}', check=False)
+    if not commit:
+        raise ValueError('No commit to check: pass --commit <sha> (the merge on %s)' % main)
+    if not git(repo, 'rev-parse', '--verify', '--quiet', remote, check=False):
+        raise ValueError('%s has no %s: push the merge first' % (repo, remote))
+    if subprocess.run(['git', '-C', str(repo), 'merge-base', '--is-ancestor', commit, remote]).returncode:
+        raise ValueError('%s is not on the pushed %s: merge and push first, then run merged again' % (commit[:9], remote))
+    if not args.commit and commit == tip:              # default: the merge that brought the branch into main
+        merges = git(repo, 'rev-list', '--ancestry-path', '--merges', '--reverse', '%s..%s' % (tip, remote)).split()
+        commit = merges[0] if merges else commit
+    gone = [d for d in args.doc if subprocess.run(['git', '-C', str(repo), 'cat-file', '-e', '%s:%s' % (commit, d)],
+                                                   capture_output=True).returncode]
+    if gone:
+        raise ValueError('not in %s: %s' % (commit[:9], ', '.join(gone)))
+    warnings = []
+    if tip and subprocess.run(['git', '-C', str(repo), 'merge-base', '--is-ancestor', tip, remote]).returncode:
+        warnings.append('branch %s has commits not on the pushed %s' % (branch, main))
+    parents = git(repo, 'rev-list', '--parents', '-n', '1', commit).split()[1:]
+    base = run_base(run) or (git(repo, 'merge-base', *parents) if len(parents) == 2 else None)
+    work = tip or (parents[1] if len(parents) == 2 else None)
+    if args.doc and base and work:
+        touched = set(git(repo, 'diff', '--name-only', base, work, check=False).splitlines())
+        stale = [d for d in args.doc if d not in touched]
+        if stale:
+            warnings.append('docs not updated by the branch: %s (check them against the merged code)' % ', '.join(stale))
+    elif args.doc:
+        warnings.append('could not tell which docs the branch touched (no recorded base or merge commit)')
+    added = add_resources(b, table, args.task, args.doc)
+    if args.doc and not docs_base(table):
+        warnings.append('no taskboard.docs_url: docs are named in the note only, not added as Resources')
+    status = 'In Review' if args.verify else 'Done'
+    text = 'Merged as `%s` on %s (status → %s).' % (commit[:9], main, status)
+    if args.verify:
+        text += ' Still to verify: %s' % SECRET.sub('[redacted]', args.verify)[:600]
+    b.say(args.task, text + doc_links(table, args.doc))
+    if not getattr(b, 'journal', None):
+        b.set(args.task, task_status=status)          # private boards: the note above already records the phase
+    record_report(key, 'merged', text)
+    return {'task': args.task, 'commit': commit, 'status': status, 'resources_added': added, 'warnings': warnings}
 
 
 def record_report(key, kind, text):
@@ -1583,7 +1732,8 @@ def event_line(e):
               'handoff': lambda: 'approved, ready for a worker: start a %s session titled "%s" in %s '
                                  '(brief: .mstack/cache/brief.md), then `board ack`' % (p.get('host'), p.get('title'), p.get('cwd')),
               'resume': lambda: 'approved plan for adopted chat `%s`: send it the prompt, then `board ack`' % p.get('session'),
-              'verdict': lambda: 'verdict %s: %s → %s' % (p.get('verdict'), p.get('was'), p.get('now'))}
+              'verdict': lambda: 'verdict %s: %s → %s' % (p.get('verdict'), p.get('was'), p.get('now')),
+              'merged': lambda: 'branch `%s` is merged into main but the issue is %s: %s' % (p.get('branch'), p.get('status'), p.get('do'))}
     text = detail.get(e['kind'], lambda: json.dumps(p, ensure_ascii=False)[:300])()
     resent = ' (resent, try %d)' % e['sends'] if (e.get('sends') or 0) > 1 else ''
     return '- event %s [%s] %s: %s%s' % (e['id'], e['kind'], what, text, resent)
@@ -1639,9 +1789,14 @@ def cmd_status(args, b):
     st = read_state()
     runs, related = st.get('runs', {}), st.get('related', {})
     rows = []
-    for t in board_for(name, b).tasks(entry.get('collection')):
+    tasks = board_for(name, b).tasks(entry.get('collection'))
+    forgotten = {t['id'] for t in merged_not_done(Path(entry['path']), tasks)}
+    for t in tasks:
         row = {'task': t['id'], 'name': t.get('name'), 'status': t.get('task_status'), 'agent': t.get('task_agent'),
                'running': t['id'] in runs and alive(runs[t['id']]['pid'])}
+        if t['id'] in forgotten:
+            row['merged_not_done'] = 'branch merged into main: run `mstack board merged --task %s`' % (
+                t.get('linear_identifier') or t['id'])
         if t.get('linear_identifier'):
             row['issue'] = t['linear_identifier']
         if t['id'] in runs:
@@ -1652,7 +1807,10 @@ def cmd_status(args, b):
     order = ['Awaiting Approval', 'Todo', 'In Progress', 'In Review', 'Backlog', 'Done', 'Canceled']
     rows.sort(key=lambda r: order.index(r['status']) if r['status'] in order else 99)
     links = {code or '*': '%s/%s %s' % (l['workspace'], l['team'], l['mode']) for code, l in links_of(project_settings(entry))}
-    return {'table': name, 'links': links or 'private', 'tasks': rows}
+    out = {'table': name, 'links': links or 'private', 'tasks': rows}
+    if forgotten:
+        out['merged_not_done'] = [r.get('issue') or r['task'] for r in rows if r.get('merged_not_done')]
+    return out
 
 
 def cmd_link(args, b):
@@ -1767,6 +1925,12 @@ def parser():
     s.add_argument('--agent', default=os.environ.get('MSTACK_AGENT', 'agent'))
     s.add_argument('--direction', choices=['in', 'out', 'note'], default='note')
     s.add_argument('--status', choices=['Todo', 'In Progress', 'In Review', 'Done', 'Canceled'])
+    s = sub.add_parser('merged', help='after merge and push: docs as Resources, one note, Done (or In Review with --verify)')
+    s.add_argument('--task', required=True, help='issue id or MST-123')
+    s.add_argument('--project', help='the board, when the issue has no run or plan recorded here')
+    s.add_argument('--commit', help='the merge commit (default: the tip of the issue branch)')
+    s.add_argument('--doc', action='append', default=[], help='repo doc path to add as a Resource (taskboard.docs_url)')
+    s.add_argument('--verify', help='what is still to check after merge: keeps the issue In Review')
     s = sub.add_parser('status'); s.add_argument('--project', required=True)
     s = sub.add_parser('owner', help='private boards: record what the owner said in chat (/plan …, 👍, a reply)')
     s.add_argument('--project', required=True); s.add_argument('--task', required=True, help='issue id or IRO-123')
@@ -1806,7 +1970,7 @@ def parser():
     s.add_argument('action', choices=['todo', 'observe', 'done', 'list'])
     s.add_argument('--session', help='done: the session the CTA was for')
     s.add_argument('--result', help='done: what happened (shown as Last Action)')
-    s.add_argument('--state', choices=['active', 'archived', 'deleted'], help='done: the session\'s state now')
+    s.add_argument('--state', choices=['active', 'idle', 'archived', 'deleted'], help='done: the session\'s state now')
     s.add_argument('--complete', action='store_true', help='observe: the list is every session, archived included')
     s.add_argument('--self', dest='hub_session', help='observe: the hub\'s own session id (list_sessions leaves it out)')
     s = sub.add_parser('status-table', help='sync|show|rename: the owner\'s read-only "My tasks" table in Anytype (design 014)')

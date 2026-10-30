@@ -19,7 +19,7 @@ ME = 'user-me'
 
 class FakeLinear:
     def __init__(self):
-        self.issues, self.labels, self.n = {}, [], 0
+        self.issues, self.labels, self.n, self.attachments = {}, [], 0, {}
         self.states = [{'id': 's-' + t, 'type': t, 'name': t.title(), 'position': i} for i, t in
                        enumerate(['backlog', 'unstarted', 'started', 'completed', 'canceled'])]
 
@@ -62,6 +62,11 @@ class FakeLinear:
         if 'commentCreate' in query:
             self.comment(v['input']['issueId'], v['input']['body'])
             return {'commentCreate': {'comment': {'id': 'c'}}}
+        if 'attachmentLinkURL' in query:
+            self.attachments.setdefault(v['issueId'], []).append({'url': v['url'], 'title': v['title']})
+            return {'attachmentLinkURL': {'success': True}}
+        if 'attachments(' in query:
+            return {'issue': {'attachments': {'nodes': list(self.attachments.get(v['id'], []))}}}
         if 'issue(id' in query:
             key = v['id']
             if key not in self.issues:                       # lookup by identifier, like Linear
@@ -455,6 +460,102 @@ class LinearBoardFlow(unittest.TestCase):
             self.assertEqual(cli.main(['dispatch', '--project', 'repo'], cli.anyboard.Board(call=None)), 1)
         self.assertIn('only a scope dispatches', out.getvalue())
         self.assertIn('started', self.cli('dispatch', '--project', 'repo', '--scope', 'api'))
+
+
+    # ---- MST-47: after-merge follow-up ----
+    def docs_url(self, private=False):
+        cfg = json.loads((self.repo / '.mstack/stack.json').read_text())
+        cfg['taskboard']['docs_url'] = 'https://h/blob/main/'
+        cfg['taskboard']['private'] = private
+        (self.repo / '.mstack/stack.json').write_text(json.dumps(cfg))
+
+    def git(self, *a):
+        return subprocess.run(['git', '-C', str(self.repo), '-c', 'user.name=t', '-c', 'user.email=t@t', *a],
+                              check=True, capture_output=True, text=True).stdout.strip()
+
+    def merged_branch(self, branch, doc='docs/m.md', push=True):
+        """A branch with a doc commit, merged --no-ff into main (and pushed to a bare origin)."""
+        origin = self.repo.parent / 'origin.git'
+        if not origin.exists():
+            subprocess.run(['git', 'init', '-q', '--bare', str(origin)], check=True)
+            self.git('branch', '-M', 'main'); self.git('remote', 'add', 'origin', str(origin))
+            self.git('push', '-q', 'origin', 'main'); self.git('remote', 'set-head', 'origin', 'main')
+        self.git('checkout', '-q', '-b', branch)
+        (self.repo / 'docs').mkdir(exist_ok=True); (self.repo / doc).write_text('# doc ' + branch)
+        self.git('add', doc); self.git('commit', '-q', '-m', 'work on ' + branch)
+        self.git('checkout', '-q', 'main'); self.git('merge', '-q', '--no-ff', '-m', 'Merge ' + branch, branch)
+        if push:
+            self.git('push', '-q', 'origin', 'main')
+        return self.git('rev-parse', 'HEAD')
+
+    def test_merged_adds_docs_as_resources_and_closes(self):
+        self.docs_url()
+        old = self.old_issue(n=870, state='s-started')
+        self.cli('adopt', '--project', 'repo', '--task', 'MST-870', '--session', 'local_x')
+        sha = self.merged_branch('me/mst-870')
+        out = self.cli('merged', '--task', 'MST-870', '--doc', 'docs/m.md')
+        self.assertEqual((out['commit'], out['status'], out['resources_added'], out['warnings']),
+                         (sha, 'Done', ['docs/m.md'], []))
+        self.assertEqual(self.fake.attachments[old], [{'url': 'https://h/blob/main/docs/m.md', 'title': 'docs/m.md'}])
+        self.assertTrue(self.fake.issues[old]['comments'][-1]['body'].startswith('🤖 Merged as'))
+        self.assertEqual(self.fake.state_of(old), 'completed')
+        self.assertEqual(self.cli('status', '--project', 'repo')['tasks'][0]['status'], 'Done')
+        again = self.cli('merged', '--task', 'MST-870', '--commit', sha, '--doc', 'docs/m.md')
+        self.assertEqual((again['commit'], again['resources_added']), (sha, []))   # already a Resource: skipped
+        self.assertEqual(len(self.fake.attachments[old]), 1)
+
+    def test_merged_refuses_until_pushed_and_verify_keeps_review(self):
+        self.docs_url()
+        old = self.old_issue(n=880, state='s-started')
+        self.cli('adopt', '--project', 'repo', '--task', 'MST-880', '--session', 'local_x')
+        self.merged_branch('me/mst-879')                                       # sets up origin
+        self.merged_branch('me/mst-880', doc='docs/n.md', push=False)
+        before = len(self.fake.issues[old]['comments'])
+        self.assertIn('not on the pushed origin/main', self.refused('merged', '--task', 'MST-880'))
+        self.assertEqual(len(self.fake.issues[old]['comments']), before)
+        self.git('push', '-q', 'origin', 'main')
+        self.assertIn('not in', self.refused('merged', '--task', 'MST-880', '--doc', 'docs/none.md'))
+        out = self.cli('merged', '--task', 'MST-880', '--doc', 'docs/m.md', '--verify', 'run it on {{mstack:CLIENT_REPO}}')
+        self.assertEqual(out['status'], 'In Review')
+        self.assertIn('docs not updated by the branch: docs/m.md', out['warnings'][0])
+        self.assertIn('Still to verify: run it on {{mstack:CLIENT_REPO}}', self.fake.issues[old]['comments'][-1]['body'])
+        self.assertEqual(self.fake.state_of(old), 'started')
+
+    def test_status_and_tick_flag_merged_issues_that_are_not_done(self):
+        self.auto()
+        old = self.old_issue(n=890, state='s-started')
+        self.cli('adopt', '--project', 'repo', '--task', 'MST-890', '--session', 'local_x')
+        self.fake.comment(old, '🤖 **claude** finished on branch `me/mst-890`')     # managed, In Review
+        self.old_issue(n=891, state='s-started')                               # branch never created
+        self.merged_branch('me/mst-890')
+        self.git('branch', 'me/mst-891')                                       # empty branch: not flagged
+        status = self.cli('status', '--project', 'repo')
+        self.assertEqual(status['merged_not_done'], ['MST-890'])
+        need = [n for n in self.tick()['needs_orchestrator'] if n['kind'] == 'merged']
+        self.assertEqual([(n['issue'], n['branch']) for n in need], [('MST-890', 'me/mst-890')])
+        self.assertEqual([n for n in self.tick()['needs_orchestrator'] if n['kind'] == 'merged'], [])   # once
+        self.cli('merged', '--task', 'MST-890')
+        self.assertNotIn('merged_not_done', self.cli('status', '--project', 'repo'))
+
+    def test_note_and_done_add_docs_as_resources(self):
+        self.docs_url()
+        old = self.old_issue(n=900, state='s-started', description='Brief. Doc: docs/r.md')
+        self.cli('adopt', '--project', 'repo', '--task', 'MST-900', '--session', 'local_x')
+        (self.repo / 'docs').mkdir(); (self.repo / 'docs/r.md').write_text('# r')
+        self.assertEqual(self.cli('note', '--task', 'MST-900', 'Draft', '--doc', 'docs/r.md')['resources_added'], ['docs/r.md'])
+        self.assertEqual(self.cli('done', '--task', 'MST-900', '--doc', 'docs/r.md')['resources_added'], [])
+        self.assertEqual([a['url'] for a in self.fake.attachments[old]], ['https://h/blob/main/docs/r.md'])
+
+    def test_private_board_merged_stays_local(self):
+        self.docs_url(private=True)
+        old = self.old_issue(n=910, state='s-started')
+        self.cli('adopt', '--project', 'repo', '--task', 'MST-910', '--session', 'local_x')
+        self.merged_branch('me/mst-910')
+        out = self.cli('merged', '--task', 'MST-910', '--doc', 'docs/m.md')
+        self.assertEqual((out['status'], out['resources_added']), ('Done', []))
+        self.assertEqual((self.fake.attachments, self.fake.issues[old]['comments'], self.fake.state_of(old)),
+                         ({}, [], 'started'))
+        self.assertEqual(self.cli('status', '--project', 'repo')['tasks'][0]['status'], 'Done')
 
 
 class WorkspaceFlow(unittest.TestCase):

@@ -19,6 +19,7 @@ follow `BACKLOG_EVERY` seconds later. Rows are never deleted.
 from datetime import datetime, timezone
 import hashlib
 import json
+import re
 import time
 
 from board import SCHEMA
@@ -48,6 +49,7 @@ OF_TYPE = {'backlog': 'Backlog', 'triage': 'Backlog', 'unstarted': 'Todo', 'star
            'completed': 'Done', 'canceled': 'Canceled', 'duplicate': 'Canceled'}
 CLOSED = ('completed', 'canceled', 'duplicate')
 REPORT_CHARS = 600
+TITLED = re.compile(r'([A-Z][A-Z0-9]*-\d+)\b')  # a session titled "IRO-84: …" or "IRO-84 storage …" works on IRO-84
 
 ISSUES_SQL = ("SELECT row_to_json(i) FROM (SELECT board, identifier, team, app, parent, title, state, state_type, "
               "scopes, managed, "
@@ -114,18 +116,18 @@ def parent_of(project, scope, orchs):
     return ''
 
 
-def source_of(board, issue, ident, boards):
+def source_of(board, issue, ident, sources):
     """`<workspace>/<team>` of an issue (its team, else its identifier's prefix); the team alone when the board's
     links don't name its workspace."""
     team = (issue or {}).get('team') or (ident or '').split('-')[0]
-    workspace = ((boards.get(board) or {}).get('teams') or {}).get(team)
+    workspace = ((sources.get(board) or {}).get('teams') or {}).get(team)
     return '%s/%s' % (workspace, team) if workspace else team
 
 
-def routed(board, issue, ident, boards):
+def routed(board, issue, ident, sources):
     """The scopes `taskboard.orchestrators` routes the issue's app code to: scopes naming the code (unless they
     exclude the issue or only focus on some issues), else, for a code no scope names, the `*` scopes."""
-    confs = (boards.get(board) or {}).get('scopes') or {}
+    confs = (sources.get(board) or {}).get('scopes') or {}
     app = (issue or {}).get('app')
     named = app and any(app in (c.get('apps') or []) for c in confs.values())
     for want in [app] if named else ['*']:
@@ -136,13 +138,30 @@ def routed(board, issue, ident, boards):
     return ''
 
 
-def desired(issues, board_state, boards, now=None, roles=None):
+def desired(issues, board_state, sources, now=None, roles=None, boards=None):
     """(rows, takes, retire): the rows the table should show; for issue rows that became session rows, the old key
     each takes over; and old issue rows its sessions replace with nothing to take them over (to remove).
-    `boards` maps a board to {teams: {team key: Linear workspace}, scopes: its `taskboard.orchestrators`}.
+    `sources` maps a board to {teams: {team key: Linear workspace}, scopes: its `taskboard.orchestrators`}.
     `roles` maps a board to its project's role registry ({session: {role, scope, task, worker}}).
+    `boards`, when given, are the boards shown: rows of any other board (retired or unregistered) are left out, and
+    the ones the table still holds are retired.
     A row whose issue has a Linear parent carries `parent`: the key of the parent's row, when it has one."""
     now = time.time() if now is None else now
+    dropped = set()
+    if boards is not None:
+        boards = set(boards)
+        issues = [i for i in issues if i.get('board') in boards]
+        roles = {p: r for p, r in (roles or {}).items() if p in boards}
+        runs = board_state.get('runs', {})
+        dead = {k for k, r in runs.items() if r.get('table') not in boards}
+        dropped |= {'session/' + runs[k]['session'] for k in dead if runs[k].get('session')}
+        dropped |= {'session/' + c['session'] for k in dead for c in board_state.get('related', {}).get(k, [])
+                    if c.get('session')}
+        dropped |= {'%s/%s' % (r.get('table'), r.get('issue')) for k, r in runs.items() if k in dead}
+        board_state = {**board_state, 'runs': {k: r for k, r in runs.items() if k not in dead},
+                       'related': {k: v for k, v in board_state.get('related', {}).items() if k not in dead},
+                       'orchestrators': {k: o for k, o in board_state.get('orchestrators', {}).items()
+                                         if o.get('project') in boards}}
     roles = roles or {}
     seen = board_state.get('sessions_seen') or {}
     known_rows = (board_state.get(STATE_KEY) or {}).get('rows', {})
@@ -155,7 +174,7 @@ def desired(issues, board_state, boards, now=None, roles=None):
 
     def issue_props(board, ident):
         issue = by_issue.get('%s/%s' % (board, ident))
-        props = {'linear_identifier': ident, 'task_project': board, 'item_source': source_of(board, issue, ident, boards)}
+        props = {'linear_identifier': ident, 'task_project': board, 'item_source': source_of(board, issue, ident, sources)}
         if issue:
             props.update(task_status=status_of(issue), linear_updated_at=issue.get('updated_at') or None,
                          linear_url=issue.get('url'), parent_issue=issue.get('parent'))
@@ -165,25 +184,42 @@ def desired(issues, board_state, boards, now=None, roles=None):
         """The first of: `first` (the run's or chat's scope), the planning scope, the issue's scopes, the route."""
         issue = by_issue.get('%s/%s' % (board, ident))
         for scope in (*first, scopes.get('%s/%s' % (board, ident)), (issue or {}).get('scopes'),
-                      routed(board, issue, ident, boards) if ident else ''):
+                      routed(board, issue, ident, sources) if ident else ''):
             if scope:
                 return scope
         return NO_SCOPE
 
     def add(session, props, name, kind, agent, parent, report):
+        # Owner rules (2026-10-30): archived/deleted only when observed so. Idle when last seen not running a turn
+        # and its issue isn't waiting for review; every other session (never observed, running, just acked) is active.
         state = (seen.get(session) or {}).get('state')
+        if state not in ('archived', 'deleted'):
+            state = 'idle' if state == 'idle' and props.get('task_status') != 'In Review' else 'active'
         props = {**props, 'agent_session': session, 'session_type': kind, 'session_agent': agent,
                  'session_parent': parent, 'session_state': state, 'session_report': short(report),
                  'session_action': (actions.get(session) or {}).get('text')}
         rows['session/' + session] = {'name': name, 'properties': {k: v for k, v in props.items() if v not in (None, '')}}
 
-    # Workers: the latest run per session (a session can be adopted for several issues; the newest wins).
+    def titled(session):
+        """The issue a session's observed title starts with ("IRO-84: …", "IRO-84 storage …"), when exactly one shown
+        board has it (identifiers carry the team key); else None."""
+        info = seen.get(session) or {}
+        found = TITLED.match(info.get('title') or '')
+        keys = [k for k in by_issue if found and k.split('/', 1)[1] == found.group(1)]
+        return keys[0] if len(keys) == 1 else None
+
+    # Workers: the latest run per session (a session can be adopted for several issues; the newest wins, unless the
+    # session's title names one of the shown issues: then that issue labels its row).
     latest = {}
     for run in board_state.get('runs', {}).values():
         if run.get('session') and (run.get('dispatched_at') or '') >= (latest.get(run['session'], {}).get('dispatched_at') or ''):
             latest[run['session']] = run
     newest_for_issue = {}
     for session, run in sorted(latest.items()):
+        if titled(session):
+            table, ident = titled(session).split('/', 1)
+            run = dict(run, table=table, issue=ident, scope=scopes.get(titled(session))
+                       or by_issue[titled(session)].get('scopes') or run.get('scope'))
         scope = run.get('scope') or scopes.get('%s/%s' % (run.get('table'), run.get('issue'))) or ''
         props, name = issue_props(run.get('table'), run.get('issue')) if run.get('issue') else \
             ({'task_project': run.get('table'), 'item_source': 'session'}, 'Worker %s' % session)
@@ -220,6 +256,17 @@ def desired(issues, board_state, boards, now=None, roles=None):
                                                                      role.get('scope')))
                 add(session, props, 'Helper: ' + (name or session), 'helper', 'claude',
                     parent_of(project, worker_run.get('scope'), orchs), 'Helper of worker %s' % (role.get('worker') or '?'))
+    # Sessions the hub saw but no run records (started outside dispatch/ack), titled "<ISSUE>…": worker rows.
+    for session, info in sorted(seen.items()):
+        key = titled(session)
+        if not key or info.get('state') in ('archived', 'deleted') or 'session/' + session in rows:
+            continue
+        issue = by_issue[key]
+        props, name = issue_props(issue['board'], issue['identifier'])
+        props['task_scope'] = scope_of(issue['board'], issue['identifier'])
+        add(session, props, name, 'worker', 'claude',
+            parent_of(issue['board'], scopes.get(key) or issue.get('scopes') or '', orchs), '')
+        newest_for_issue.setdefault(key, ('', session))
     # An issue's old row (from before sessions had rows) becomes its newest worker's row: no orphan, no duplicate.
     for key, (_, session) in newest_for_issue.items():
         if key in known_rows and 'session/' + session not in known_rows:
@@ -257,7 +304,9 @@ def desired(issues, board_state, boards, now=None, roles=None):
         p = row['properties']
         if p.get('parent_issue') and row_of.get('%s/%s' % (p.get('task_project'), p['parent_issue'])):
             row['parent'] = row_of['%s/%s' % (p['task_project'], p['parent_issue'])]
-    retire = sorted(k for k in known_rows if k in with_session and k not in takes.values())
+    retire = sorted(k for k in known_rows if (k in with_session and k not in takes.values())
+                    or (k not in rows and (k in dropped or (boards is not None and not k.startswith('session/')
+                                                            and k.split('/')[0] not in boards))))
     return rows, takes, retire
 
 

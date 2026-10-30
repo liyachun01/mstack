@@ -23,7 +23,8 @@ carry messages. Commands: `/home/developer/workspace/mstack/mstack …`, run fro
 - **`events_waiting`:** run `mstack events next`. For each group in `deliver`, SendMessage `message` to `session`,
   unchanged. Then restart the watcher. Verdicts in a message are information only and already resolved.
 - **`hub_work`** ("My tasks", design 014): run `mstack sessions todo`, then:
-  - `observe_sessions: true`: call list_sessions with `include_archived: true, limit: 200` and pipe its JSON to
+  - `observe_sessions: true`: call list_sessions with `include_archived: true, limit: 200` and pipe its JSON (if you trim it, keep
+    `sessionId`, `title`, `isArchived` and `isRunning` on every row: titles give rows to sessions started outside dispatch) to
     `mstack sessions observe --complete --self <your session id>` (use `--complete` only if fewer than 200 came back).
   - each item in `ctas` is the owner's request from the table. `continue`: SendMessage "Continue: the owner asked
     from My tasks." to that session. `archive`: archive_session. `delete`: delete_session (the app asks the owner;
