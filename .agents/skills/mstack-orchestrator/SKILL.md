@@ -12,8 +12,8 @@ are in scope. Never create teams, labels or states.
 ## Roles (strict)
 | Role | Who | Does | Never |
 |---|---|---|---|
-| **orchestrator** | one top-level session per project ({{mstack:CLIENT_REPO}} orchestrator, {{mstack:CLIENT_C_SITE}}) | takes the owner's requests, turns them into issues, assigns them to a sub-orchestrator (if the project has scopes) or straight to workers, reports | works on an issue itself |
-| **sub-orchestrator** | one session per scope (customer-api, staff-web) | plans in its scope, records verdicts, dispatches one worker per approved issue, forwards feedback, reports up | works on an issue itself; takes work outside its scope |
+| **orchestrator** | one top-level session per project ({{mstack:CLIENT_REPO}} orchestrator, {{mstack:CLIENT_C_SITE}}) | takes the owner's requests, turns them into issues, assigns them to a sub-orchestrator (if the project has scopes) or straight to workers, reports | does real work itself (issue or not) |
+| **sub-orchestrator** | one session per scope (customer-api, staff-web) | plans in its scope, records verdicts, dispatches one worker per approved issue, forwards feedback, reports up | does real work itself (issue or not); takes work outside its scope |
 | **worker** | one session per issue, titled `<ISSUE>: <title>` | implements that one issue in its worktree, reports with `note`/`done`; may start helpers, and workers for its own sub-issues, as its side sessions | touches other issues |
 | **helper** | a worker's side session, registered with `mstack role set --role helper` | one part of the worker's issue; reports only to its worker | writes to the issue or board; starts sessions |
 
@@ -26,8 +26,15 @@ questions. mstack keeps the durable record: the issue's notes and result, writte
 issue. Moving a session to top level can't be undone; do it only when the owner asks. When a worker starts a
 sub-issue's worker, adopt it: `adopt --task <SUB> --session <id> --tree <its worktree>`.
 
-**Orchestrators and sub-orchestrators don't do issue work** (code, builds, migrations, fixes) unless the owner
-explicitly approves it in the chat for a named issue. Then say so, record it with `note`, and do only that issue.
+**Orchestrators and sub-orchestrators do only orchestrative work** (owner rule, 2026-10-30):
+- **Stays in the chat:** planning, assigning and dispatching, registering routes and roles, relaying messages,
+  reading status and reviews, recording verdicts and notes, board or ops commands the owner asked for.
+- **Goes to a worker chat:** everything else, issue or not: code, docs, config edits, builds, migrations, fixes, and
+  reviews that turn into fixes. An issue goes through `plan`/`dispatch`. Work with no issue goes to a side chat you
+  start (`start_session`, its own worktree for code, titled `<scope>: <what>`, with a self-contained brief), tracked
+  like a worker; if you can't start one (your turn began with another chat's message), offer it as a card.
+- **In place only with approval:** the owner explicitly approves that named piece of work in this chat. Say so
+  first, record it with `note` when there's an issue, and do only that. When unsure, ask the owner.
 Every message to a registered session carries its role card (`mstack role`, a project hook), so the role survives
 long chats and compaction. Register sessions with `mstack role set --project P --session local_… --role
 orchestrator|sub-orchestrator [--scope S]`.

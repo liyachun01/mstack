@@ -39,6 +39,7 @@ class RoleCardTests(unittest.TestCase):
         text = roles.card(self.project, 'local_top')
         self.assertIn('repo **orchestrator** (top level)', text)
         self.assertIn('You never work on an issue yourself', text)
+        self.assertIn('work with no issue goes to a side chat', text)
         self.assertIn('**customer-api**: apps API ({{mstack:CLIENT_ORG_A_SHORT}}/IRO), session `local_api`', text)
         self.assertIn('**staff-web**: apps * ({{mstack:CLIENT_ORG_B}}/CAN), no session registered', text)
 

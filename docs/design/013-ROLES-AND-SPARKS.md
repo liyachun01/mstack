@@ -61,3 +61,10 @@ Chats moved to top level can't be re-nested, so the {{mstack:CLIENT_REPO}} orche
 its own side sessions. Each successor started from a `handover` brief, and the old chats were renamed
 "… (old, history)" after stopping their watchers. portal-web was already nested. Owner decision: only orchestrators
 are nested this way; issue workers finish where they are, and new workers are started nested.
+
+## Orchestrators do only orchestrative work (2026-10-30)
+
+Owner rule: orchestrator and sub-orchestrator chats keep only orchestrative work (planning, dispatching, routing,
+relaying, status and review reading, verdicts and notes, board and ops commands the owner asked for). All other work,
+with or without an issue, goes to a worker chat: an issue worker, or a side chat for work with no issue. In-place work
+needs the owner's explicit approval for that named piece. The role card (`NO_WORK`) and the orchestrator skill say so.

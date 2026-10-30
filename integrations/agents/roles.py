@@ -97,9 +97,15 @@ HELPERS = ('You may start **helper** side sessions for parts of *this* issue: st
            'ask your orchestrator to adopt it (`adopt --task <SUB> --session <id>`). It owns its sub-issue\'s record '
            'and stays nested under you, so its progress reaches you. New sub-issues are planned by your '
            'orchestrator (`plan --parent`).')
-NO_WORK = ('**You never work on an issue yourself:** no code changes, builds, migrations or fixes in this chat. '
-           'You assign, track and report. The only exception is the owner explicitly approving it in this chat '
-           'for a named issue ("do YEL-12 here yourself"). Then say so, record it with `note`, and do only that issue.')
+NO_WORK = ('**You never work on an issue yourself, and do no other real work here either:** no code, docs or config '
+           'edits, builds, migrations, fixes or review fixes in this chat. Only orchestrative work stays: planning, '
+           'assigning and dispatching, registering routes and roles, relaying messages, reading status and reviews, '
+           'recording verdicts and notes, and board or ops commands the owner asked for. Everything else goes to a '
+           'worker chat: an issue goes through plan/dispatch; work with no issue goes to a side chat you start '
+           '(`start_session`, its own worktree for code, titled `<scope>: <what>`, with a self-contained brief), or '
+           'a card you offer when you can\'t start one. The only exception is the owner explicitly approving a named '
+           'piece of work in this chat ("do YEL-12 here yourself"). Then say so, record it with `note` when there\'s '
+           'an issue, and do only that. When unsure, ask the owner.')
 
 
 def card(project, session):
