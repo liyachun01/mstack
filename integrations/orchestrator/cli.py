@@ -871,13 +871,14 @@ def tick_once(args, b):
 
 
 def code_fingerprint():
-    """Changes whenever mstack's own code or schemas change (a commit, a merge or a plain edit)."""
+    """Changes whenever mstack's own code or schemas change (a commit, a merge or a plain edit), or its hub settings."""
     parts = []
     for folder in ('orchestrator', 'stack', 'plugins', 'gateway'):
         for path in sorted((STACK_ROOT/'integrations'/folder).rglob('*')):
             if path.suffix in ('.py', '.json') and '__pycache__' not in path.parts and 'tests' not in path.parts:
                 stat = path.stat()
                 parts.append('%s:%d:%d' % (path, stat.st_mtime_ns, stat.st_size))
+    parts.append(json.dumps(hub_settings(), sort_keys=True))     # switching hub.store restarts every watcher onto it
     return hashlib.sha256('\n'.join(parts).encode()).hexdigest()
 
 
