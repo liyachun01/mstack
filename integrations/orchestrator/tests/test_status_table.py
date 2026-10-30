@@ -121,11 +121,22 @@ class Rows(unittest.TestCase):
             'linear_identifier': 'MST-40', 'task_project': 'mstack', 'task_status': 'In Review',
             'linear_updated_at': '2026-10-30T01:00:00Z', 'linear_url': 'https://linear.app/x/issue/MST-40',
             'agent_session': 'local_w', 'session_type': 'worker', 'session_agent': 'claude',
-            'session_parent': 'local_morch', 'session_report': 'Built it. Tests pass.'})
+            'session_parent': 'local_morch', 'session_state': 'active', 'session_report': 'Built it. Tests pass.'})
         old, new = rows['session/local_old']['properties'], rows['session/local_new']['properties']
         self.assertEqual((old['session_agent'], old['session_state'], old['session_parent']), ('codex', 'archived', 'local_api'))
         self.assertEqual((new['task_scope'], new['session_state'], new['task_status']), ('customer-api', 'active', 'In Review'))
         self.assertNotIn('linear_url', new)                                   # private board: no Linear link
+        # Never observed (local_w), or observed active: active; only archived/deleted show otherwise.
+        self.assertEqual(rows['session/local_rel']['properties']['session_state'], 'active')
+        gone = dict(self.STATE, sessions_seen={'local_rel': {'state': 'deleted'}, 'local_w': {'state': 'odd'}})
+        rows2, _, _ = self.rows(gone)
+        self.assertEqual(rows2['session/local_rel']['properties']['session_state'], 'deleted')
+        self.assertEqual(rows2['session/local_w']['properties']['session_state'], 'active')
+        # Idle: last seen not running, unless its issue waits for review (local_w's MST-40 is In Review).
+        idle = dict(self.STATE, sessions_seen={'local_sk': {'state': 'idle'}, 'local_w': {'state': 'idle'}})
+        rows3, _, _ = self.rows(idle)
+        self.assertEqual(rows3['session/local_sk']['properties']['session_state'], 'idle')
+        self.assertEqual(rows3['session/local_w']['properties']['session_state'], 'active')
         self.assertIn('obsolete', rows['session/local_rel']['properties']['session_report'])
         orch = rows['session/local_api']
         self.assertEqual((orch['name'], orch['properties']['session_type']), ('Orchestrator {{mstack:CLIENT_REPO}}/customer-api', 'orchestrator'))
@@ -134,6 +145,42 @@ class Rows(unittest.TestCase):
         self.assertEqual(rows['{{mstack:CLIENT_REPO}}/CAN-9']['properties'],               # an issue nobody works on yet
                          {'linear_identifier': 'CAN-9', 'task_project': '{{mstack:CLIENT_REPO}}', 'task_scope': 'staff-web',
                           'task_status': 'Todo', 'linear_updated_at': '2026-10-30T01:00:00Z'})
+
+    def test_rows_of_retired_or_unregistered_boards_are_left_out_and_retired(self):
+        state = dict(self.STATE, runs={**self.STATE['runs'], 't5': {'table': 'test-market', 'issue': 'TM-1',
+                                                                     'session': 'local_tm'}},
+                     status_table={'rows': {'session/local_tm': {'id': 'o1'}, 'test-market/TM-2': {'id': 'o2'},
+                                            'session/local_w': {'id': 'o3'}}})
+        issues = self.ISSUES + [issue('test-market', 'TM-2')]
+        rows, _, retire = st.desired(issues, state, {'mstack': False, '{{mstack:CLIENT_REPO}}': True}, NOW, self.ROLES,
+                                     boards={'mstack', '{{mstack:CLIENT_REPO}}'})
+        self.assertFalse([k for k in rows if 'tm' in k.lower() or k.startswith('test-market')])
+        self.assertEqual(retire, ['session/local_tm', 'test-market/TM-2'])
+        everything, _, kept = st.desired(issues, state, {}, NOW, self.ROLES)     # no filter: as before
+        self.assertIn('session/local_tm', everything)
+        self.assertEqual(kept, [])
+
+    def test_a_session_started_outside_dispatch_gets_a_row_from_its_title(self):
+        state = dict(self.STATE, sessions_seen={
+            'local_84': {'state': 'idle', 'title': 'CAN-9 storage: plans'},           # no run: matched by title
+            'local_gone': {'state': 'archived', 'title': 'CAN-9: older chat'},
+            'local_x': {'state': 'active', 'title': 'XYZ-1: not on any board'},
+            'local_t': {'state': 'active', 'title': 'Track CAN-9: not at the start'}},
+            status_table={'rows': {'{{mstack:CLIENT_REPO}}/CAN-9': {'id': 'o9'}}})
+        rows, takes, _ = st.desired(self.ISSUES, state, {'mstack': False, '{{mstack:CLIENT_REPO}}': True}, NOW, self.ROLES)
+        w = rows['session/local_84']['properties']
+        self.assertEqual((w['linear_identifier'], w['session_type'], w['task_scope'], w['session_state']),
+                         ('CAN-9', 'worker', 'staff-web', 'idle'))
+        self.assertNotIn('{{mstack:CLIENT_REPO}}/CAN-9', rows)                                   # its issue row is taken over
+        self.assertEqual(takes, {'session/local_84': '{{mstack:CLIENT_REPO}}/CAN-9'})
+        self.assertFalse({'session/local_gone', 'session/local_x', 'session/local_t'} & set(rows))
+        # A worker adopted for one issue (local_new: IRO-1) whose title names another shown issue: the title wins.
+        named = dict(state, sessions_seen={'local_new': {'state': 'active', 'title': 'CAN-9: the parent issue'}})
+        rows2, _, _ = st.desired(self.ISSUES, named, {'mstack': False, '{{mstack:CLIENT_REPO}}': True}, NOW, self.ROLES)
+        self.assertEqual(rows2['session/local_new']['properties']['linear_identifier'], 'CAN-9')
+        self.assertNotIn('{{mstack:CLIENT_REPO}}/CAN-9', rows2)
+        plain, _, _ = st.desired(self.ISSUES, self.STATE, {}, NOW, self.ROLES)
+        self.assertNotIn('session_state', plain['{{mstack:CLIENT_REPO}}/CAN-9']['properties'])  # issue-only rows: no state
 
     def test_an_old_issue_row_becomes_its_newest_workers_row(self):
         state = dict(self.STATE, **{st.STATE_KEY: {'rows': {'{{mstack:CLIENT_REPO}}/IRO-1': {'id': 'o1', 'hash': 'h'},
@@ -389,6 +436,8 @@ class HubStep(unittest.TestCase):
         self.assertIn('refused', todo['refused'][0]['recorded'])
         self.assertEqual(self.any.objects[ids['local_o']]['properties']['session_cta'], 'noop')
         self.cli('sessions', 'observe', '--complete', stdin=json.dumps([{'sessionId': 'local_o', 'isArchived': False}]))
+        self.assertEqual(self.cli('sessions', 'list')['states'], {'local_o': 'idle', 'local_w': 'deleted'})
+        self.cli('sessions', 'observe', stdin=json.dumps([{'sessionId': 'local_o', 'isArchived': False, 'isRunning': True}]))
         self.assertEqual(self.cli('sessions', 'list')['states'], {'local_o': 'active', 'local_w': 'deleted'})
         self.owner_sets(ids['local_o'], 'archive')                                 # its worker is gone now
         self.cli('status-table', 'sync')

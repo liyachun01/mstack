@@ -661,6 +661,13 @@ def run_key(task):
     return next((k for k, r in runs.items() if r.get('issue') == task), task)
 
 
+def mark_active(st, session):
+    """A session ack/adopt just recorded is live: show it as active in My tasks before the next observe."""
+    if session:
+        st.setdefault('sessions_seen', {})[session] = {**(st.get('sessions_seen') or {}).get(session, {}),
+                                                       'state': 'active', 'at': time.strftime('%Y-%m-%dT%H:%M:%S%z')}
+
+
 def cmd_ack(args, b):
     """The orchestrator started the host session for a handoff, or resumed an adopted worker: stop offering it."""
     key = run_key(args.task)
@@ -672,6 +679,7 @@ def cmd_ack(args, b):
             raise ValueError('Task %s is worked by adopted session %s' % (args.task, run['session']))
         run['session'] = args.session
         run['resumed'] = True
+        mark_active(s, args.session)
     return {'task': key, 'session': args.session}
 
 
@@ -800,6 +808,12 @@ def private_boards():
     return out
 
 
+def shown_boards():
+    """The boards "My tasks" shows: registered Linear boards. Anytype-backed tables (test-market) are retired from
+    automation, and an unregistered board has no entry at all."""
+    return {name for name, entry in read_state().get('tables', {}).items() if is_linear(entry)}
+
+
 def status_table_pass(full=False, limit=None):
     """One pass: refresh stale Linear issue tables, then upsert the rows into "My tasks". Only one pass runs at a
     time (hub watcher, a manual sync): another one is skipped, never run in parallel, so a row is never created twice."""
@@ -833,7 +847,8 @@ def _status_table_pass(full, limit):
     known = current.get(status_table.STATE_KEY) or {}
     full = full or time.time() - known.get('last_full', 0) >= status_table.FULL_EVERY
     table = status_table.StatusTable(STATUS_CALL or anyboard.macctl)
-    rows, takes, retire = status_table.desired(issues, current, private_boards(), roles=project_roles())
+    rows, takes, retire = status_table.desired(issues, current, private_boards(), roles=project_roles(),
+                                               boards=shown_boards())
     try:
         known, counts = table.sync(rows, known, full, limit, takes, retire)
         counts['ctas'] = take_ctas(table, known, rows)
@@ -930,8 +945,8 @@ def cmd_sessions(args, b):
             else:
                 ready.append({k: c.get(k) for k in ('session', 'cta', 'name', 'type')})
         return {'observe_sessions': work['observe_sessions'], 'ctas': ready, 'refused': refused,
-                'how': 'observe_sessions: list_sessions(include_archived: true, limit: 200), pipe the JSON to '
-                       '`mstack sessions observe --complete`. For each CTA: continue → SendMessage "Continue: the owner '
+                'how': 'observe_sessions: list_sessions(include_archived: true, limit: 200), pipe the JSON (each row '
+                       'keeping at least sessionId, title, isArchived, isRunning) to `mstack sessions observe --complete`. For each CTA: continue → SendMessage "Continue: the owner '
                        'asked from My tasks." to the session; archive → archive_session; delete → delete_session (the app '
                        'asks the owner). Then `mstack sessions done --session <id> --result "<what happened>"`.'}
     if args.action == 'observe':
@@ -943,8 +958,10 @@ def cmd_sessions(args, b):
             for row in listed:
                 ident = row.get('sessionId') or row.get('id')
                 if ident:
-                    seen[ident] = {'state': 'archived' if row.get('isArchived') else 'active', 'at': stamp,
-                                   'title': (row.get('title') or '')[:120]}
+                    # idle: not archived and not running a turn (MST-46); status_table still shows In Review as active.
+                    live = 'active' if row.get('isRunning') else 'idle'
+                    seen[ident] = {'state': 'archived' if row.get('isArchived') else live, 'at': stamp,
+                                   'title': (row.get('title') or seen.get(ident, {}).get('title') or '')[:120]}
             listed_ids = {row.get('sessionId') or row.get('id') for row in listed}
             gone = []
             if args.complete:                       # a full listing: our sessions missing from it were deleted
@@ -1038,6 +1055,7 @@ def cmd_adopt(args, b):
                                                 'issue': task.get('linear_identifier'),
                                                 'parent': task.get('parent'),
                                                 'adopted': True}
+        mark_active(s, args.session)
     remember(task['id'], name, task.get('linear_identifier'))
     b.say(task['id'], 'Tracked by the %s orchestrator: session `%s`%s (status → %s).'
           % (SCOPE or name, args.session, ' in `%s`' % args.tree if args.tree else '', status))
@@ -1804,7 +1822,7 @@ def parser():
     s.add_argument('action', choices=['todo', 'observe', 'done', 'list'])
     s.add_argument('--session', help='done: the session the CTA was for')
     s.add_argument('--result', help='done: what happened (shown as Last Action)')
-    s.add_argument('--state', choices=['active', 'archived', 'deleted'], help='done: the session\'s state now')
+    s.add_argument('--state', choices=['active', 'idle', 'archived', 'deleted'], help='done: the session\'s state now')
     s.add_argument('--complete', action='store_true', help='observe: the list is every session, archived included')
     s.add_argument('--self', dest='hub_session', help='observe: the hub\'s own session id (list_sessions leaves it out)')
     s = sub.add_parser('status-table', help='sync|show|rename: the owner\'s read-only "My tasks" table in Anytype (design 014)')
