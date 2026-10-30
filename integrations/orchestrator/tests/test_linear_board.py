@@ -308,7 +308,7 @@ class LinearBoardFlow(unittest.TestCase):
         self.auto()
         self.old_issue(n=800, state='s-backlog')
         out = self.cli('adopt', '--project', 'repo', '--task', 'MST-800', '--session', 'local_existing')
-        self.assertEqual(out['status'], 'In Progress')
+        self.assertEqual(out['status'], 'Awaiting Approval')                   # not started in Linear: a plan, never Todo
         with patch.object(cli, 'LINEAR_EVERY', 0), patch.object(cli, 'MIRROR_EVERY', 10 ** 9):
             tick = self.cli('tick', '--project', 'repo')
         self.assertEqual((tick['started'], [n for n in tick['needs_orchestrator'] if n['kind'] == 'handoff']), ([], []))
@@ -656,7 +656,7 @@ class LinearBoardFlow(unittest.TestCase):
     def test_watcher_flags_a_linear_status_that_lags_the_board_once(self):                    # MST-58
         self.auto()
         old = self.old_issue(n=940)
-        self.cli('adopt', '--project', 'repo', '--task', 'MST-940', '--session', 'local_x')
+        self.cli('adopt', '--project', 'repo', '--task', 'MST-940', '--session', 'local_x', '--stage', 'building')
         self.assertEqual(self.fake.state_of(old), 'started')
         self.fake.issues[old]['stateId'] = 's-unstarted'                              # someone moved it back in Linear
         with patch.object(cli, 'LINEAR_EVERY', 0), patch.object(cli, 'MIRROR_EVERY', 10 ** 9):
@@ -764,7 +764,26 @@ class LinearBoardFlow(unittest.TestCase):
         self.cli('adopt', '--project', 'repo', '--task', 'MST-930', '--session', 'local_x')
         self.cli('done', '--task', 'MST-930', '--size', 'small', '--summary', 'ok')
         self.assertEqual(self.fake.state_of(old), 'started')
-        self.assertEqual(json.loads(cli.STATE.read_text())['linear_state_map'], {'MST': {'In Progress': 'Started', 'In Review': 'Started'}})
+        self.assertEqual(json.loads(cli.STATE.read_text())['linear_state_map'], {'MST': {'In Review': 'Started'}})
+
+    def test_adopt_without_a_stage_never_moves_linear(self):                    # customer-api 14:38 UTC, IRO-156..160
+        cfg = json.loads((self.repo / '.mstack/stack.json').read_text()); cfg['taskboard']['private'] = True
+        (self.repo / '.mstack/stack.json').write_text(json.dumps(cfg))
+        self.auto()
+        planning = {n: self.old_issue(n=n, state=state) for n, state in ((156, 's-backlog'), (157, 's-unstarted'), (160, 's-unstarted'))}
+        for n in planning:
+            out = self.cli('adopt', '--project', 'repo', '--task', 'MST-%d' % n, '--session', 's%d' % n)
+            self.assertEqual((out['status'], out.get('linear_status')), ('Awaiting Approval', None))
+        self.assertEqual({n: self.fake.state_of(i) for n, i in planning.items()},
+                         {156: 'backlog', 157: 'unstarted', 160: 'unstarted'})
+        forced = self.old_issue(n=158, state='s-started')                        # forced to In Progress before the fix
+        self.cli('adopt', '--project', 'repo', '--task', 'MST-158', '--session', 's158')
+        self.cli('note', '--task', 'MST-158', '--status', 'Todo', 'planning only')  # In Progress → Todo, exactly
+        self.assertEqual(self.fake.state_of(forced), 'unstarted')
+        with patch.object(cli, 'LINEAR_EVERY', 0), patch.object(cli, 'MIRROR_EVERY', 10 ** 9):
+            tick = self.cli('tick')
+        self.assertEqual([n for n in tick['needs_orchestrator'] if n['kind'] in ('resume', 'handoff', 'status_lag')], [])
+        self.assertEqual(self.fake.state_of(forced), 'unstarted')
 
 
 class WorkspaceFlow(unittest.TestCase):

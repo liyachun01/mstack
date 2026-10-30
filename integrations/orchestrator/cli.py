@@ -1236,23 +1236,26 @@ ADOPT_STAGES = {'planning': ('Awaiting Approval', None),   # a draft plan waitin
 
 def adopt_stage(task, stage=None):
     """(board phase, Linear target) for an adopted issue: its real stage, never a forced In Progress (customer-api,
-    MST-60). Never "Todo", which would dispatch a second worker. Without --stage: closed stays closed, a managed issue
-    keeps its open phase, a Linear "…review…" state is on Preview, anything else is being built."""
-    closed = {'completed': 'Done', 'canceled': 'Canceled', 'duplicate': 'Canceled'}.get(task.get('linear_state_type'))
+    MST-60). Never "Todo", which would dispatch a second worker. Only an explicit --stage moves Linear (`building`
+    pushes In Progress, `preview` In Review). Without one, Linear is left exactly as it is and the phase follows it:
+    closed stays closed, a managed issue keeps its open phase, a "…review…" state is on Preview, any other started
+    state is In Progress, and anything not started yet (Backlog, Todo) is a plan waiting on the owner."""
     if stage:
         return ADOPT_STAGES[stage]
+    closed = {'completed': 'Done', 'canceled': 'Canceled', 'duplicate': 'Canceled'}.get(task.get('linear_state_type'))
     if closed:
         return closed, None
     if task.get('managed') and task.get('task_status') in ('Awaiting Approval', 'In Progress', 'In Review'):
         return task['task_status'], None
     if 'review' in (task.get('linear_state') or '').lower():
-        return ADOPT_STAGES['preview']
-    return ADOPT_STAGES['building']
+        return 'In Review', None
+    return ('In Progress' if task.get('linear_state_type') == 'started' else 'Awaiting Approval'), None
 
 
 def adopt_stage_name(task, stage, status):
-    """The stage recorded on the run (its stamp: the lag check trusts only phases a stamped adopt or a dispatch set)."""
-    return stage or {'Awaiting Approval': 'planning', 'In Review': 'preview', 'In Progress': 'building'}.get(status, status.lower())
+    """The stage recorded on the run. Only an explicit `--stage building` (or a dispatch) is trusted by the lag check;
+    an adopt without --stage records `kept` (the phase was read from Linear, so it can never lag it)."""
+    return stage or 'kept'
 
 
 TRIGGER_LOOKBACK = 86400  # seconds of Linear notifications read back (the hub's seen-keys drop repeats)
