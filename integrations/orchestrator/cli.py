@@ -1793,9 +1793,14 @@ def cmd_owner(args, b):
     if not hasattr(lb, 'owner_says'):
         raise ValueError('%s is not a Linear board' % name)
     text = (sys.stdin.read() if args.text == '-' else args.text).strip()
+    if getattr(args, 'side', False):
+        text = anyboard.SIDE + ' ' + text
     task = lb.get(args.task)
     lb.owner_says(task['id'], text)
-    return {'task': task['id'], 'issue': task.get('linear_identifier'), 'recorded': text[:200]}
+    out = {'task': task['id'], 'issue': task.get('linear_identifier'), 'recorded': text[:200]}
+    if not text.startswith(anyboard.SIDE) and task.get('task_status') in PENDING:
+        out['verdict'] = anyboard.decide(lb.messages(task['id']))[0]   # what the next poll will read it as
+    return out
 
 
 def cmd_inhand(args, b):
@@ -2163,6 +2168,8 @@ def parser():
     s = sub.add_parser('owner', help='private boards: record what the owner said in chat (/plan …, 👍, a reply)')
     s.add_argument('--project', required=True); s.add_argument('--task', required=True, help='issue id or IRO-123')
     s.add_argument('text', help='text or - for stdin')
+    s.add_argument('--side', action='store_true',
+                   help="the owner's OK or answer for a side action (not the plan): kept on the thread, never a verdict")
     s = sub.add_parser('handover', help='brief for a fresh orchestrator session taking over this board or scope')
     s.add_argument('--project', required=True)
     s.add_argument('--messages', type=int, default=2, help='latest messages to include per open issue')

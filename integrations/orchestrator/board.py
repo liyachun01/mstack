@@ -8,6 +8,7 @@ messages carry MARK (ASK when they wait for a verdict); everything else in a
 discussion is the owner speaking.
 """
 import json
+import re
 from pathlib import Path
 import subprocess
 import time
@@ -20,6 +21,11 @@ APPROVE = {'👍', '✅', '🚀', '👌', '❤️'}
 REJECT = {'👎', '❌'}
 APPROVE_WORDS = ('approve', 'approved', 'lgtm', 'go ahead', 'ship it', 'yes', 'ok', 'go', 'approve it', 'do it')
 # "Approve, and also …" is an approval with notes, but "ok but …" or a question is feedback.
+# Only these may lead an approval that goes on with more words ("Approve. Use the CN region first.").
+# A bare "ok"/"yes"/"go" approves, but "OK for read-only prod counts" answers something else (MST-60/IRO-153).
+LEAD_APPROVE = re.compile(r'^(approved?|approve it|lgtm|go ahead|ship it)\b')
+ONLY_APPROVE = re.compile(r'^(?:(?:%s)[\s,.!]*)+$' % '|'.join(sorted(map(re.escape, APPROVE_WORDS), key=len, reverse=True)))
+SIDE = '(side)'      # owner text recorded with `board owner --side`: kept on the thread, never a verdict
 HEDGES = ('?', ' but ', 'except', "don't", 'do not', 'wait', 'instead', 'hold', ' actually ', ' change ')
 # Anytype comments can store emoji as shortcodes (a typed 👍 arrives as ":+1:").
 SHORTCODES = {':+1:': '👍', ':thumbsup:': '👍', ':white_check_mark:': '✅', ':rocket:': '🚀',
@@ -182,9 +188,10 @@ def verdict_of(text):
     if tokens and all(t in APPROVE_WORDS or t in APPROVE or (t and all(c in ''.join(APPROVE) for c in t))
                       for t in tokens):
         return 'approved'
+    if ONLY_APPROVE.match(plain):                     # "ok, go ahead", "yes, ship it"
+        return 'approved'
     # Leading approval followed by instructions: "Approve. Use the CN region first." → approved, notes kept.
-    first = tokens[0] if tokens else ''
-    if (first in APPROVE_WORDS or first in APPROVE or text[:1] in APPROVE) and \
+    if (LEAD_APPROVE.match(plain) or text[:1] in APPROVE) and \
             not any(h in ' %s ' % plain for h in HEDGES):
         return 'approved'
     return 'feedback'
@@ -204,7 +211,7 @@ def decide(messages):
     if reactions & REJECT:
         return 'rejected', '', ask['id']
     after = [m for m in messages if m.get('order', '') > ask.get('order', '')
-             and not m.get('text', '').startswith(MARK)]
+             and not m.get('text', '').startswith((MARK, SIDE))]
     if after:
         texts = [normalize(m.get('text', '')) for m in after]
         text = '\n'.join(texts).strip()

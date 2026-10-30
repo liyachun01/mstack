@@ -869,6 +869,16 @@ class DecideTests(unittest.TestCase):
             self.assertEqual(board.decide([ask, {'order': '2', 'text': text}])[0], verdict)
         self.assertEqual(board.decide([ask])[0], 'pending')
 
+    def test_ok_for_a_side_action_is_not_approval(self):                                     # MST-60 / IRO-153
+        ask = {'id': 'a', 'order': '1', 'text': board.ASK + ' plan', 'reactions': {}}
+        for text, verdict in [('OK for read-only prod counts', 'feedback'), ('yes, run the query first', 'feedback'),
+                              ('OK', 'approved'), ('OK, go ahead', 'approved'), ('Go ahead. Use CN first.', 'approved'),
+                              ('LGTM, also add a test', 'approved')]:
+            self.assertEqual(board.decide([ask, {'order': '2', 'text': text}])[0], verdict, text)
+        side = {'order': '2', 'text': board.SIDE + ' OK, approve the prod read'}
+        self.assertEqual(board.decide([ask, side])[0], 'pending')                # a side note is never a verdict
+        self.assertEqual(board.decide([dict(ask, reactions={'👍': 1}), side])[0], 'approved')
+
     def test_several_comments_are_judged_one_by_one(self):
         ask = {'id': 'a', 'order': '1', 'text': board.ASK + ' plan', 'reactions': {}}
         for texts, verdict in [(['approve 👍', '👍'], 'approved'), (['lgtm', ':+1:'], 'approved'),
