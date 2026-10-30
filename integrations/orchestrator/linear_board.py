@@ -331,6 +331,18 @@ class LinearBoard:
             self.cache[found['id']] = issue
         return found
 
+    def fresh(self, task):
+        """The task read again from Linear and the journal, past every cache: verdicts are applied only after this."""
+        self.forget(task)
+        if self.journal and self.journal.pg:
+            self.journal.pg._rows = None
+        for link in self.links:
+            found = link.post(ONE, {'id': task})['issue']
+            if found:
+                self.cache[task], self.owner_of[task] = found, link
+                return self._task(found, link)
+        raise ValueError('Linear issue %s is not on this board' % task)
+
     def body(self, task):
         return (self._issue(task)[0].get('description') or '').strip()
 

@@ -168,7 +168,9 @@ def board_for(name, b, scope=None):
 
 def remember(task, table, ident=None):
     with state() as s:
-        record = {'table': table, 'scope': SCOPE}
+        old = s.get('task_tables', {}).get(task)
+        # The hub's board-wide verdict poll has no scope: it never erases the scope that planned the task.
+        record = {'table': table, 'scope': SCOPE or (old.get('scope') if isinstance(old, dict) else None)}
         for key in filter(None, (task, ident)):
             s.setdefault('task_tables', {})[key] = record
 
@@ -346,36 +348,58 @@ def cmd_ask(args, b):
 def cmd_poll(args, b):
     names = [table_of(args.project)[0]] if args.project else list(read_state().get('tables', {}))
     out = []
-    base = b
     for name in names:
-        b = board_for(name, base)
-        for task in b.tasks(read_state()['tables'][name].get('collection')):
-            status = task.get('task_status')
-            if status not in PENDING:
-                continue
-            remember(task['id'], name)
-            verdict, text, _ = anyboard.decide(b.messages(task['id']))
-            row = {'table': name, 'task': task['id'], 'name': task.get('name'), 'was': status, 'verdict': verdict}
-            if verdict == 'approved':
-                row['now'] = 'Todo' if status == 'Awaiting Approval' else 'Done'
-                b.set(task['id'], task_status=row['now'])
-                b.say(task['id'], {'Todo': 'Approved, queued for a worker.',
-                                   'Done': 'Accepted. Branch is ready to merge.'}[row['now']])
-            elif verdict == 'rejected':
-                row['now'] = 'Canceled' if status == 'Awaiting Approval' else 'Todo'
-                b.set(task['id'], task_status=row['now'])
-                b.say(task['id'], 'Dropped.' if row['now'] == 'Canceled' else 'Sent back to the worker.')
-            elif verdict == 'feedback':
-                row['feedback'] = text
-                if status == 'In Review':
-                    # Change requests on finished work go straight back to the worker with the notes.
-                    row['now'] = 'Todo'
-                    b.set(task['id'], task_status='Todo')
-                    b.say(task['id'], 'Got it, sending your notes back to the worker.')
-                else:
-                    row['action'] = 'orchestrator: revise the plan, then `ask` again'
-            if verdict != 'pending':
-                out.append(row)
+        STATE.parent.mkdir(parents=True, exist_ok=True)
+        with open(STATE.with_name('poll.%s.lock' % name), 'w') as guard:
+            fcntl.flock(guard, fcntl.LOCK_EX)         # one process applies a board's verdicts at a time
+            out += poll_board(name, b)
+    return out
+
+
+def recheck(name, base, task):
+    """The task's status and verdict read again, past every cache (another process may have applied it)."""
+    b = board_for(name, base)
+    if hasattr(b, 'fresh'):
+        return b, b.fresh(task)
+    return b, b.get(task)
+
+
+def poll_board(name, base):
+    out = []
+    b = board_for(name, base)
+    for task in b.tasks(read_state()['tables'][name].get('collection')):
+        status = task.get('task_status')
+        if status not in PENDING:
+            continue
+        remember(task['id'], name)
+        verdict, text, ask = anyboard.decide(b.messages(task['id']))
+        if verdict in ('approved', 'rejected') or (verdict == 'feedback' and status == 'In Review'):   # it will move
+            b, current = recheck(name, base, task['id'])
+            if current.get('task_status') != status:
+                continue                              # applied meanwhile by another watcher
+            verdict, text, ask = anyboard.decide(b.messages(task['id']))
+        row = {'table': name, 'task': task['id'], 'name': task.get('name'), 'was': status, 'verdict': verdict,
+               'ask': ask, 'scope': scope_of_task(task['id'])}     # the board-wide hub poll routes by the task's scope
+        if verdict == 'approved':
+            row['now'] = 'Todo' if status == 'Awaiting Approval' else 'Done'
+            b.set(task['id'], task_status=row['now'])
+            b.say(task['id'], {'Todo': 'Approved, queued for a worker.',
+                               'Done': 'Accepted. Branch is ready to merge.'}[row['now']])
+        elif verdict == 'rejected':
+            row['now'] = 'Canceled' if status == 'Awaiting Approval' else 'Todo'
+            b.set(task['id'], task_status=row['now'])
+            b.say(task['id'], 'Dropped.' if row['now'] == 'Canceled' else 'Sent back to the worker.')
+        elif verdict == 'feedback':
+            row['feedback'] = text
+            if status == 'In Review':
+                # Change requests on finished work go straight back to the worker with the notes.
+                row['now'] = 'Todo'
+                b.set(task['id'], task_status='Todo')
+                b.say(task['id'], 'Got it, sending your notes back to the worker.')
+            else:
+                row['action'] = 'orchestrator: revise the plan, then `ask` again'
+        if verdict != 'pending':
+            out.append(row)
     return out
 
 
@@ -550,11 +574,12 @@ def finish(b, task_id, tree, who, summary, exit_code=None):
         stat = git(tree, 'diff', '--shortstat', base, 'HEAD', check=False) or 'no committed changes'
         branch = git(tree, 'branch', '--show-current')
     current = b.get(task_id)
-    b.set(task_id, task_status='In Review', agent_run_count=(current.get('agent_run_count') or 0) + 1)
     ended = 'finished' if exit_code is None else 'finished (exit %s)' % exit_code
+    # The ask goes first: a poll between the two must never find In Review under an older ask (and its 👍).
     b.say(task_id, '**%s** %s on branch `%s`: %d commit(s), %s.\n\n%s\n\nReact 👍 to accept, or reply with changes.'
           % (who, ended, branch, len(commits), stat,
              SECRET.sub('[redacted]', summary)[-1200:] or '(no summary)'), ask=True)
+    b.set(task_id, task_status='In Review', agent_run_count=(current.get('agent_run_count') or 0) + 1)
     return len(commits)
 
 
@@ -1041,11 +1066,13 @@ def to_events(items, verdicts):
             dedupe = '%s:%s:%s' % (item['kind'], task, run.get('dispatched_at') or json.dumps(run.get(item['kind']), sort_keys=True))
         else:
             dedupe = '%s:%s' % (item['kind'], hashlib.sha256(json.dumps(item, sort_keys=True).encode()).hexdigest()[:16])
-        out.append({'board': item['table'], 'scope': scope_of_task(task) or '', 'kind': item['kind'],
+        out.append({'board': item['table'], 'scope': item.get('scope') or scope_of_task(task) or '', 'kind': item['kind'],
                     'task': task, 'issue': item.get('issue') or item.get('linear'), 'dedupe': dedupe, 'payload': item})
     for row in verdicts:
-        out.append({'board': row['table'], 'scope': scope_of_task(row['task']) or '', 'kind': 'verdict',
-                    'task': row['task'], 'issue': None, 'dedupe': None, 'payload': row})
+        # One event per verdict on one ask: a repeat (a second route, a second watcher) returns the existing row.
+        dedupe = 'verdict:%s:%s:%s:%s' % (row['task'], row.get('was'), row.get('now'), row.get('ask') or '')
+        out.append({'board': row['table'], 'scope': row.get('scope') or scope_of_task(row['task']) or '', 'kind': 'verdict',
+                    'task': row['task'], 'issue': None, 'dedupe': dedupe, 'payload': row})
     return out
 
 
@@ -1068,10 +1095,10 @@ def hub_tick(b):
     """One pass for every registered orchestrator. Linear boards are polled per board: the first route of a
     board decides whether it is due this tick, every other route of that board follows, and all of them read
     the one fetch shared by linear_board.shared()."""
-    global SCOPE, POLL_DUE
+    global SCOPE, POLL_DUE, VERDICTS_DONE
     out = {'tables': [], 'verdicts': [], 'started': [], 'needs_orchestrator': []}
     outer = SCOPE
-    POLL_DUE = {}
+    POLL_DUE, VERDICTS_DONE = {}, set()
     try:
         for entry in sorted(read_state().get('orchestrators', {}).values(), key=lambda e: (e['project'], e.get('scope') or '')):
             SCOPE = entry.get('scope') or None
@@ -1086,12 +1113,29 @@ def hub_tick(b):
                 elif isinstance(value, dict):
                     out.setdefault(key, {}).update(value)
     finally:
-        SCOPE, POLL_DUE = outer, None
+        SCOPE, POLL_DUE, VERDICTS_DONE = outer, None, None
     status_table_if_due(out)
     return out
 
 
 POLL_DUE = None           # inside a hub tick: board name → polled this tick (one timestamp per board)
+VERDICTS_DONE = None      # inside a hub tick: boards whose verdicts were already polled
+
+
+def poll_once(name, b):
+    """Verdicts for one board. The hub polls each board once per tick, board-wide (no scope), so two routes
+    over one board never apply or report one verdict twice; outside the hub, the watcher's own scope."""
+    global SCOPE
+    if VERDICTS_DONE is None:
+        return cmd_poll(argparse.Namespace(project=name), b)
+    if name in VERDICTS_DONE:
+        return []
+    VERDICTS_DONE.add(name)
+    outer, SCOPE = SCOPE, None
+    try:
+        return cmd_poll(argparse.Namespace(project=name), b)
+    finally:
+        SCOPE = outer
 
 
 def poll_due(name):
@@ -1180,13 +1224,13 @@ def tick_once(args, b):
                 out.setdefault('sync_errors', {})[name] = str(error)[:200]
                 continue
         try:
-            rows = cmd_poll(argparse.Namespace(project=name), b)
+            rows = poll_once(name, b)
             out['verdicts'] += [r for r in rows if r.get('now')]
             for r in rows:
                 key = '%s:%s' % (r['task'], hashlib.sha256(r.get('feedback', '').encode()).hexdigest()[:12])
                 if r.get('action') and key not in seen:
                     out['needs_orchestrator'].append({'kind': 'replan', 'table': name, 'task': r['task'], 'name': r['name'],
-                                                      'feedback': r['feedback']})
+                                                      'feedback': r['feedback'], 'scope': r.get('scope')})
                     fresh.append(key)
             out['started'] += cmd_dispatch(argparse.Namespace(project=name, runner=None), b)['started']
         except linear.RateLimited as error:         # never a failed tick: the board waits out the backoff
