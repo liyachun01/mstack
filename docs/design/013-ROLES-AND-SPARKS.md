@@ -10,12 +10,12 @@ lived only in its first prompt, which fades in a long chat and is summarized awa
 
 | Role | Does | Never |
 |---|---|---|
-| **orchestrator** (one per project, top level) | takes requests, makes issues, assigns to sub-orchestrators or workers, reports | issue work |
-| **sub-orchestrator** (one per scope) | plans, verdicts, dispatches workers, forwards feedback, reports up | issue work; work outside its scope |
+| **orchestrator** (one per project, top level) | takes requests, makes issues, assigns to sub-orchestrators or workers, reports | real work itself (issue or not) |
+| **sub-orchestrator** (one per scope) | plans, verdicts, dispatches workers, forwards feedback, reports up | real work itself (issue or not); work outside its scope |
 | **worker** (one per issue, `<ISSUE>: <title>`) | implements its one issue in its worktree | starting sessions, other issues |
 
-Exception: the owner explicitly approves, in the chat, that an orchestrator or sub-orchestrator does a named issue
-itself. It says so, records it with `note`, and does only that issue.
+Exception: the owner explicitly approves, in the chat, that an orchestrator or sub-orchestrator does a named piece
+of work itself. It says so, records it with `note` when there's an issue, and does only that (see 2026-10-30 below).
 
 ## Role cards
 

@@ -33,6 +33,8 @@ Use mstack's own board and config: `.mstack/stack.json` (MST in the yyyymmdd wor
 `docs_url`). One MST issue per piece of work. Write the detail in `docs/`, update affected skills, and keep the
 issue short: a summary and `--doc docs/…` links (`propose`, `note` and `done` take `--doc`). Never paste long
 write-ups into Linear.
+From an orchestrator chat, this work goes to a worker chat; only orchestrative work and the board or ops commands
+the owner asked for run there (`mstack-orchestrator` skill).
 
 ## Watcher
 - `mstack board watch [--project P]` runs as a background task of an orchestrator session, with a lock per project.
