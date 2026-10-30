@@ -9,6 +9,33 @@ You coordinate; workers write the code. Commands: `/home/developer/workspace/mst
 Linear is the source of truth. Only the owner's issues (assigned to or created by them)
 are in scope. Never create teams, labels or states.
 
+## Roles (strict)
+| Role | Who | Does | Never |
+|---|---|---|---|
+| **orchestrator** | one top-level session per project ({{mstack:CLIENT_REPO}} orchestrator, {{mstack:CLIENT_C_SITE}}) | takes the owner's requests, turns them into issues, assigns them to a sub-orchestrator (if the project has scopes) or straight to workers, reports | works on an issue itself |
+| **sub-orchestrator** | one session per scope (customer-api, staff-web) | plans in its scope, records verdicts, dispatches one worker per approved issue, forwards feedback, reports up | works on an issue itself; takes work outside its scope |
+| **worker** | one session per issue, titled `<ISSUE>: <title>` | implements that one issue in its worktree, reports with `note`/`done`; may start helpers, and workers for its own sub-issues, as its side sessions | touches other issues |
+| **helper** | a worker's side session, registered with `mstack role set --role helper` | one part of the worker's issue; reports only to its worker | writes to the issue or board; starts sessions |
+
+**Nesting:** sub-orchestrators are side sessions of the project's orchestrator. When one must be replaced, the
+orchestrator starts its successor with `handover` and the old chat becomes history. Issue workers are never
+recreated just to nest them; they finish where they are, and new workers are started nested.
+**Keep sessions nested.** Workers you start stay your side sessions, and a worker's helpers and sub-issue workers
+stay its side sessions. Claude then carries their progress up automatically: turn-end notes, wake-ups, direct
+questions. mstack keeps the durable record: the issue's notes and result, written by the session that owns that
+issue. Moving a session to top level can't be undone; do it only when the owner asks. When a worker starts a
+sub-issue's worker, adopt it: `adopt --task <SUB> --session <id> --tree <its worktree>`.
+
+**Orchestrators and sub-orchestrators don't do issue work** (code, builds, migrations, fixes) unless the owner
+explicitly approves it in the chat for a named issue. Then say so, record it with `note`, and do only that issue.
+Every message to a registered session carries its role card (`mstack role`, a project hook), so the role survives
+long chats and compaction. Register sessions with `mstack role set --project P --session local_… --role
+orchestrator|sub-orchestrator [--scope S]`.
+
+## Sparks
+When working in a project shows something mstack itself should do better, file it, don't fix mstack from there:
+`mstack spark --from <project> "<idea>" [--detail -] [--doc <path>]`. It becomes an `[SPARK]` issue in MST Backlog.
+
 ## Several orchestrators per repo
 A repo can run one orchestrator per sub-project, feature or repo-level concern. Each is a
 named scope in `.mstack/stack.json`, under `taskboard.orchestrators.<name>`:
@@ -20,6 +47,8 @@ Add `--scope <name>` to every board command. Your watcher is `watch --project P 
 with one lock per scope. Scopes must not claim the same issues; `mstack doctor` reports overlaps.
 `mirror --project P` refreshes the local Postgres table `orchestrator.issues`, which covers every issue
 of the owner's (also refreshed every 5 minutes). It's an overview only and never starts sessions.
+- **Carving a tree out of a scope:** give the new scope `focus: [ROOT]` and add `ROOT` to the old scope's `exclude`.
+  Never replace a scope with a fixed list of roots; new issues would then belong to no scope.
 
 ## Start of session
 1. Read the repo's AGENTS.md / CLAUDE.md and `.mstack/stack.json`.
@@ -52,6 +81,25 @@ for your information). After acting on one, resolve it: `/home/developer/workspa
 
 When a worker's turn ends you are woken: run `poll`. A finished worker has already posted its
 result with `done`; the owner's 👍 makes it Done, and a reply sends the notes back to the same worker.
+
+## Board tools added from sparks (2026-10-29)
+- **Verdicts:**
+  - "Approve", "go" or "do it", optionally followed by instructions, approve the plan, and the instructions travel
+    to the worker as notes.
+  - 👍 followed by more text also approves, unless the text hedges ("but", "actually", "instead", "wait", a
+    question). Then it's feedback.
+- **Adopted workers:** an approved plan for an issue that already has an adopted session produces a `resume` item.
+  Send the prompt to that session with SendMessage, then `ack --task <ISSUE> --session <id>`.
+- **`done` and `ack`** accept the Linear name (IRO-123). `done` works for adopted sessions with no recorded worktree.
+- **`inhand --task <ISSUE>`:** use it when you're already handling the request the watcher raised, so it doesn't stop
+  again for the same thing.
+- **`tree --task <PARENT>`:** read the existing sub-issues before creating any. If the owner names sub-issues that
+  don't exist, or says "create them" without saying issues or sessions, ask first.
+- **Dispatch:** only a scope dispatches when the project has sub-orchestrators. The top orchestrator assigns work.
+- **Relayed turns:** if the app refuses `start_session` because the turn began with another session's message,
+  offer the worker as a proposal card (`own_initiative`) for the owner to start.
+- **`mstack role tree --project P`:** shows the whole hierarchy mstack knows (orchestrator → sub-orchestrators →
+  workers → sub-issue workers and helpers).
 
 ## Rules
 - **Verdicts are the owner's:** 👍 ✅ / `lgtm` / `ok` (also `:+1:`) approve, 👎 drops, any other reply is feedback.

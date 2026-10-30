@@ -259,6 +259,15 @@ class LinearBoardFlow(unittest.TestCase):
         self.cli('note', '--task', 'MST-600', 'ARM runner fixed')
         self.assertIn('ARM runner fixed', self.fake.issues[old]['comments'][-1]['body'])
 
+    def test_exclude_leaves_another_scopes_tree_out(self):
+        root = self.cli('plan', '--project', 'repo', '--title', 'Portal', '--plan', '-', stdin='p')['task']
+        child = self.cli('plan', '--project', 'repo', '--title', 'Portal part', '--parent', 'MST-1', '--plan', '-', stdin='p')['task']
+        other = self.cli('plan', '--project', 'repo', '--title', 'API', '--plan', '-', stdin='p')['task']
+        self.scoped(**{'api': {'apps': ['*'], 'exclude': ['MST-1']}, 'portal': {'apps': ['*'], 'focus': ['MST-1']}})
+        seen = lambda scope: {t['task'] for t in self.cli('status', '--project', 'repo', '--scope', scope)['tasks']}
+        self.assertEqual(seen('api'), {other})                  # and any new issue lands here, not nowhere
+        self.assertEqual(seen('portal'), {root, child})
+
     def test_mirror_writes_every_issue_with_focus_flags(self):
         self.cli('plan', '--project', 'repo', '--title', 'Root', '--plan', '-', stdin='p')
         self.cli('plan', '--project', 'repo', '--title', 'Child', '--parent', 'MST-1', '--plan', '-', stdin='p')
@@ -315,7 +324,8 @@ class LinearBoardFlow(unittest.TestCase):
         self.assertEqual(self.fake.state_of(old), 'unstarted')
         self.assertEqual(oct((self.repo / '.mstack/journal.json').stat().st_mode & 0o777), '0o600')
         out = io.StringIO()
-        with contextlib.redirect_stderr(out), contextlib.redirect_stdout(io.StringIO()):
+        with contextlib.redirect_stderr(out), contextlib.redirect_stdout(io.StringIO()), \
+                patch.object(sys, 'stdin', io.StringIO('p')):       # never the runner's own stdin
             self.assertEqual(cli.main(['plan', '--project', 'repo', '--title', 'New', '--plan', '-'],
                                       cli.anyboard.Board(call=None)), 1)
         self.assertIn('private board', out.getvalue())
@@ -354,6 +364,59 @@ class LinearBoardFlow(unittest.TestCase):
         self.cli('note', '--task', 'MST-950', 'Design written', '--doc', 'docs/design/011-HUB.md')
         self.assertIn('[docs/design/011-HUB.md](https://github.com/o/r/blob/main/docs/design/011-HUB.md)',
                       self.fake.issues[old]['comments'][-1]['body'])
+
+    # ---- sparks MST-25..33 ----
+    def test_verdicts_approval_with_notes_and_hedges(self):
+        import board
+        self.assertEqual(board.verdict_of('Approve'), 'approved')
+        self.assertEqual(board.verdict_of('Approve. Use the CN region first.'), 'approved')       # MST-25
+        self.assertEqual(board.verdict_of('ok but change the schema'), 'feedback')
+        self.assertEqual(board.verdict_of('approve? not sure'), 'feedback')
+        msgs = [{'id': 'a', 'order': '1', 'text': board.ASK + ' Plan ready'},
+                {'id': 'b', 'order': '2', 'text': '👍'}, {'id': 'c', 'order': '3', 'text': 'Also add a test for refunds'}]
+        verdict, text, _ = board.decide(msgs)                                                   # MST-32
+        self.assertEqual((verdict, 'refunds' in text), ('approved', True))
+
+    def test_adopted_worker_is_resumed_not_stuck_in_todo(self):                                # MST-26
+        self.auto()
+        old = self.old_issue(n=810, state='s-started')
+        self.cli('adopt', '--project', 'repo', '--task', 'MST-810', '--session', 'local_existing')
+        self.cli('propose', '--project', 'repo', '--task', 'MST-810', '--plan', '-', stdin='1. next step')
+        self.fake.comment(old, '👍')
+        need = self.tick()['needs_orchestrator']
+        resume = [n for n in need if n['kind'] == 'resume']
+        self.assertEqual([(n['session'], '1. next step' in n['prompt']) for n in resume], [('local_existing', True)])
+        self.assertEqual(self.fake.state_of(old), 'started')
+        self.cli('ack', '--task', 'MST-810', '--session', 'local_existing')
+        self.assertEqual([n for n in self.tick()['needs_orchestrator'] if n['kind'] == 'resume'], [])
+
+    def test_done_works_by_issue_name_without_a_worktree(self):                                # MST-28
+        old = self.old_issue(n=820, state='s-started')
+        self.cli('adopt', '--project', 'repo', '--task', 'MST-820', '--session', 'local_x')
+        out = self.cli('done', '--task', 'MST-820', '--summary', 'inventory written')
+        self.assertEqual(out['status'], 'In Review')
+        self.assertIn('no mstack worktree recorded', self.fake.issues[old]['comments'][-1]['body'])
+
+    def test_inhand_stops_the_watcher_raising_the_same_request(self):                          # MST-30
+        self.auto()
+        old = self.old_issue(n=830)
+        self.fake.comment(old, '/plan please')
+        self.cli('inhand', '--project', 'repo', '--task', 'MST-830')
+        self.assertEqual([n for n in self.tick()['needs_orchestrator'] if n['kind'] == 'plan'], [])
+
+    def test_tree_shows_existing_sub_issues(self):                                             # MST-23/27
+        self.cli('plan', '--project', 'repo', '--title', 'Root', '--plan', '-', stdin='p')
+        self.cli('plan', '--project', 'repo', '--title', 'Child', '--parent', 'MST-1', '--plan', '-', stdin='p')
+        tree = self.cli('tree', '--project', 'repo', '--task', 'MST-1')['tree']
+        self.assertEqual([(n['issue'], n['depth']) for n in tree], [('MST-1', 0), ('MST-2', 1)])
+
+    def test_only_a_scope_dispatches_when_there_are_sub_orchestrators(self):                   # MST-33
+        self.scoped(**{'api': {'apps': ['*']}})
+        out = io.StringIO()
+        with contextlib.redirect_stderr(out), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.main(['dispatch', '--project', 'repo'], cli.anyboard.Board(call=None)), 1)
+        self.assertIn('only a scope dispatches', out.getvalue())
+        self.assertIn('started', self.cli('dispatch', '--project', 'repo', '--scope', 'api'))
 
 
 class WorkspaceFlow(unittest.TestCase):

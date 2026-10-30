@@ -75,8 +75,9 @@ state (`.mstack/evidence/taskboard-test.json`) and private journals. That's why 
 - `mstack orchestrators register --project P [--scope S] --session ID` (also `list`, `remove`). Routes are
   `project/scope`; an event for a scope with no route falls back to the board's unscoped route.
 - `tick` turns every `needs_orchestrator` item, and every verdict it applied, into an event, and adds the event id to
-  the item (`event`). Kinds: `plan`, `replan`, `forward`, `stop`, `handoff`, `verdict`. Items were already raised
-  once by the watcher's seen-keys; handoffs repeat until acked, so each carries a dedupe key per dispatch.
+  the item (`event`). Kinds: `plan`, `replan`, `forward`, `stop`, `handoff`, `resume`, `verdict`. Items were already
+  raised once by the watcher's seen-keys; handoffs and resumes repeat until acked, so each carries a dedupe key per
+  dispatch. Verdicts are information only: `events next` resolves them as it hands them out.
   An event's scope is the tick's `--scope`, else the scope that planned, adopted or dispatched the task.
 - `mstack events next`: hands out `new` events and `sent` ones older than `hub.resend_minutes` (5), marks them
   `sent`, and groups them by recipient session, each group with a ready-to-send `message`. Events with no route
@@ -91,6 +92,12 @@ state (`.mstack/evidence/taskboard-test.json`) and private journals. That's why 
 - The hub chat's playbook is `.agents/skills/mstack-hub`. The orchestrator skill now registers at start and on
   handover and resolves events; per-scope watchers keep working unchanged meanwhile, and since their items carry
   event ids, resolving them keeps the queue clean for when the hub starts.
+
+### Review fixes (2026-10-30)
+- `events next` on Postgres returned sent events with no session (a statement's main query can't see its own CTE's
+  UPDATE), so everything looked unrouted. Sent rows now come from `UPDATE … RETURNING`; checked on a temp table.
+- Catching up a spool inside a write took the state lock a second time and hung; the lock is now re-entrant.
+- A missing state file is restored from Postgres instead of being pushed over it (which deleted every key).
 
 ### Not done in phase 1
 - The schema is not applied to the live database, and `hub.store` stays `file`, until the owner approves.

@@ -163,14 +163,16 @@ class PgQueue:
             return [dict(r, session=r.pop('route')) for r in self.rows(
                 "SELECT row_to_json(t) FROM (SELECT %s, %s AS route FROM orchestrator.queue q WHERE %s ORDER BY id) t;\n"
                 % (self.FIELDS, route, due))]
-        # Mark routable events sent in the same statement that reads them; unroutable ones stay new.
+        # Mark routable events sent in the same statement that reads them; unroutable ones stay new. The main
+        # query can't see the CTE's UPDATE (one snapshot), so sent rows come from its RETURNING.
+        fields = self.FIELDS.replace('id::text', 'q.id::text')
         return self.rows(
             "WITH due AS (SELECT q.id, %s AS route FROM orchestrator.queue q WHERE %s ORDER BY q.id FOR UPDATE SKIP LOCKED), "
             "sent AS (UPDATE orchestrator.queue q SET status = 'sent', session = due.route, sends = q.sends + 1, sent_at = now() "
-            "FROM due WHERE q.id = due.id AND due.route IS NOT NULL RETURNING q.id) "
-            "SELECT row_to_json(t) FROM (SELECT %s FROM orchestrator.queue q WHERE q.id IN (SELECT id FROM sent)) t "
+            "FROM due WHERE q.id = due.id AND due.route IS NOT NULL RETURNING %s) "
+            "SELECT row_to_json(t) FROM (SELECT * FROM sent ORDER BY id::bigint) t "
             "UNION ALL SELECT row_to_json(t) FROM (SELECT %s FROM orchestrator.queue q JOIN due ON due.id = q.id "
-            "WHERE due.route IS NULL) t;\n" % (route, due, self.FIELDS, self.FIELDS))
+            "WHERE due.route IS NULL ORDER BY q.id) t;\n" % (route, due, fields, fields))
 
     def resolve(self, ids, by, note):
         numeric = [int(i) for i in ids if str(i).isdigit()]
@@ -197,6 +199,7 @@ class Store:
         self.synced = self.path.with_suffix('.pg-synced')
         self._cache, self._cached_at = None, 0
         self.pg_error = None
+        self._held = False               # this process holds the state lock (locked() / _file_locked())
 
     # ---- board state ------------------------------------------------------
     def _file(self):
@@ -227,8 +230,14 @@ class Store:
 
     def _resync(self):
         """The local file is newer (first use, or a write while Postgres was down): push all of it."""
-        data = self._file()
         known = self._pg_read()
+        if not self.path.exists():
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(json.dumps(known, indent=2) + '\n')
+            self.dirty.unlink(missing_ok=True)
+            self.synced.touch()
+            return
+        data = self._file()
         self._pg_push(data, removed=[k for k in known if k not in data])
         self._flush_spool(data)
         self.dirty.unlink(missing_ok=True)
@@ -268,10 +277,22 @@ class Store:
         return json.loads(json.dumps(data))
 
     @contextlib.contextmanager
-    def _file_locked(self):
+    def _lock(self):
+        if self._held:                   # already ours: flocking again from this process would wait forever
+            yield
+            return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.path.with_suffix('.lock'), 'w') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
+            self._held = True
+            try:
+                yield
+            finally:
+                self._held = False
+
+    @contextlib.contextmanager
+    def _file_locked(self):
+        with self._lock():
             data = self._file()
             yield data
             self.path.write_text(json.dumps(data, indent=2) + '\n')
@@ -284,9 +305,7 @@ class Store:
             with self._file_locked() as data:
                 yield data
             return
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.path.with_suffix('.lock'), 'w') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+        with self._lock():
             ok, data = self._pg_ok(self._pg_read)
             local = self._file()
             data = {**data, **{k: v for k, v in local.items() if k in LOCAL_ONLY}} if ok else local

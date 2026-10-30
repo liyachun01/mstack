@@ -30,3 +30,5 @@ For changing live status, use [the canonical handover](../HANDOVER.md).
    mstack hub chat delivers each event to the right project orchestrator.
 12. [Product vs runtime](012-PRODUCT-VS-RUNTIME.md): what is mstack itself and what is this installation's
    records, the `runtime/` folder, and the MST-22 migration.
+13. [Roles and sparks](013-ROLES-AND-SPARKS.md): strict orchestrator, sub-orchestrator and worker roles with
+    role cards on every message, plus `mstack spark` for reporting ideas back to mstack.

@@ -23,3 +23,11 @@ description: Behave as a worker session dispatched by the mstack orchestrator fo
   This posts the result for the owner's review. If the owner replies with changes, you'll get them
   in this same session.
 - **Keep comments rare and useful:** decisions and results, not running commentary.
+- **Ideas for mstack itself:** `mstack spark --from <project> "<idea>"`. Never edit mstack from a task.
+- **Helpers and sub-issues:**
+  - For a part of your issue, you may start a **helper** as your side session (one level; it never starts its own).
+    Register it: `mstack role set --project <path> --session <id> --role helper --task <ISSUE> --worker <your id>`.
+    Helpers report only to you, and you write the issue's record.
+  - For a **sub-issue** of your issue, you may start its worker as your side session. Then ask your orchestrator to
+    adopt it. It owns its own record and stays nested under you.
+  - Never move them to top level.

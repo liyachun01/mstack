@@ -167,7 +167,30 @@ def sync_project(project, check=False):
             if not check:
                 visibility.apply(project, True)
 
-    # 6. The config still validates against the current schema.
+    # 6. Role-card hook, for projects with a task board (personal Claude settings only).
+    if project != STACK_ROOT and config.get('taskboard'):
+        sys.path.insert(0, str(STACK_ROOT/'integrations/agents'))
+        import roles
+        settings = project/'.claude/settings.local.json'
+        present = settings.exists() and roles.MARK in settings.read_text()
+        if not present:
+            changes.append('.claude/settings.local.json: role-card hook added')
+            if not check:
+                roles.install(project)
+        # Worker worktrees inside the project are their own Claude project folders: give them the hook too.
+        runs = json.loads(BOARD_STATE.read_text()).get('runs', {}).values() if BOARD_STATE.exists() else []
+        for run in runs:
+            tree = Path(run.get('tree') or '')
+            if not run.get('tree') or not tree.is_dir() or project not in tree.resolve().parents:
+                continue
+            local = tree/'.claude/settings.local.json'
+            if not (local.exists() and roles.MARK in local.read_text()):
+                changes.append('%s: role-card hook added (worker %s)' % (tree.relative_to(project)/'.claude/settings.local.json',
+                                                                          run.get('issue') or '?'))
+                if not check:
+                    roles.install(tree)
+
+    # 7. The config still validates against the current schema.
     try:
         intent.project_config(project)
     except (ValueError, KeyError) as error:

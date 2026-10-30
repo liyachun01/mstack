@@ -66,6 +66,19 @@ class QueueAndRegistry(unittest.TestCase):
         self.assertEqual(got, {'local_api': ['handoff', 'verdict'], 'local_web': ['handoff', 'verdict']})
         self.assertEqual(out['unrouted'], [])
 
+    def test_verdicts_are_delivered_once_and_never_resent(self):
+        self.scoped(**{'api': {'apps': ['*'], 'focus': ['MST-1']}})
+        a = self.cli('plan', '--project', 'repo', '--scope', 'api', '--title', 'A', '--agent', 'claude-desktop',
+                     '--plan', '-', stdin='p')['task']
+        self.cli('orchestrators', 'register', '--project', 'repo', '--scope', 'api', '--session', 'local_api')
+        self.fake.comment(a, '👍')
+        with patch.object(cli, 'LINEAR_EVERY', 0), patch.object(cli, 'MIRROR_EVERY', 10 ** 9):
+            self.cli('tick', '--hub')
+        self.cli('events', 'next')
+        cli.board_store().resend = 0
+        again = [e['kind'] for g in self.cli('events', 'next')['deliver'] for e in g['events']]
+        self.assertEqual(again, ['handoff'])                               # the verdict was information only
+
     def test_register_checks_the_scope_and_replaces_the_session(self):
         with self.assertRaises(AssertionError):                          # main() returns 1: unknown scope
             self.cli('orchestrators', 'register', '--project', 'repo', '--scope', 'nope', '--session', 's')
@@ -175,6 +188,28 @@ class PostgresFallback(unittest.TestCase):
         self.pg.down = False
         self.assertEqual([c['body'] for c in linear_board.Journal(project).comments('issue-1')], ['first', 'second'])
         self.assertEqual(len(self.pg.journal), 2)                              # caught up
+
+    def test_catching_up_inside_a_write_does_not_wait_on_its_own_lock(self):
+        self.store.read()
+        self.pg.down = True
+        self.store.enqueue([{'board': 'repo', 'scope': '', 'kind': 'plan', 'dedupe': 'k1', 'payload': {}}])
+        self.pg.down = False
+        done = []
+        def write():                         # the spool flush runs inside locked(): used to flock twice and hang
+            with self.store.locked() as s:
+                s['attention_seen'] = ['x']
+            done.append(True)
+        import threading
+        t = threading.Thread(target=write, daemon=True); t.start(); t.join(5)
+        self.assertEqual(done, [True])
+        self.assertEqual([q['dedupe'] for q in self.pg.queue], ['k1'])
+        self.assertEqual(self.pg.state['attention_seen'], ['x'])
+
+    def test_a_missing_state_file_is_restored_from_postgres_not_pushed_over_it(self):
+        self.pg.state = {'tables': {'repo': {'path': '/r'}}}
+        self.assertEqual(self.store.read()['tables'], {'repo': {'path': '/r'}})
+        self.assertEqual(self.pg.state, {'tables': {'repo': {'path': '/r'}}})
+        self.assertEqual(json.loads((self.dir/'state.json').read_text())['tables'], {'repo': {'path': '/r'}})
 
     def test_schema_covers_every_table_the_store_uses(self):
         sql = store.SCHEMA.read_text()

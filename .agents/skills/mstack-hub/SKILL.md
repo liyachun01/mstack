@@ -21,7 +21,7 @@ carry messages. Commands: `/home/developer/workspace/mstack/mstack …`, run fro
 
 ## When the watcher exits
 - **`events_waiting`:** run `mstack events next`. For each group in `deliver`, SendMessage `message` to `session`,
-  unchanged. Then restart the watcher.
+  unchanged. Then restart the watcher. Verdicts in a message are information only and already resolved.
 - **`unrouted`** (in `events next`): events for a (project, scope) with no registered session. They stay `new` and
   wait. Tell the owner once which route is missing; they or that orchestrator run
   `mstack orchestrators register --project P [--scope S] --session <id>`.

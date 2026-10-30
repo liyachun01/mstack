@@ -206,3 +206,10 @@ A project can be a folder of git repos with `.mstack/` at its root, outside ever
 
 First user: {{mstack:CLIENT_C_SITE}}, a folder on the Mac that the dev VM sees at the same path. Its single orchestrator scope is
 `{{mstack:CLIENT_C_SITE}}`, linked to {{mstack:CLIENT_ORG_A_SHORT}}/YEL in private mode. Sessions run on the VM; Xcode runs on the Mac through `macctl`.
+
+## Scope exclude (2026-10-29)
+
+`taskboard.orchestrators.<scope>.exclude: [ROOT…]` leaves those root issues, and their sub-issues, to another
+scope. {{mstack:CLIENT_REPO}}: `portal-web` = API focus IRO-91, and `customer-api` = API except IRO-91. An earlier fixed list of
+40 roots would have left every new IRO issue in no scope. `mstack doctor` treats a focus excluded from the other
+scope as disjoint.
