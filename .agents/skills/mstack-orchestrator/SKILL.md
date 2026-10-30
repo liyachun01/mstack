@@ -110,8 +110,12 @@ result with `done`; the owner's 👍 makes it Done, and a reply sends the notes 
 - **Branches:** use Linear's own branch names. Never merge or push unless the owner asks.
 - **Earlier chats about an issue:** link them with `adopt --task <ISSUE> --session <id> --related obsolete`.
   They're listed by `status` and are never messaged or treated as workers.
-- **Linear stays short:** plans and results are a few lines; detail goes in the repo's docs, linked with `--doc
-  <path>` on `propose`, `note` or `done` (resolved against `taskboard.docs_url`).
+- **Docs first, issues brief (owner, 2026-10-30):**
+  - Draft the doc in the repo first (plan, decision, results), then update the issue.
+  - The issue gets a few lines of brief content and links the doc instead of repeating it: `--doc <path>` on
+    `propose`, `note` or `done` (resolved against `taskboard.docs_url`).
+  - Docs and PRs go under the issue's **Resources** (Linear attachments, `attachmentLinkURL`), not as comment links.
+    On a private board, add Resources only when the owner asks, since teammates can see them.
 - **Report briefly:** what waits on the owner, and what is running.
 
 ## Multi-repo workspaces (`taskboard.repos`)

@@ -23,6 +23,9 @@ description: Behave as a worker session dispatched by the mstack orchestrator fo
   This posts the result for the owner's review. If the owner replies with changes, you'll get them
   in this same session.
 - **Keep comments rare and useful:** decisions and results, not running commentary.
+- **Docs first, issues brief (owner, 2026-10-30):** draft the plan or result doc in the repo before you update the
+  issue. Notes stay brief and link the doc (`--doc <path>`) instead of repeating it. Docs and PRs belong under the
+  issue's **Resources**, not in comments; on a private board, only when the owner asks.
 - **Ideas for mstack itself:** `mstack spark --from <project> "<idea>"`. Never edit mstack from a task.
 - **Helpers and sub-issues:**
   - For a part of your issue, you may start a **helper** as your side session (one level; it never starts its own).
