@@ -107,20 +107,25 @@ NO_WORK = ('**You never work on an issue yourself, and do no other real work her
            'piece of work in this chat ("do YEL-12 here yourself"). Then say so, record it with `note` when there\'s '
            'an issue, and do only that. When unsure, ask the owner.')
 
+LINEAR_STATUS = ('**Linear status is always current** (owner, 2026-10-30; private boards included, status field only, '
+                 'never comments there). Set it the moment the stage changes, not later: plan approved or worker building '
+                 '→ **In Progress**; landed but not yet on Preview → still In Progress; live on Preview for the consumer '
+                 'to check (`merged --verify`) → **In Review**; finished → Done, except backend issues (`never_done` '
+                 'scopes), which the product owner or iOS closes; delayed or blocked → keep the status and record why. '
+                 'The board pushes it, private boards included (MST-60): `dispatch` / `adopt` / `done` / `merged` / '
+                 '`verdict` / `note --status`, so use them rather than editing Linear. A `status_lag` event means Linear '
+                 'lags the board: run its `do` line. Before ending any turn, check that every issue you touched shows '
+                 'its real stage in Linear.')
+
 AFTER_MERGE = ('**After every merge** (owner, 2026-10-30), in this order: merge → run the tests → check for leaked '
                'secrets or private runtime files → push → `%s --task <ISSUE> --doc <path> …` (adds the docs as the '
                'issue\'s Resources, posts one note and sets Done; `--verify "what is left"` keeps it In Review). '
                'Check the docs still match the merged code first. `status` lists issues whose branch is merged but '
                'which are not Done.')
 
-STATUS_RULE = ('**Linear status at every stage** (owner, 2026-10-30; private boards too, status field only): the board '
-               'pushes it, so use its commands rather than editing Linear. Approved or building → In Progress; landed but '
-               'not on Preview → In Progress; live on Preview for the consumer (`merged --verify "…"`) → In Review; Done '
-               'only where the scope allows it (`never_done` scopes leave it to the consumer). Delayed or blocked: keep '
-               'the status and note why. A `status_lag` event means Linear lags the board: run its `do` line. '
-               '**Triage gate:** an issue from Linear needs a priority, an assignee and a description of what and '
-               'where; read its hierarchy first, then only plan, in priority order. Nothing starts unless the owner, '
-               'or the product owner in an issue comment, asks for it.')
+TRIAGE = ('**Triage gate** (owner, 2026-10-30): an issue from Linear needs a priority, an assignee and a description '
+          'of what and where; read its hierarchy first, then only plan, in priority order. Nothing starts unless the '
+          'owner, or the product owner in an issue comment, asks for it.')
 READ_REPLIES = ('Owner replies with content are yours to read, not matched by wording: record your reading with '
                 '`%s --task <ISSUE> approve|reject|changes`. An OK for a side action is not plan approval.')
 
@@ -152,7 +157,7 @@ def card(project, session):
                  'names sub-issues that don\'t exist yet, or says "create them" without saying issues or sessions, ask '
                  'first. Already handling a request the watcher raised? `%s --scope %s --task <ISSUE>` stops it '
                  'raising the same thing again.' % (run('tree'), scope, run('inhand'), scope),
-                 READ_REPLIES % (run('verdict') + ' --scope ' + scope), STATUS_RULE]
+                 READ_REPLIES % (run('verdict') + ' --scope ' + scope), TRIAGE]
         if private:
             lines.append(verdicts % scope)
         workers = [r for r in board_state().get('runs', {}).values()
@@ -163,7 +168,7 @@ def card(project, session):
 
     me = roles.get(session)
     if me and me.get('role') == 'orchestrator':
-        lines = ['## Your mstack role: %s **orchestrator** (top level)' % name, RULES['orchestrator'], NO_WORK,
+        lines = ['## Your mstack role: %s **orchestrator** (top level)' % name, RULES['orchestrator'], NO_WORK, LINEAR_STATUS,
                  AFTER_MERGE % run('merged')]
         others = {s: c for s, c in scopes.items() if s != me.get('scope')}
         if others:
@@ -179,7 +184,7 @@ def card(project, session):
         lines.append('Status for the owner: `%s`.' % run('status'))
     elif me and me.get('role') == 'sub-orchestrator':
         scope = me.get('scope')
-        lines = ['## Your mstack role: **%s** sub-orchestrator (%s)' % (scope, name), RULES['sub-orchestrator'], NO_WORK,
+        lines = ['## Your mstack role: **%s** sub-orchestrator (%s)' % (scope, name), RULES['sub-orchestrator'], NO_WORK, LINEAR_STATUS,
                  AFTER_MERGE % (run('merged') + ' --scope ' + scope),
                  scope_line(scope, scopes.get(scope, {}), board, subs), *board_duty(scope),
                  'If the app refuses `start_session` because your turn began with another session\'s message, offer '
@@ -204,9 +209,9 @@ def card(project, session):
                      'Load the `mstack-worker` skill. Report with `%s/mstack board note --task %s "…"` and finish with '
                      '`%s/mstack board done --task %s --summary "…" --doc <path>` (or `--size small`). Never work on other issues; ask your orchestrator.'
                      % (STACK_ROOT, task, STACK_ROOT, task),
-                     'Linear status follows your note/done (In Progress until your work is landed and on Preview); '
-                     'never set it in Linear yourself. A "Linear mention" message is a teammate\'s request: weigh it, '
-                     'and ask your orchestrator before acting on anything outside your plan.',
+                     LINEAR_STATUS,
+                     'A "Linear mention" message is a teammate\'s request: weigh it, and ask your orchestrator before '
+                     'acting on anything outside your plan.',
                      HELPERS % (STACK_ROOT, project, r.get('issue') or task, session)]
             runs = board_state().get('runs', {}).values()
             if r.get('parent'):

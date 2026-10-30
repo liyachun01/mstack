@@ -664,6 +664,24 @@ class LinearBoardFlow(unittest.TestCase):
             self.assertEqual([(n['issue'], n['phase'], n['linear']) for n in lag], [('MST-940', 'In Progress', 'Unstarted')])
             self.assertEqual([n for n in self.cli('tick')['needs_orchestrator'] if n['kind'] == 'status_lag'], [])
 
+    def test_adopt_keeps_the_real_stage(self):                                               # customer-api, MST-60
+        cfg = json.loads((self.repo / '.mstack/stack.json').read_text()); cfg['taskboard']['private'] = True
+        (self.repo / '.mstack/stack.json').write_text(json.dumps(cfg))
+        self.auto()
+        self.fake.states.insert(3, {'id': 's-review', 'type': 'started', 'name': 'In Review', 'position': 2.5})
+        draft, live, stuck = self.old_issue(n=139), self.old_issue(n=125, state='s-review'), self.old_issue(n=127)
+        out = self.cli('adopt', '--project', 'repo', '--task', 'MST-139', '--session', 'a', '--stage', 'planning')
+        self.assertEqual((out['status'], self.fake.state_of(draft)), ('Awaiting Approval', 'unstarted'))
+        self.assertEqual(self.cli('adopt', '--project', 'repo', '--task', 'MST-125', '--session', 'b')['status'], 'In Review')
+        self.assertEqual(self.fake.issues[live]['stateId'], 's-review')                # never pulled back to In Progress
+        self.cli('adopt', '--project', 'repo', '--task', 'MST-127', '--session', 'c', '--stage', 'blocked',
+                 '--reason', 'waiting for the iOS build')
+        self.assertEqual(self.fake.state_of(stuck), 'unstarted')
+        with patch.object(cli, 'LINEAR_EVERY', 0), patch.object(cli, 'MIRROR_EVERY', 10 ** 9):
+            need = self.cli('tick')['needs_orchestrator']
+        self.assertEqual([n for n in need if n['kind'] in ('status_lag', 'handoff', 'resume')], [])   # no false lags
+        self.assertIn('waiting for the iOS build', self.cli('thread', '--project', 'repo', '--task', 'MST-127')['messages'][-1]['text'])
+
     def test_team_without_in_review_maps_to_its_nearest_state(self):                          # MST-53
         old = self.old_issue(n=930, state='s-started')
         self.cli('adopt', '--project', 'repo', '--task', 'MST-930', '--session', 'local_x')

@@ -129,6 +129,9 @@ written, never comments). The board pushes it at each step; never set it by hand
 - **Done** only on scopes without `never_done`; backend scopes (`never_done: true`) leave it to the consumer.
 A team without a state (CAN has no In Review) gets its nearest state; the command output's `linear_status` and
 the state's `linear_state_map` show the mapping. Delayed or blocked: keep the status, note why on the board.
+`adopt` keeps the issue's real stage (`--stage planning|building|preview|blocked --reason …`; by default read from
+the Linear state), so a draft plan or a Preview issue is never forced to In Progress. Before ending every turn,
+check that each issue you touched shows its real stage in Linear; tell your workers the same rule.
 Scope config: `never_done`, `landing`, `linear_status` (phase → state overrides) in `taskboard.orchestrators.<scope>`.
 
 `status` flags issues whose branch is merged into main but aren't Done (`merged_not_done`), and the watcher raises
