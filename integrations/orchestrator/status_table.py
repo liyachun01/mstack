@@ -154,8 +154,7 @@ class StatusTable:
                                                             for p in SCHEMA['properties']]})
             return
         found = self.call('GET', 'types/' + TYPE['key']) or {}
-        found = found.get('type', found)
-        on_type = {p.get('key') for p in found.get('properties') or [] if isinstance(p, dict)}
+        on_type = {d.get('property') for d in (found.get('type_settings') or {}).get('property_definitions') or []}
         for key in COLUMNS:
             if key not in on_type or key in added:
                 self.call('PATCH', 'types/' + TYPE['key'], {'ops': [

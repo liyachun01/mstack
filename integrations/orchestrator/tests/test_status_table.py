@@ -40,7 +40,9 @@ class FakeAnytype:
         if method == 'GET' and base == 'types':
             return {'data': [{'key': k} for k in self.types]}
         if method == 'GET' and base.startswith('types/'):
-            return {'type': {'key': base[6:], 'properties': [{'key': k} for k in self.types[base[6:]]]}}
+            return {'kind': 'object_type', 'properties': {'name': base[6:]},           # the live API's shape
+                    'type_settings': {'api_key': base[6:], 'property_definitions': [
+                        {'property': k, 'section': 'hidden'} for k in self.types[base[6:]]]}}
         if method == 'POST' and base == 'properties':
             self.properties.append(body['key'])
             return {}

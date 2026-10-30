@@ -1,6 +1,6 @@
 {
   "$comment": "Shared Anytype task board channel, owned by mstack. Each project gets its own table (a query filtered on Project). Provisioned by integrations/agents/anytype_taskboard.py; operated by integrations/orchestrator.",
-  "channel": "mstack-taskboard-test",
+  "channel": "mstack",
   "type": {
     "key": "agent_task",
     "name": "Agent Task",

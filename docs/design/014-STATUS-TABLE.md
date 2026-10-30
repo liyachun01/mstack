@@ -19,7 +19,7 @@ Linear ──(mirror, every 5 min per board)──▶ Postgres mstack_orchestrat
                                        hub watcher step (every minute, automatic)
                                                         │ one way, upsert by <board>/<issue>
                                                         ▼
-           the board's Anytype channel (mstack-taskboard-test, to be renamed) ▸ "My tasks" (type Agent Task)
+                 Anytype channel "mstack" (was mstack-taskboard-test) ▸ "My tasks" (type Agent Task)
 ```
 
 - **Source:** the hub's Postgres. `orchestrator.issues` (the local Linear issue table that `mstack board mirror`
@@ -91,13 +91,20 @@ Nobody runs it by hand: the table follows the work by itself.
 
 Writing back to Postgres or Linear, per-project tables, new Anytype spaces or grants.
 
-## Not done
+## Live setup (2026-10-30)
 
-- No live pass yet: on 2026-10-30 the Anytype app on the Mac wasn't running (the local API at 127.0.0.1:31009
-  refused the connection), and opening it is the owner's call (asked on the issue). Once it is open, the worker does
-  the Anytype changes itself through the API: rename the channel, then the first `mstack status-table sync`
-  updates the type and creates the collection. The property, type and view requests were only run against the fake.
-- The new name waits for the owner to confirm the spelling (`mastack` as written, or `mstack`).
+With the owner's OK the worker started the Anytype app in the background and, through the API with the existing key:
+- renamed the channel `mstack-taskboard-test` → `mstack` (`infra/taskboard/schema.json` `channel` updated);
+- added the new `task_scope` property to the Agent Task type (every other column was already on it);
+- created "My tasks" (Table and Board views, sidebar widget) and wrote 156 rows: mstack 40 issues after a fresh
+  mirror, plus {{mstack:CLIENT_REPO}} and {{mstack:CLIENT_C_SITE}}. Every row was read back from the collection. Public rows carry their Linear
+  link and private ones don't.
+- A second pass with nothing changed made no Anytype calls (0.4 s).
+
+The table's state (`status_table` in board_state) is in Postgres. Until this branch is merged, the running hub
+watcher has older code and doesn't update the table; after merge it reloads itself and takes over.
+The live API returns a type's properties under `type_settings.property_definitions`; the fake in the tests now
+returns that shape.
 
 ## Questions resolved
 
@@ -107,7 +114,7 @@ Writing back to Postgres or Linear, per-project tables, new Anytype spaces or gr
 - **Type:** first built with a separate "My Task" type; the owner then asked to reuse the existing Agent Task type
   with the necessary updates (2026-10-30), so the rows are Agent Tasks and only Scope is new.
 - **Channel:** keep the existing one and rename it, since mstack is a one-person team pushing directly (owner,
-  2026-10-30). Spelling to be confirmed.
+  2026-10-30). Renamed to `mstack` on 2026-10-30 (the owner confirmed `mstack`, not `mastack`).
 - **Who changes Anytype:** the worker, through the API with the existing key, not the owner in the UI.
 - **Where it runs (owner, 2026-10-30: "we don't run sync by ourselves"):** in the hub watcher, which is always
   running and already reads the same Postgres, with batched passes so no manual first run is needed. Postgres
