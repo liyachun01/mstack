@@ -16,7 +16,7 @@ The owner wants one table to glance at. It's a view, not a second board: the ear
 Linear ──(mirror, every 5 min per board)──▶ Postgres mstack_orchestrator
                                             orchestrator.issues  +  board_state runs / task_tables / tables
                                                         │
-                                       hub watcher step (every 3 min) or `mstack status-table sync`
+                                       hub watcher step (every minute, automatic)
                                                         │ one way, upsert by <board>/<issue>
                                                         ▼
            the board's Anytype channel (mstack-taskboard-test, to be renamed) ▸ "My tasks" (type Agent Task)
@@ -70,16 +70,20 @@ at most an hour. Each row's body says it is written by the hub.
 
 ## Running it
 
-- **Hub watcher:** `mstack board watch --hub` (and `tick --hub`) runs a pass every 3 minutes after ticking the
-  boards. A failure (Anytype closed, Postgres down) is reported as `status_table_error` in the tick output and on
-  the watcher's tick line, and never stops the watcher; the next try waits the same 3 minutes. Rows written before
-  a failure are remembered, so a retry never builds a second "My tasks".
-- **By hand:** `mstack status-table sync [--full]` runs one pass; `mstack status-table show` gives the switch, the
-  row count and the last pass; `mstack status-table rename --to NAME` renames the channel.
+Nobody runs it by hand: the table follows the work by itself.
+
+- **Hub watcher:** the always-running `mstack board watch --hub` (and `tick --hub`) runs a pass every minute after
+  ticking the boards. A pass with nothing changed costs one Postgres read and no Anytype calls. A pass writes at
+  most 40 rows; while rows are still waiting (the first build of ~131 rows, the hourly rewrite) the next pass comes
+  15 seconds later, so neither stalls event delivery. The watcher reloads itself when mstack's code changes, so the
+  step starts on its own after merge.
+- **Failures** (Anytype closed, Postgres down) show as `status_table_error` in the tick output and on the watcher's
+  tick line and never stop the watcher; the next try is a minute later. Rows written before a failure are
+  remembered, so a retry never builds a second "My tasks".
 - **Off switch:** `"hub": {"status_table": false}` in mstack's `.mstack/stack.json` (schema
   `project.schema.json` → `hub.status_table`, default on). Off stops the watcher step and makes `sync` refuse.
-- The first pass creates every row (about 260 bridge calls for 131 rows). Run it once by hand so the hub's first
-  tick isn't slowed down.
+- **For diagnosis only:** `mstack status-table show` (switch, rows, rows waiting, last pass), `sync [--full]` (one
+  unbatched pass now) and `rename --to NAME` (the channel).
 - Tests never reach Anytype or Postgres: only the real state file feeds the table from the watcher, and the tests
   drive it with a fake Anytype client and a fake `psql`.
 
@@ -105,5 +109,12 @@ Writing back to Postgres or Linear, per-project tables, new Anytype spaces or gr
 - **Channel:** keep the existing one and rename it, since mstack is a one-person team pushing directly (owner,
   2026-10-30). Spelling to be confirmed.
 - **Who changes Anytype:** the worker, through the API with the existing key, not the owner in the UI.
-- **"Overwritten on the next pass"** became "within the hour": rewriting all ~130 rows every 3 minutes through the
+- **Where it runs (owner, 2026-10-30: "we don't run sync by ourselves"):** in the hub watcher, which is always
+  running and already reads the same Postgres, with batched passes so no manual first run is needed. Postgres
+  alone can't do it: it has no way to call Anytype's API. Windmill (design 011 phase 2) would keep running when
+  the hub chat is closed, but its worker is a container that can't reach the Anytype API (Mac loopback only) or the
+  key without a new route and a copy of the key into Windmill. That counts as a grant change under the setup guard,
+  so it's a later option for the owner, not part of MST-40. The step is a plain function
+  (`status_table_pass`), so a Windmill job could call the same code if that is approved.
+- **"Overwritten on the next pass"** became "within the hour": rewriting all ~130 rows every minute through the
   rate-limited bridge is too heavy, so changed rows go at once and everything is rewritten hourly.

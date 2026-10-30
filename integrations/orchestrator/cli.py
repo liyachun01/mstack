@@ -772,7 +772,7 @@ def private_boards():
     return out
 
 
-def status_table_pass(full=False):
+def status_table_pass(full=False, limit=None):
     """One pass: refresh stale Linear issue tables, then upsert the rows into "My tasks"."""
     out = {}
     for name, entry in sorted(read_state().get('tables', {}).items()):
@@ -785,28 +785,31 @@ def status_table_pass(full=False):
     table = status_table.StatusTable(STATUS_CALL or anyboard.macctl)
     rows = status_table.desired(issues, current, private_boards())
     try:
-        known, counts = table.sync(rows, known, full)
+        known, counts = table.sync(rows, known, full, limit)
     finally:
         saved = known if table.partial is None else table.partial
         with state() as s:
             mine = dict(saved, last_try=time.time())
             if table.partial is None:
                 mine['last_pass'] = time.strftime('%Y-%m-%dT%H:%M:%S%z')
+                mine['pending'] = counts['pending']
                 if full:
-                    mine['last_full'] = time.time()
+                    mine['last_full'] = time.time()        # the rewrite carries on through the forgotten fingerprints
             s[status_table.STATE_KEY] = mine
     return {**out, 'rows': len(rows), 'full': full, **counts}
 
 
 def status_table_if_due(out):
-    """The hub watcher's step: a pass every status_table.EVERY seconds, failures recorded, never fatal."""
+    """The hub watcher's step: a pass every status_table.EVERY seconds (BACKLOG_EVERY while rows wait), at most
+    BATCH rows each, failures recorded, never fatal. This keeps the table current with no manual runs."""
     if not status_table_on():
         return
     known = read_state().get(status_table.STATE_KEY) or {}
-    if time.time() - known.get('last_try', 0) < status_table.EVERY:
+    wait = status_table.BACKLOG_EVERY if known.get('pending') else status_table.EVERY
+    if time.time() - known.get('last_try', 0) < wait:
         return
     try:
-        out['status_table'] = status_table_pass()
+        out['status_table'] = status_table_pass(limit=status_table.BATCH)
     except (RuntimeError, ValueError, OSError, KeyError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
         out['status_table_error'] = str(error)[:200]
         with state() as s:
@@ -817,7 +820,7 @@ def cmd_status_table(args, b):
     if args.action == 'show':
         known = read_state().get(status_table.STATE_KEY) or {}
         return {'on': hub_settings().get('status_table', True) is not False, 'collection': known.get('collection'),
-                'rows': len(known.get('rows') or {}), 'last_pass': known.get('last_pass')}
+                'rows': len(known.get('rows') or {}), 'pending': known.get('pending', 0), 'last_pass': known.get('last_pass')}
     if hub_settings().get('status_table', True) is False:
         raise ValueError('The status table is off (hub.status_table: false in .mstack/stack.json)')
     if args.action == 'rename':

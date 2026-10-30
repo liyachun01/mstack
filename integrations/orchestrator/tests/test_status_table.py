@@ -132,7 +132,7 @@ class Upsert(unittest.TestCase):
 
     def test_first_pass_builds_the_table_then_only_changes_are_written(self):
         known, counts = self.table.sync(self.rows, {})
-        self.assertEqual(counts, {'created': 2, 'updated': 0, 'unchanged': 0})
+        self.assertEqual(counts, {'created': 2, 'updated': 0, 'unchanged': 0, 'pending': 0})
         posted = [b['name'] for m, p, b in self.any.calls if m == 'POST' and p == 'collections']
         self.assertEqual(posted, ['My tasks'])
         props = [b['key'] for m, p, b in self.any.calls if m == 'POST' and p == 'properties']
@@ -239,6 +239,26 @@ class HubStep(unittest.TestCase):
                 self.assertEqual(self.cli('tick', '--hub')['status_table']['created'], 1)
         with patch.object(st, 'EVERY', 0), patch.object(cli, 'LINEAR_EVERY', 0):
             self.assertNotIn('status_table', self.cli('tick', '--hub'))            # off: tests' default
+
+    def test_the_watcher_builds_a_big_table_in_batches_without_a_manual_run(self):
+        self.wire([issue('repo', 'MST-%d' % n) for n in range(1, 6)])
+        on = patch.object(cli, 'status_table_on', lambda: True)
+        with on, patch.object(st, 'BATCH', 2), patch.object(cli, 'LINEAR_EVERY', 0):
+            first = self.cli('tick', '--hub')['status_table']
+            self.assertEqual((first['created'], first['pending']), (2, 3))
+            self.assertNotIn('status_table', self.cli('tick', '--hub'))            # backlog waits BACKLOG_EVERY
+            with patch.object(st, 'BACKLOG_EVERY', 0):
+                self.assertEqual(self.cli('tick', '--hub')['status_table']['pending'], 1)
+                done = self.cli('tick', '--hub')['status_table']
+            self.assertEqual((done['created'], done['pending']), (1, 0))
+            self.assertNotIn('status_table', self.cli('tick', '--hub'))            # caught up: back to EVERY
+            with cli.state() as s:                                                 # an hour later: full rewrite
+                s[st.STATE_KEY]['last_full'] = 0
+                s[st.STATE_KEY]['last_try'] = 0
+            with patch.object(st, 'BACKLOG_EVERY', 0):
+                passes = [self.cli('tick', '--hub')['status_table'] for _ in range(3)]
+        self.assertEqual([(p['updated'], p['pending']) for p in passes], [(2, 3), (2, 1), (1, 0)])
+        self.assertEqual(self.cli('status-table', 'show')['rows'], 5)
 
     def test_stale_boards_are_mirrored_before_the_pass(self):
         self.wire([])

@@ -7,7 +7,9 @@ through the same macOS bridge and key the board already uses (no new grant). The
 never read or written.
 
 One way only: rows are upserted by `<board>/<issue>`. Unchanged rows are skipped; every `FULL_EVERY` seconds
-(and on `sync --full`) every row is written again, so hand edits in Anytype are overwritten. Rows are never
+(and on `sync --full`) every row is written again, so hand edits in Anytype are overwritten. Inside the hub
+watcher a pass writes at most `BATCH` rows, so the first build (and each hourly rewrite) is spread over a few
+ticks instead of stalling event delivery; the rest follow `BACKLOG_EVERY` seconds later. Rows are never
 deleted: a closed issue stays as Done/Canceled, and an issue that left the source keeps its last values.
 """
 from datetime import datetime, timezone
@@ -19,7 +21,9 @@ from board import SCHEMA
 
 STATE_KEY = 'status_table'
 COLLECTION = 'My tasks'
-EVERY = 180                  # seconds between passes inside the hub watcher
+EVERY = 60                   # seconds between passes inside the hub watcher (no Anytype calls when nothing changed)
+BATCH = 40                   # rows written per watcher pass at most
+BACKLOG_EVERY = 15           # seconds before the next pass while rows are still waiting
 FULL_EVERY = 3600            # seconds between passes that rewrite every row (overwrites hand edits)
 RECENT_DAYS = 30             # closed issues the board never touched are shown this long after their last update
 TYPE = SCHEMA['type']        # the existing Agent Task type (agent_task), reused
@@ -161,19 +165,24 @@ class StatusTable:
         """Rename the granted channel (the space itself, path ".")."""
         return self.call('PATCH', '.', {'name': name})
 
-    def sync(self, rows, known, full=False):
-        """Upsert `rows` (from desired). Returns (known with row ids and fingerprints, counts)."""
+    def sync(self, rows, known, full=False, limit=None):
+        """Upsert `rows` (from desired), writing at most `limit` of them. Returns (known with row ids and
+        fingerprints, counts); counts['pending'] is how many changed rows wait for the next pass. A full pass
+        forgets every fingerprint first, so it carries on across passes until every row was rewritten."""
         self.partial = known
         known = self.ensure(known)
-        stored = dict(known.get('rows') or {})
-        counts = {'created': 0, 'updated': 0, 'unchanged': 0}
+        stored = {k: dict(v, hash=None) if full else v for k, v in (known.get('rows') or {}).items()}
+        counts = {'created': 0, 'updated': 0, 'unchanged': 0, 'pending': 0}
         self.partial = known
         try:
             for key, row in sorted(rows.items()):
                 mark = fingerprint(row)
                 held = stored.get(key)
-                if held and held['hash'] == mark and not full:
+                if held and held['hash'] == mark:
                     counts['unchanged'] += 1
+                    continue
+                if limit is not None and counts['created'] + counts['updated'] >= limit:
+                    counts['pending'] += 1
                     continue
                 if held:
                     # Fields that went empty are cleared, so a hand-filled value never survives a rewrite.
