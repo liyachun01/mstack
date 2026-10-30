@@ -76,7 +76,7 @@ state (`.mstack/evidence/taskboard-test.json`) and private journals. That's why 
   `project/scope`; an event for a scope with no route falls back to the board's unscoped route.
 - `tick` turns every `needs_orchestrator` item, and every verdict it applied, into an event, and adds the event id to
   the item (`event`). Kinds: `plan`, `replan`, `forward`, `stop`, `handoff`, `resume`, `verdict`, and since MST-60
-  `new_issue`, `mention`, `status_lag`, `review_reply` (design 010, "Linear triggers"). Items were already
+  `new_issue`, `mention`, `status_lag`, `review_reply` (design 010, "Linear triggers"), `catch_up` (below). Items were already
   raised once by the watcher's seen-keys; handoffs and resumes repeat until acked, so each carries a dedupe key per
   dispatch. Verdicts are information only: `events next` resolves them as it hands them out.
   An event's scope is the tick's `--scope`, else the scope that planned, adopted or dispatched the task.
@@ -159,6 +159,29 @@ verdict (fddd7a66, In Review → Done), and id 9 repeated id 4 (d4fc71ca) 30 min
 - *Latency:* the hub still polls each board every `LINEAR_EVERY` (30 s), so verdicts and dispatch arrive as fast
   as before. Per-scope orchestrators are woken by the hub's events instead of their own watcher's exit.
 - Not in scope: webhooks, moving {{mstack:CLIENT_C_FOLDER}} or {{mstack:CLIENT_REPO}} to another key.
+
+### Catch-up after downtime (2026-10-30, MST-60)
+
+Owner: "I may close the computer then the watcher is off line: when it's back online, I need it to be able to view
+the stacked linear updates".
+- **Durable cursor:** each board keeps `notify_cursor` (the latest owner notification already read) and
+  `linear_states` (each issue's last seen Linear state) in the state, so in Postgres board_state with the Postgres
+  store. The hub keeps one cursor per board; a per-scope watcher keeps its own per scope, so one scope moving on
+  never hides another's updates. The first read only sets the cursor (old notifications start nothing).
+- **After a gap** (no poll for `CATCH_UP_GAP`, 10 min: laptop closed, watcher stopped, a crash) the next tick
+  reads everything since the cursor, paged and under the MST-41 rate limits. That means new or reassigned issues
+  and mentions (notifications), owner comments (`plan`, `forward`, from each issue's thread), verdicts (the normal
+  poll, deduped by its keys) and Linear status changes (against the snapshot).
+- **In order, once each:** the items are raised as their normal events, sorted by when they happened. The
+  seen-keys and event dedupe keys mean nothing is doubled; the cursor means nothing is missed.
+- **Summary:** each route also gets one `catch_up` event: "while offline from A to B: 3 new issues, 5 comments,
+  2 mentions, 4 status changes". It lists the status changes ("IRO-1 Todo → Done").
+- **No acting on a backlog:** catch-up never writes to Linear. Status changes are reported, and lag flags stay
+  suggestions. Old verdicts go through the normal verdict path.
+- **Bounded:** a catch-up reads at most `CATCH_UP_MAX` (7 days) back and `CATCH_UP_LIMIT` (500) notifications;
+  when it was cut, the summary says so.
+- Comments are read from each issue's last 50, as before, so an issue with more than 50 new comments while offline
+  shows only the latest 50.
 
 ### Not done in phase 1
 - The schema is not applied to the live database, and `hub.store` stays `file`, until the owner approves.

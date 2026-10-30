@@ -86,8 +86,9 @@ class FakeLinear:
                   'reactionData': [{'emoji': e, 'userIds': [ME]} for e in reactions]})
         return c[-1]
 
-    def notify(self, kind, issue, body=None, author=('u-po', 'Product Owner'), at='2099-01-01T00:00:00Z', assignee=ME):
+    def notify(self, kind, issue, body=None, author=('u-po', 'Product Owner'), at=None, assignee=ME):
         """A notification for the key's user (MST-60): issueAssignedToYou or issueCommentMention."""
+        at = at or '2099-01-01T00:%02d:00Z' % len(self.notes)            # Linear's own order: later is later
         i = self.issues[issue]
         i['assignee'] = {'id': assignee}
         n = {'id': 'n%d' % len(self.notes), 'type': kind, 'createdAt': at, 'actor': {'id': author[0], 'name': author[1]},
@@ -388,7 +389,7 @@ class LinearBoardFlow(unittest.TestCase):
         self.cli('adopt', '--project', 'repo', '--scope', 'api', '--task', 'MST-960', '--session', 'local_w')
         tick = lambda scope: self.cli('tick', '--project', 'repo', '--scope', scope)['needs_orchestrator']
         with patch.object(cli, 'LINEAR_EVERY', 0), patch.object(cli, 'MIRROR_EVERY', 10 ** 9):
-            tick('api')                                                             # baseline
+            tick('api'); tick('portal')                                             # baselines (one cursor per scope)
             self.fake.notify('issueCommentMention', busy, body='@me can you check the ETA?')
             self.fake.notify('issueCommentMention', idle, body='@me portal needs this')
             self.fake.notify('issueCommentMention', idle, body='note to self', author=(ME, 'Me'))   # own: ignored
@@ -758,6 +759,53 @@ class LinearBoardFlow(unittest.TestCase):
         self.fake.comment(task, 'rename it'); self.cli('poll')
         self.cli('verdict', '--task', task, 'changes')                                  # sent back: may go back
         self.assertEqual(self.fake.state_of(task), 'unstarted')
+
+    # ---- catch-up after downtime (owner, 2026-10-30) ----
+    def offline(self, seconds):
+        """The laptop was closed: the last poll and the cursor are `seconds` old."""
+        import time as clock
+        now = clock.time()
+        with cli.state() as st:
+            st['last_linear_poll']['repo'] = now - seconds
+            st['notify_cursor']['repo'] = cli.iso(now - seconds)
+        return lambda ago: cli.iso(now - ago)
+
+    def catch_up_after(self, gap, events):
+        self.auto()
+        known = self.old_issue(n=980, state='s-started')
+        self.tick()                                                         # online: cursor and status snapshot
+        at = self.offline(gap)
+        for i, ago in enumerate(events):
+            self.fake.notify('issueAssignedToYou' if i % 2 == 0 else 'issueCommentMention', self.old_issue(n=981 + i),
+                             body=None if i % 2 == 0 else '@me look', at=at(ago))
+        self.fake.issues[known]['stateId'] = 's-completed'                  # the product owner closed one meanwhile
+        states = {i: x['stateId'] for i, x in self.fake.issues.items()}
+        need = self.tick()['needs_orchestrator']
+        self.assertEqual({i: x['stateId'] for i, x in self.fake.issues.items()}, states)   # catch-up writes nothing
+        self.assertEqual(self.tick()['needs_orchestrator'], [])             # once each
+        return need
+
+    def test_two_hour_gap_replays_the_stacked_updates_in_order(self):
+        need = self.catch_up_after(7200, [7000, 3600, 600])
+        kinds = [(n['kind'], n.get('issue')) for n in need if n['kind'] != 'catch_up']
+        self.assertEqual(kinds, [('new_issue', 'MST-981'), ('mention', 'MST-982'), ('new_issue', 'MST-983')])
+        summary = [n for n in need if n['kind'] == 'catch_up'][0]
+        self.assertEqual(summary['counts'], {'new issues': 2, 'comments': 0, 'mentions': 1, 'status changes': 1,
+                                             'verdicts': 0})
+        self.assertIn('while offline from', summary['text'])
+        self.assertEqual((summary['cut'], summary['status_changes']), (False, ['MST-980 Started → Completed']))
+
+    def test_two_day_gap_reads_past_the_old_one_day_window(self):
+        need = self.catch_up_after(2 * 86400, [47 * 3600, 30 * 3600, 3600])
+        self.assertEqual([n['issue'] for n in need if n['kind'] in ('new_issue', 'mention')], ['MST-981', 'MST-982', 'MST-983'])
+        self.assertFalse([n for n in need if n['kind'] == 'catch_up'][0]['cut'])
+
+    def test_a_catch_up_is_capped_and_says_so(self):
+        need = self.catch_up_after(10 * 86400, [9 * 86400, 3600])           # the first is older than the 7-day cap
+        self.assertEqual([n['issue'] for n in need if n['kind'] in ('new_issue', 'mention')], ['MST-982'])
+        summary = [n for n in need if n['kind'] == 'catch_up'][0]
+        self.assertTrue(summary['cut'])
+        self.assertIn('cut: only the last 7 days', summary['text'])
 
     def test_team_without_in_review_maps_to_its_nearest_state(self):                          # MST-53
         old = self.old_issue(n=930, state='s-started')

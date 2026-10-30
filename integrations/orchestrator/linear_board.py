@@ -98,11 +98,13 @@ ME = '''query { viewer { id } }'''
 # The key's own Linear user is the owner (MST-60): its notifications say which issues were assigned to it and
 # which comments mention it, in every team the key sees. Read only, so private boards use it too.
 TRIGGER_TYPES = {'issueAssignedToYou': 'new_issue', 'issueCommentMention': 'mention', 'issueMention': 'mention'}
-NOTIFY = '''query($since: DateTimeOrDuration, $types: [String!]) { viewer { id }
-  notifications(first: 100, filter: {createdAt: {gt: $since}, type: {in: $types}}) { nodes { id type createdAt
+NOTIFY = '''query($since: DateTimeOrDuration, $types: [String!], $after: String) { viewer { id }
+  notifications(first: 100, after: $after, filter: {createdAt: {gt: $since}, type: {in: $types}}) {
+   pageInfo { hasNextPage endCursor } nodes { id type createdAt
     ... on IssueNotification { issue { id identifier title url description priority team { key } assignee { id name }
         parent { identifier } children(first: 20) { nodes { identifier } } }
       comment { id body createdAt user { id name } } actor { id name } } } } }'''
+CATCH_UP_LIMIT = 500    # notifications read in one catch-up at most; the summary says when it was cut
 CREATE = '''mutation($input: IssueCreateInput!) { issueCreate(input: $input) { issue { id identifier } } }'''
 UPDATE = '''mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }'''
 COMMENT = '''mutation($input: CommentCreateInput!) { commentCreate(input: $input) { comment { id } } }'''
@@ -216,12 +218,23 @@ class Link:
         return self._me
 
     def notifications(self, since):
-        """(viewer id, owner notifications of the trigger types since `since`); one read per key per tick."""
+        """(viewer id, owner notifications of the trigger types since `since`, cut); one read per key per tick,
+        paged, so a catch-up after downtime sees everything since the cursor up to CATCH_UP_LIMIT (cut: True)."""
         key = ('notify', self.kid, since)
         if SHARED is not None and key in SHARED:
             return SHARED[key]
-        got = self.post(NOTIFY, {'since': since, 'types': sorted(TRIGGER_TYPES)})
-        found = (got['viewer']['id'], got['notifications']['nodes'])
+        nodes, after, cut, me = [], None, False, None
+        while True:
+            got = self.post(NOTIFY, {'since': since, 'types': sorted(TRIGGER_TYPES), 'after': after})
+            me, page = got['viewer']['id'], got['notifications']
+            nodes += page['nodes']
+            if not (page.get('pageInfo') or {}).get('hasNextPage'):
+                break
+            if len(nodes) >= CATCH_UP_LIMIT:
+                cut = True
+                break
+            after = page['pageInfo']['endCursor']
+        found = (me, nodes, cut)
         self._me = self._me or found[0]
         if SHARED is not None:
             SHARED[key] = found
@@ -415,12 +428,15 @@ class LinearBoard:
         (MST-60). Each: {kind: new_issue|mention, id: notification id, task, issue, title, url, ...}; mentions
         also carry the comment id, author and text. The owner's own comments never count."""
         out = []
+        self.notify_cut, self.notify_latest = False, None
         for link in self.links:
-            me, nodes = link.notifications(since)
+            me, nodes, cut = link.notifications(since)
+            self.notify_cut = self.notify_cut or cut
             for n in sorted(nodes, key=lambda n: n['createdAt']):
                 issue, kind = n.get('issue') or {}, TRIGGER_TYPES.get(n.get('type'))
                 if not kind or (issue.get('team') or {}).get('key') != link.conf['team']:
                     continue
+                self.notify_latest = max(self.notify_latest or '', n['createdAt'])     # the board's new cursor
                 if not (self.all_issues or not (self.focus or self.exclude) or self.in_focus(issue['identifier'], link)):
                     continue
                 item = {'kind': kind, 'id': n['id'], 'task': issue['id'], 'issue': issue['identifier'],
