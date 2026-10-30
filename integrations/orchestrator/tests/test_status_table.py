@@ -27,6 +27,7 @@ class FakeAnytype:
     def __init__(self):
         self.calls, self.objects, self.items, self.n = [], {}, {}, 0
         self.fail_after = None
+        self.properties, self.types = [], {}          # existing property keys; type key → its property keys
 
     def __call__(self, method, path, body=None):
         body = json.loads(json.dumps(body))           # a copy, as over the wire
@@ -34,8 +35,24 @@ class FakeAnytype:
         if self.fail_after is not None and len(self.calls) > self.fail_after:
             raise RuntimeError('HTTP 500')
         base = path.split('?')[0]
-        if method == 'GET' and base in ('properties', 'types'):
-            return {'data': []}
+        if method == 'GET' and base == 'properties':
+            return {'data': [{'key': k} for k in self.properties]}
+        if method == 'GET' and base == 'types':
+            return {'data': [{'key': k} for k in self.types]}
+        if method == 'GET' and base.startswith('types/'):
+            return {'type': {'key': base[6:], 'properties': [{'key': k} for k in self.types[base[6:]]]}}
+        if method == 'POST' and base == 'properties':
+            self.properties.append(body['key'])
+            return {}
+        if method == 'POST' and base == 'types':
+            self.types[body['api_key']] = [d['property'] for d in body['property_definitions']]
+            return {}
+        if method == 'PATCH' and base.startswith('types/'):
+            self.types[base[6:]] += [op['property'] for op in body['ops']]
+            return {}
+        if method == 'PATCH' and base == '.':
+            self.channel = body['name']
+            return {}
         if method == 'GET' and base.endswith('/views'):
             return {'data': [{'id': 'v-all', 'name': 'All'}, {'id': 'v-table', 'name': 'Table'}, {'id': 'v-board', 'name': 'Board'}]}
         if method == 'POST' and base in ('collections', 'objects'):
@@ -79,21 +96,21 @@ class Rows(unittest.TestCase):
         mst = rows['mstack/MST-40']
         self.assertEqual(mst['name'], 'MST-40 Title of MST-40')
         self.assertEqual(mst['properties'], {
-            'my_task_issue': 'MST-40', 'my_task_project': 'mstack', 'my_task_status': 'In Review',
-            'my_task_worker': 'local_w', 'my_task_updated': '2026-10-30T01:00:00Z',
-            'my_task_link': 'https://linear.app/x/issue/MST-40'})
+            'linear_identifier': 'MST-40', 'task_project': 'mstack', 'task_status': 'In Review',
+            'agent_session': 'local_w', 'linear_updated_at': '2026-10-30T01:00:00Z',
+            'linear_url': 'https://linear.app/x/issue/MST-40'})
         iro = rows['{{mstack:CLIENT_REPO}}/IRO-1']['properties']
-        self.assertEqual((iro['my_task_worker'], iro['my_task_scope'], iro['my_task_status']),
+        self.assertEqual((iro['agent_session'], iro['task_scope'], iro['task_status']),
                          ('local_new', 'customer-api', 'In Review'))           # latest dispatch wins
-        self.assertNotIn('my_task_link', iro)                                  # private board: no Linear link
-        self.assertEqual(rows['{{mstack:CLIENT_REPO}}/CAN-9']['properties']['my_task_scope'], 'staff-web')
-        self.assertEqual(rows['{{mstack:CLIENT_REPO}}/CAN-9']['properties']['my_task_status'], 'Todo')
+        self.assertNotIn('linear_url', iro)                                  # private board: no Linear link
+        self.assertEqual(rows['{{mstack:CLIENT_REPO}}/CAN-9']['properties']['task_scope'], 'staff-web')
+        self.assertEqual(rows['{{mstack:CLIENT_REPO}}/CAN-9']['properties']['task_status'], 'Todo')
 
     def test_unknown_board_gets_no_link_and_closed_wins(self):
         rows = st.desired([issue('other', 'X-1', 'completed', managed=True, agent_phase='In Review')], {}, {}, NOW)
         props = rows['other/X-1']['properties']
-        self.assertEqual(props['my_task_status'], 'Done')
-        self.assertNotIn('my_task_link', props)
+        self.assertEqual(props['task_status'], 'Done')
+        self.assertNotIn('linear_url', props)
 
     def test_which_closed_issues_are_shown(self):
         old = '2026-08-01T00:00:00Z'
@@ -119,7 +136,8 @@ class Upsert(unittest.TestCase):
         posted = [b['name'] for m, p, b in self.any.calls if m == 'POST' and p == 'collections']
         self.assertEqual(posted, ['My tasks'])
         props = [b['key'] for m, p, b in self.any.calls if m == 'POST' and p == 'properties']
-        self.assertEqual(props, st.COLUMNS)
+        self.assertEqual(props, [p['key'] for p in st.SCHEMA['properties']])   # an empty channel gets the schema
+        self.assertTrue(set(st.COLUMNS) <= set(self.any.types['agent_task']))
         self.assertEqual(sorted(self.any.items[known['collection']]), sorted(r['id'] for r in known['rows'].values()))
         self.assertIn(('PATCH', 'objects/' + known['collection'],
                        {'ops': [{'op': 'delete_view', 'view': 'v-all'}]}),
@@ -128,26 +146,43 @@ class Upsert(unittest.TestCase):
         before = len(self.any.calls)
         known, counts = self.table.sync(self.rows, known)
         self.assertEqual((counts['unchanged'], len(self.any.calls)), (2, before))   # nothing to do: no calls at all
-        self.rows['mstack/MST-2']['properties']['my_task_status'] = 'Done'
+        self.rows['mstack/MST-2']['properties']['task_status'] = 'Done'
         known, counts = self.table.sync(self.rows, known)
         self.assertEqual((counts['updated'], counts['unchanged']), (1, 1))
         obj = self.any.objects[known['rows']['mstack/MST-2']['id']]
-        self.assertEqual(obj['properties']['my_task_status'], 'Done')
+        self.assertEqual(obj['properties']['task_status'], 'Done')
+
+    def test_the_existing_agent_task_type_is_reused_and_gets_the_missing_columns(self):
+        keys = [p['key'] for p in st.SCHEMA['properties'] if p['key'] != 'task_scope']
+        self.any.properties, self.any.types = list(keys), {'agent_task': [k for k in keys if k != 'linear_updated_at']}
+        known, _ = self.table.sync(self.rows, {})
+        self.assertEqual([b['key'] for m, p, b in self.any.calls if m == 'POST' and p == 'properties'], ['task_scope'])
+        self.assertFalse([c for c in self.any.calls if c[:2] == ('POST', 'types')])          # no second type
+        added = [b['ops'][0]['property'] for m, p, b in self.any.calls if m == 'PATCH' and p == 'types/agent_task']
+        self.assertEqual(sorted(added), ['linear_updated_at', 'task_scope'])
+        self.assertEqual({o['type'] for o in self.any.objects.values() if 'type' in o}, {'agent_task'})
+
+    def test_rename_channel_patches_the_space_itself(self):
+        self.table.rename_channel('mstack')
+        self.assertEqual((self.any.calls[-1][:2], self.any.channel), (('PATCH', '.'), 'mstack'))
 
     def test_a_full_pass_overwrites_hand_edits(self):
         known, _ = self.table.sync(self.rows, {})
         ident = known['rows']['mstack/MST-1']['id']
-        self.any.objects[ident]['properties']['my_task_status'] = 'Canceled'          # owner edits in Anytype
-        self.any.objects[ident]['properties']['my_task_worker'] = 'typed by hand'
+        self.any.objects[ident]['properties']['task_status'] = 'Canceled'          # owner edits in Anytype
+        self.any.objects[ident]['properties']['agent_session'] = 'typed by hand'
         self.any.objects[ident]['name'] = 'renamed'
         _, counts = self.table.sync(self.rows, known, full=True)
         self.assertEqual(counts['updated'], 2)
         obj = self.any.objects[ident]
-        self.assertEqual((obj['name'], obj['properties']['my_task_status'], obj['properties']['my_task_worker']),
+        self.assertEqual((obj['name'], obj['properties']['task_status'], obj['properties']['agent_session']),
                          ('MST-1 Title of MST-1', 'In Progress', ''))
 
     def test_a_failure_keeps_what_was_written_and_never_makes_a_second_table(self):
-        self.any.fail_after = 12                       # the table is built; the first row is written, then failure
+        probe = FakeAnytype()
+        st.StatusTable(probe).sync(self.rows, {})
+        first_row = next(i for i, c in enumerate(probe.calls) if c[2] and 'add_items' in json.dumps(c[2]))
+        self.any.fail_after = first_row + 1            # the table is built and the first row written, then failure
         with self.assertRaises(RuntimeError):
             self.table.sync(self.rows, {})
         partial = self.table.partial
@@ -181,7 +216,7 @@ class HubStep(unittest.TestCase):
         shown = self.cli('status-table', 'show')
         self.assertEqual((shown['rows'], bool(shown['collection']), bool(shown['last_pass'])), (1, True, True))
         row = next(o for o in self.any.objects.values() if o.get('type') == st.TYPE['key'])
-        self.assertEqual(row['properties']['my_task_link'], 'https://linear.app/x/issue/MST-7')
+        self.assertEqual(row['properties']['linear_url'], 'https://linear.app/x/issue/MST-7')
 
     def test_off_switch_refuses_manual_sync(self):
         self.wire([issue('repo', 'MST-7')])

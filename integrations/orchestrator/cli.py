@@ -19,7 +19,7 @@ plan and who works; these commands do the deterministic parts:
   link     link a table to Linear with an entry of the owner's .secrets/linear.csv
   orchestrators  register|list: which orchestrator session serves a (project, scope)
   events   next|resolve|list|schema: the event hub queue (design 011)
-  status-table  sync|show: the owner's read-only "My tasks" table in Anytype, fed from the hub (design 014)
+  status-table  sync|show|rename: the owner's read-only "My tasks" table in Anytype, fed from the hub (design 014)
 """
 import argparse
 import contextlib
@@ -820,6 +820,11 @@ def cmd_status_table(args, b):
                 'rows': len(known.get('rows') or {}), 'last_pass': known.get('last_pass')}
     if hub_settings().get('status_table', True) is False:
         raise ValueError('The status table is off (hub.status_table: false in .mstack/stack.json)')
+    if args.action == 'rename':
+        if not args.to:
+            raise ValueError('rename needs --to NAME')
+        status_table.StatusTable(STATUS_CALL or anyboard.macctl).rename_channel(args.to)
+        return {'channel': args.to, 'next': 'set "channel" in infra/taskboard/schema.json to the new name'}
     return status_table_pass(full=args.full)
 
 
@@ -1505,9 +1510,10 @@ def parser():
     s.add_argument('--peek', action='store_true', help='next: show without marking sent')
     s.add_argument('--status', choices=['new', 'sent', 'resolved'], help='list: only this status')
     s.add_argument('--apply', action='store_true', help='schema: run it against mstack_orchestrator (owner-approved)')
-    s = sub.add_parser('status-table', help='sync|show: the owner\'s read-only "My tasks" table in Anytype (design 014)')
-    s.add_argument('action', choices=['sync', 'show'])
+    s = sub.add_parser('status-table', help='sync|show|rename: the owner\'s read-only "My tasks" table in Anytype (design 014)')
+    s.add_argument('action', choices=['sync', 'show', 'rename'])
     s.add_argument('--full', action='store_true', help='sync: rewrite every row (overwrites hand edits now)')
+    s.add_argument('--to', help='rename: the channel\'s new name')
     return p
 
 

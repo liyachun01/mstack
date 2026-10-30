@@ -250,6 +250,12 @@
       "section": "hidden"
     },
     {
+      "key": "task_scope",
+      "name": "Scope",
+      "format": "text",
+      "section": "featured"
+    },
+    {
       "key": "agent_run_count",
       "name": "Run Count",
       "format": "number"

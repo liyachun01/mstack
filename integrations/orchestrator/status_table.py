@@ -1,9 +1,10 @@
 """The owner's personal, read-only "My tasks" table in Anytype, fed one way from the hub (design 014).
 
 Source: the hub's Postgres — `orchestrator.issues` (the local Linear issue table that `mirror` keeps for every
-Linear board) plus board_state `runs`, `task_tables` and `tables`. Sink: one collection "My tasks" of a
-dedicated "My Task" type in the existing `mstack-taskboard-test` channel, through the same macOS bridge and key
-the board already uses (no new grant). The old per-project collections are never read or written.
+Linear board) plus board_state `runs`, `task_tables` and `tables`. Sink: one collection "My tasks" of the
+existing "Agent Task" type (infra/taskboard/schema.json, plus a Scope property) in the board's existing channel,
+through the same macOS bridge and key the board already uses (no new grant). The old per-project collections are
+never read or written.
 
 One way only: rows are upserted by `<board>/<issue>`. Unchanged rows are skipped; every `FULL_EVERY` seconds
 (and on `sync --full`) every row is written again, so hand edits in Anytype are overwritten. Rows are never
@@ -14,25 +15,19 @@ import hashlib
 import json
 import time
 
+from board import SCHEMA
+
 STATE_KEY = 'status_table'
 COLLECTION = 'My tasks'
 EVERY = 180                  # seconds between passes inside the hub watcher
 FULL_EVERY = 3600            # seconds between passes that rewrite every row (overwrites hand edits)
 RECENT_DAYS = 30             # closed issues the board never touched are shown this long after their last update
-TYPE = {'key': 'mstack_my_task', 'name': 'My Task', 'plural_name': 'My Tasks', 'emoji': '📋'}
-STATUSES = ['Backlog', 'Awaiting Approval', 'Todo', 'In Progress', 'In Review', 'Done', 'Canceled']
-COLORS = ['grey', 'orange', 'blue', 'yellow', 'purple', 'lime', 'red']
-PROPERTIES = [
-    {'key': 'my_task_issue', 'name': 'Issue', 'format': 'text'},
-    {'key': 'my_task_project', 'name': 'Project', 'format': 'select'},
-    {'key': 'my_task_scope', 'name': 'Scope', 'format': 'text'},
-    {'key': 'my_task_status', 'name': 'Status', 'format': 'select',
-     'options': [{'name': n, 'color': c} for n, c in zip(STATUSES, COLORS)]},
-    {'key': 'my_task_worker', 'name': 'Worker session', 'format': 'text'},
-    {'key': 'my_task_updated', 'name': 'Last update', 'format': 'date'},
-    {'key': 'my_task_link', 'name': 'Link', 'format': 'url'},
-]
-COLUMNS = [p['key'] for p in PROPERTIES]
+TYPE = SCHEMA['type']        # the existing Agent Task type (agent_task), reused
+SPEC = {p['key']: p for p in SCHEMA['properties']}
+STATUSES = [o['name'] for o in SPEC['task_status']['options']]
+# Table columns, in order: Issue, Project, Scope, Status, Worker session, Last update, Link (all Agent Task properties).
+COLUMNS = ['linear_identifier', 'task_project', 'task_scope', 'task_status', 'agent_session', 'linear_updated_at',
+           'linear_url']
 OF_TYPE = {'backlog': 'Backlog', 'triage': 'Backlog', 'unstarted': 'Todo', 'started': 'In Progress',
            'completed': 'Done', 'canceled': 'Canceled', 'duplicate': 'Canceled'}
 CLOSED = ('completed', 'canceled', 'duplicate')
@@ -89,10 +84,10 @@ def desired(issues, board_state, private, now=None):
         if not keep or (not issue.get('present', True) and key not in shown):
             continue
         scope = run.get('scope') or scopes.get(key) or issue.get('scopes') or ''
-        props = {'my_task_issue': issue['identifier'], 'my_task_project': issue['board'], 'my_task_scope': scope,
-                 'my_task_status': status_of(issue), 'my_task_worker': run.get('session') or '',
-                 'my_task_updated': issue.get('updated_at') or None,
-                 'my_task_link': None if private.get(issue['board'], True) else issue.get('url')}
+        props = {'linear_identifier': issue['identifier'], 'task_project': issue['board'], 'task_scope': scope,
+                 'task_status': status_of(issue), 'agent_session': run.get('session') or '',
+                 'linear_updated_at': issue.get('updated_at') or None,
+                 'linear_url': None if private.get(issue['board'], True) else issue.get('url')}
         rows[key] = {'name': '%s %s' % (issue['identifier'], issue.get('title') or ''),
                      'properties': {k: v for k, v in props.items() if v not in (None, '')}}
     return rows
@@ -109,26 +104,19 @@ class StatusTable:
         self.partial = None          # after a failed sync: what was written before the failure
 
     def ensure(self, known):
-        """Properties, the My Task type, the "My tasks" collection with Table and Board views, and a sidebar
-        widget. Reuses what `known` (board_state[STATE_KEY]) already names; safe to repeat."""
+        """The Agent Task type brought up to date (missing properties created and added to it), the "My tasks"
+        collection with Table and Board views, and a sidebar widget. Reuses what `known`
+        (board_state[STATE_KEY]) already names; safe to repeat."""
         known = dict(known or {})
         if known.get('collection'):
             return known
-        have = {p['key'] for p in self.call('GET', 'properties?limit=200').get('data') or []}
-        for prop in PROPERTIES:
-            if prop['key'] not in have:
-                self.call('POST', 'properties', {k: prop[k] for k in ('key', 'name', 'format', 'options') if k in prop})
-        if TYPE['key'] not in {t['key'] for t in self.call('GET', 'types?limit=200').get('data') or []}:
-            self.call('POST', 'types', {
-                'api_key': TYPE['key'], 'name': TYPE['name'], 'plural_name': TYPE['plural_name'],
-                'icon': {'format': 'emoji', 'emoji': TYPE['emoji']}, 'default_view': 'table', 'layout': 'basic',
-                'property_definitions': [{'property': k, 'section': 'featured'} for k in COLUMNS]})
+        self.ensure_type()
         collection = self.call('POST', 'collections', {'name': COLLECTION})['id']
         known.update(collection=collection, rows={})
         self.partial = known                 # a later failure must not lead to a second "My tasks"
         self.call('PATCH', 'objects/' + collection, {'ops': [
             {'op': 'insert_view', 'name': 'Table', 'position': 'first', 'set': {'type': 'table'}},
-            {'op': 'insert_view', 'name': 'Board', 'set': {'type': 'kanban', 'group_by': 'my_task_status'}}]})
+            {'op': 'insert_view', 'name': 'Board', 'set': {'type': 'kanban', 'group_by': 'task_status'}}]})
         views = self.call('GET', 'collections/%s/views' % collection).get('data') or []
         noise = {k: None for k in ('type', 'created_date', 'creator', 'last_modified_date', 'last_modified_by',
                                    'lastOpenedDate', 'backlinks', 'tag', 'description')}
@@ -144,6 +132,34 @@ class StatusTable:
                                                'position': 'first'}).get('id')
         known['widget'] = widget
         return known
+
+    def ensure_type(self):
+        """Reuse agent_task: create any schema property the channel lacks, then add the table's columns that the
+        type doesn't carry yet (e.g. Scope). A channel without the type gets it from the schema."""
+        have = {p['key'] for p in self.call('GET', 'properties?limit=200').get('data') or []}
+        added = []
+        for prop in SCHEMA['properties']:
+            if prop['key'] not in have:
+                self.call('POST', 'properties', {k: prop[k] for k in ('key', 'name', 'format', 'options') if k in prop})
+                added.append(prop['key'])
+        if TYPE['key'] not in {t['key'] for t in self.call('GET', 'types?limit=200').get('data') or []}:
+            self.call('POST', 'types', {
+                'api_key': TYPE['key'], 'name': TYPE['name'], 'plural_name': TYPE['plural_name'],
+                'icon': {'format': 'emoji', 'emoji': TYPE['emoji']}, 'default_view': TYPE['default_view'],
+                'layout': 'basic', 'property_definitions': [{'property': p['key'], 'section': p.get('section', 'hidden')}
+                                                            for p in SCHEMA['properties']]})
+            return
+        found = self.call('GET', 'types/' + TYPE['key']) or {}
+        found = found.get('type', found)
+        on_type = {p.get('key') for p in found.get('properties') or [] if isinstance(p, dict)}
+        for key in COLUMNS:
+            if key not in on_type or key in added:
+                self.call('PATCH', 'types/' + TYPE['key'], {'ops': [
+                    {'op': 'add_property', 'property': key, 'section': SPEC[key].get('section', 'featured')}]})
+
+    def rename_channel(self, name):
+        """Rename the granted channel (the space itself, path ".")."""
+        return self.call('PATCH', '.', {'name': name})
 
     def sync(self, rows, known, full=False):
         """Upsert `rows` (from desired). Returns (known with row ids and fingerprints, counts)."""
@@ -161,7 +177,7 @@ class StatusTable:
                     continue
                 if held:
                     # Fields that went empty are cleared, so a hand-filled value never survives a rewrite.
-                    blank = {k: '' for k in COLUMNS if k not in row['properties'] and k in ('my_task_scope', 'my_task_worker')}
+                    blank = {k: '' for k in COLUMNS if k not in row['properties'] and k in ('task_scope', 'agent_session')}
                     self.call('PATCH', 'objects/%s?create_missing_options=true' % held['id'],
                               {'ops': [{'op': 'set_properties', 'set': {'name': row['name'], **blank, **row['properties']}}]})
                     counts['updated'] += 1

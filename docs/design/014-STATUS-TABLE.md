@@ -19,7 +19,7 @@ Linear ──(mirror, every 5 min per board)──▶ Postgres mstack_orchestrat
                                        hub watcher step (every 3 min) or `mstack status-table sync`
                                                         │ one way, upsert by <board>/<issue>
                                                         ▼
-                         Anytype channel mstack-taskboard-test ▸ collection "My tasks" (type "My Task")
+           the board's Anytype channel (mstack-taskboard-test, to be renamed) ▸ "My tasks" (type Agent Task)
 ```
 
 - **Source:** the hub's Postgres. `orchestrator.issues` (the local Linear issue table that `mstack board mirror`
@@ -28,26 +28,32 @@ Linear ──(mirror, every 5 min per board)──▶ Postgres mstack_orchestrat
   which boards are private (`tables` → each project's `taskboard.private`). Before each pass, any Linear board whose
   issue table is older than 5 minutes is mirrored first, so boards without a registered orchestrator (mstack itself)
   stay current too.
-- **Sink:** a new collection "My tasks" of a dedicated type "My Task" (`mstack_my_task`) with its own properties
-  (`my_task_*`), in the existing `mstack-taskboard-test` channel. It goes through the same macOS bridge
+- **Sink:** a new collection "My tasks" in the board's existing channel, whose rows are objects of the existing
+  "Agent Task" type (`agent_task`, `infra/taskboard/schema.json`). The type is brought up to date on the first
+  pass: schema properties the channel lacks are created (new: `task_scope`, "Scope"), and the table's columns the
+  type doesn't carry yet are added to it. No second type. Everything goes through the same macOS bridge
   (`anytype_taskboard.py api`) and key (`.mstack/secrets/anytype-taskboard-test.key`) as the old board: no new
-  grant, space or service. The old per-project collections and the `agent_task` objects are never read or written.
+  grant, space or service. The old per-project collections and their objects are never read or written.
   The collection gets a Table view (first), a Board view grouped by status, and a sidebar widget.
+- **Channel name:** the owner runs mstack as a one-person team that pushes changes directly, so the channel drops
+  its "-test" name. `mstack status-table rename --to NAME` renames the granted space (the bridge's `api` now takes
+  `.` as "the channel itself"); then `channel` in `infra/taskboard/schema.json` is set to match. The key is bound to
+  the space, not its name, so it keeps working.
 - **What the table remembers:** board_state key `status_table` holds the collection and widget ids, the object id
   and a fingerprint per row, and the pass times. With `hub.store: postgres` it lives in Postgres like the rest.
 
 ## Columns
 
-| Column | From |
+| Column (Agent Task property) | From |
 |---|---|
 | Name | `<issue> <title>` |
-| Issue | Linear identifier (MST-40, IRO-104, YEL-407 …) |
-| Project | board name (`mstack`, `{{mstack:CLIENT_REPO}}`, `{{mstack:CLIENT_C_FOLDER}}`) |
-| Scope | the orchestrator scope that dispatched or adopted it, else the scope that planned it, else the mirror's focus scopes |
-| Status | closed in Linear → Done / Canceled; else the board's phase for managed issues (Awaiting Approval, In Review …); else the Linear state if it is one of Backlog, Todo, In Progress, In Review; else its state type |
-| Worker session | the `local_…` id of the latest worker session on it |
-| Last update | Linear `updatedAt` |
-| Link | the Linear URL, only for public boards. Private boards ({{mstack:CLIENT_REPO}}, {{mstack:CLIENT_C_SITE}}) and boards whose config can't be read get none |
+| Issue (`linear_identifier`) | Linear identifier (MST-40, IRO-104, YEL-407 …) |
+| Project (`task_project`) | board name (`mstack`, `{{mstack:CLIENT_REPO}}`, `{{mstack:CLIENT_C_FOLDER}}`) |
+| Scope (`task_scope`, new) | the orchestrator scope that dispatched or adopted it, else the scope that planned it, else the mirror's focus scopes |
+| Status (`task_status`) | closed in Linear → Done / Canceled; else the board's phase for managed issues (Awaiting Approval, In Review …); else the Linear state if it is one of Backlog, Todo, In Progress, In Review; else its state type |
+| Worker session (`agent_session`) | the `local_…` id of the latest worker session on it |
+| Last update (`linear_updated_at`) | Linear `updatedAt` |
+| Link (`linear_url`) | the Linear URL, only for public boards. Private boards ({{mstack:CLIENT_REPO}}, {{mstack:CLIENT_C_SITE}}) and boards whose config can't be read get none |
 
 ## Which rows
 
@@ -69,7 +75,7 @@ at most an hour. Each row's body says it is written by the hub.
   the watcher's tick line, and never stops the watcher; the next try waits the same 3 minutes. Rows written before
   a failure are remembered, so a retry never builds a second "My tasks".
 - **By hand:** `mstack status-table sync [--full]` runs one pass; `mstack status-table show` gives the switch, the
-  row count and the last pass.
+  row count and the last pass; `mstack status-table rename --to NAME` renames the channel.
 - **Off switch:** `"hub": {"status_table": false}` in mstack's `.mstack/stack.json` (schema
   `project.schema.json` → `hub.status_table`, default on). Off stops the watcher step and makes `sync` refuse.
 - The first pass creates every row (about 260 bridge calls for 131 rows). Run it once by hand so the hub's first
@@ -84,15 +90,20 @@ Writing back to Postgres or Linear, per-project tables, new Anytype spaces or gr
 ## Not done
 
 - No live pass yet: on 2026-10-30 the Anytype app on the Mac wasn't running (the local API at 127.0.0.1:31009
-  refused the connection), and opening it is the owner's call. The first `mstack status-table sync` after it is
-  open creates the collection; check the property and view requests then, since they were only run against the fake.
+  refused the connection), and opening it is the owner's call (asked on the issue). Once it is open, the worker does
+  the Anytype changes itself through the API: rename the channel, then the first `mstack status-table sync`
+  updates the type and creates the collection. The property, type and view requests were only run against the fake.
+- The new name waits for the owner to confirm the spelling (`mastack` as written, or `mstack`).
 
 ## Questions resolved
 
 - **Source of titles and states:** the plan named board_state `tasks`; that key only holds the 2026-10-28 seed demo
   tasks. The real per-issue data is `orchestrator.issues` (mirror), which the hub already keeps, so the table reads
   that plus `runs`/`task_tables`/`tables`.
-- **Own type instead of `agent_task`:** that shared type was retired on 2026-10-28; a separate "My Task" type keeps
-  the view apart from the archive.
+- **Type:** first built with a separate "My Task" type; the owner then asked to reuse the existing Agent Task type
+  with the necessary updates (2026-10-30), so the rows are Agent Tasks and only Scope is new.
+- **Channel:** keep the existing one and rename it, since mstack is a one-person team pushing directly (owner,
+  2026-10-30). Spelling to be confirmed.
+- **Who changes Anytype:** the worker, through the API with the existing key, not the owner in the UI.
 - **"Overwritten on the next pass"** became "within the hour": rewriting all ~130 rows every 3 minutes through the
   rate-limited bridge is too heavy, so changed rows go at once and everything is rewritten hourly.
