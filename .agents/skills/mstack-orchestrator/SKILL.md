@@ -117,12 +117,20 @@ result with `done`; the owner's 👍 makes it Done, and a reply sends the notes 
 - **Branches:** use Linear's own branch names. Never merge or push unless the owner asks.
 - **Earlier chats about an issue:** link them with `adopt --task <ISSUE> --session <id> --related obsolete`.
   They're listed by `status` and are never messaged or treated as workers.
-- **Docs first, issues brief (owner, 2026-10-30):**
-  - Draft the doc in the repo first (plan, decision, results), then update the issue.
-  - The issue gets a few lines of brief content and links the doc instead of repeating it: `--doc <path>` on
-    `propose`, `note` or `done` (resolved against `taskboard.docs_url`).
+- **Draft in the issue, settle, then doc and consolidate (owner, 2026-10-30; replaces "docs first"):**
+  pick by size.
+  - **Small issue:** no doc. The plan and the `done` result are the record.
+  - **Medium issue:**
+    1. Draft in the issue: the plan via `propose`, open questions as a short list. Resolve them with the owner there
+       (on a private board, in the journal via `owner`).
+    2. Once the owner approves (👍), the worker writes the doc in the repo from the settled thread (`board thread`):
+       plan or decision, results, and a short "Questions resolved" section, so the reasoning survives.
+    3. Consolidate the issue: shrink the description to a few lines plus the doc link (`--doc <path>`, resolved
+       against `taskboard.docs_url`). Keep the comments; don't delete the trail.
+  - **Big or cross-cutting design:** doc first, as its own PR, reviewed line by line, then the issue links it.
   - Docs and PRs go under the issue's **Resources** (Linear attachments, `attachmentLinkURL`), not as comment links.
-    On a private board, add Resources only when the owner asks, since teammates can see them.
+    On a private board, nothing goes to Linear: the draft lives in the journal, and Resources only when the owner asks.
+  - An issue isn't finished until its doc exists (medium and big) and its description is consolidated.
 - **Report briefly:** what waits on the owner, and what is running.
 
 ## Multi-repo workspaces (`taskboard.repos`)
