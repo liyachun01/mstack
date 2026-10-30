@@ -682,6 +682,83 @@ class LinearBoardFlow(unittest.TestCase):
         self.assertEqual([n for n in need if n['kind'] in ('status_lag', 'handoff', 'resume')], [])   # no false lags
         self.assertIn('waiting for the iOS build', self.cli('thread', '--project', 'repo', '--task', 'MST-127')['messages'][-1]['text'])
 
+    def test_explicit_status_wins_and_the_watcher_never_rewrites_it(self):           # {{mstack:CLIENT_REPO}}, 14:20 UTC hotfix
+        cfg = json.loads((self.repo / '.mstack/stack.json').read_text()); cfg['taskboard']['private'] = True
+        (self.repo / '.mstack/stack.json').write_text(json.dumps(cfg))
+        self.auto()
+        self.fake.states.insert(3, {'id': 's-review', 'type': 'started', 'name': 'In Review', 'position': 2.5})
+        ids = {n: self.old_issue(n=n, state='s-started') for n in (125, 126, 139, 153)}
+        for n in ids:
+            self.cli('adopt', '--project', 'repo', '--task', 'MST-%d' % n, '--session', 's%d' % n)
+        # 153: approved and queued on the board (Todo), but deliberately delayed.
+        self.cli('propose', '--project', 'repo', '--task', 'MST-153', '--plan', '-', stdin='1. later')
+        self.cli('owner', '--project', 'repo', '--task', 'MST-153', '👍'); self.cli('poll')
+        for n, status in ((153, 'Todo'), (139, 'Backlog'), (126, 'In Progress'), (125, 'In Review')):
+            self.cli('note', '--task', 'MST-%d' % n, '--status', status, 'real stage')
+        want = {125: 's-review', 126: 's-started', 139: 's-backlog', 153: 's-unstarted'}
+        got = lambda: {n: self.fake.issues[i]['stateId'] for n, i in ids.items()}
+        self.assertEqual(got(), want)                                                  # exactly what was asked
+        with patch.object(cli, 'LINEAR_EVERY', 0), patch.object(cli, 'MIRROR_EVERY', 10 ** 9):
+            for _ in range(3):                                                         # minutes of watcher ticks
+                tick = self.cli('tick')
+                self.assertEqual([n for n in tick['needs_orchestrator'] if n['kind'] in ('resume', 'handoff', 'status_lag')], [])
+        self.assertEqual(got(), want)                                                  # nothing overwritten
+        self.assertEqual(tick['started'], [])                                          # held: never handed back
+
+    def test_lag_check_from_the_live_false_flags(self):                                      # hub events 26-29
+        cfg = json.loads((self.repo / '.mstack/stack.json').read_text()); cfg['taskboard']['private'] = True
+        (self.repo / '.mstack/stack.json').write_text(json.dumps(cfg))
+        self.auto()
+        self.fake.states.insert(3, {'id': 's-review', 'type': 'started', 'name': 'In Review', 'position': 2.5})
+        adopt = lambda n, *extra: self.cli('adopt', '--project', 'repo', '--task', 'MST-%d' % n, '--session', 's%d' % n, *extra)
+        # 26: approved, deliberately delayed by the owner; board Todo, Linear Todo.
+        delayed = self.old_issue(n=153)
+        self.cli('owner', '--project', 'repo', '--task', 'MST-153', '/plan')
+        self.cli('propose', '--project', 'repo', '--task', 'MST-153', '--plan', '-', stdin='1. fix')
+        self.cli('owner', '--project', 'repo', '--task', 'MST-153', '👍')
+        self.cli('poll')
+        self.fake.issues[delayed]['stateId'] = 's-unstarted'
+        # 27: phase In Progress written by the old adopt (no stage stamp); Linear Backlog, a draft plan.
+        draft = self.old_issue(n=139, state='s-backlog')
+        adopt(139)
+        self.fake.issues[draft]['stateId'] = 's-backlog'
+        with cli.state() as st:
+            st['runs'][draft].pop('stage')
+        # 28/29: building on the board, already live on Preview in Linear: never pulled back.
+        live = self.old_issue(n=126, state='s-review')
+        adopt(126, '--stage', 'building')
+        self.assertEqual(self.fake.issues[live]['stateId'], 's-review')               # the push never goes backwards
+        # A real lag, and one held on purpose.
+        lagging, held = self.old_issue(n=170), self.old_issue(n=171)
+        adopt(170, '--stage', 'building'); adopt(171, '--stage', 'building')
+        self.fake.issues[lagging]['stateId'] = self.fake.issues[held]['stateId'] = 's-unstarted'
+        self.cli('note', '--task', 'MST-171', '--hold', 'owner: after the iOS release', 'delayed')
+        with patch.object(cli, 'LINEAR_EVERY', 0), patch.object(cli, 'MIRROR_EVERY', 10 ** 9), \
+                patch.object(cli, 'cmd_dispatch', lambda *a: {'started': []}):
+            lags = [n for n in self.cli('tick')['needs_orchestrator'] if n['kind'] == 'status_lag']
+            self.assertEqual([(n['issue'], n['linear'], n['want']) for n in lags], [('MST-170', 'Unstarted', 'Started')])
+            self.assertIn('--push-status "Linear Unstarted → Started"', lags[0]['do'])    # want and do agree
+            self.cli('note', '--task', 'MST-170', '--push-status', 'status sync')
+            self.assertEqual(self.fake.state_of(lagging), 'started')
+            self.assertEqual([n for n in self.cli('tick')['needs_orchestrator'] if n['kind'] == 'status_lag'], [])
+        self.assertEqual((self.fake.state_of(delayed), self.fake.state_of(draft), self.fake.state_of(held)),
+                         ('unstarted', 'backlog', 'unstarted'))
+
+    def test_only_a_send_back_moves_linear_backwards(self):
+        self.fake.states.insert(3, {'id': 's-review', 'type': 'started', 'name': 'In Review', 'position': 2.5})
+        task = self.cli('plan', '--project', 'repo', '--title', 'T', '--agent', 'claude-desktop', '--plan', '-', stdin='p')['task']
+        self.fake.comment(task, '👍'); self.cli('poll'); self.cli('dispatch', '--project', 'repo')
+        self.cli('done', '--task', task, '--size', 'small', '--summary', 'x')
+        self.assertEqual(self.fake.issues[task]['stateId'], 's-review')
+        self.cli('adopt', '--project', 'repo', '--task', task, '--session', 'x', '--stage', 'building')   # not a verdict: stays
+        self.assertEqual(self.fake.issues[task]['stateId'], 's-review')
+        self.cli('note', '--task', task, '--status', 'In Progress', 'back on it')         # explicit: exactly that
+        self.assertEqual(self.fake.issues[task]['stateId'], 's-started')
+        self.cli('done', '--task', task, '--size', 'small', '--summary', 'y')
+        self.fake.comment(task, 'rename it'); self.cli('poll')
+        self.cli('verdict', '--task', task, 'changes')                                  # sent back: may go back
+        self.assertEqual(self.fake.state_of(task), 'unstarted')
+
     def test_team_without_in_review_maps_to_its_nearest_state(self):                          # MST-53
         old = self.old_issue(n=930, state='s-started')
         self.cli('adopt', '--project', 'repo', '--task', 'MST-930', '--session', 'local_x')

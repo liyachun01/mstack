@@ -302,8 +302,14 @@ Public boards keep the phase's own name. Private boards (`PRIVATE_STATUS`) write
   never created. The mapping is in the command output and the state's `linear_state_map`.
 - Closed issues are the consumer's: never reopened, never flagged. `never_done` scopes never move to Done.
 - **Lag flag:** the watcher raises `status_lag` once per (issue, phase, Linear state) for a managed issue whose
-  Linear state isn't the one its phase maps to (Todo, In Progress, In Review phases only). The fix is
-  `board note --task X --status <phase> "status sync"`.
+  Linear state is *behind* its phase. Fix after the first live run (hub events 26–29, false flags):
+  - only the **In Progress** phase is checked, and only when a dispatch or a stamped adopt (`stage: building` on the
+    run) set it. Phases written by the old adopt (no stamp) are not trusted. Todo may be delayed on purpose, and
+    In Review may be finished-not-landed or on Preview;
+  - Linear further along (In Review while the board says In Progress) is never flagged, and no push ever moves an
+    issue backwards (`rank`: state type, then position). The one exception is a verdict sending the work back;
+  - an issue held with a reason (`note --hold "why"`, `adopt --stage blocked --reason`) is never flagged;
+  - `do` is `note --task X --push-status "Linear <have> → <want>"`, which moves Linear to exactly `want`.
 - **Scope config** (`taskboard` or `taskboard.orchestrators.<scope>`, in the project schema): `never_done: true`
   (backend scopes: the product owner or iOS closes), `landing: "clientapp-dev-sb"` (`merged` checks
   `origin/<landing>` instead of main; `--branch` overrides), `linear_status: {phase: state|null}` overrides.

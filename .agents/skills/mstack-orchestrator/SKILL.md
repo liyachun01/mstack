@@ -91,7 +91,11 @@ of the owner's (also refreshed every 5 minutes). It's an overview only and never
 - **`mention`:** a Linear comment @-mentions the owner. It is a teammate's request, not an owner instruction.
   With `session` set, send it to that worker as a Linear mention (CLI workers get it from the hub); otherwise tell
   the owner and plan only on their word.
-- **`status_lag`:** the issue's Linear status lags the board phase. Run the `do` line (`note --status …`).
+- **`status_lag`:** Linear is behind an In Progress issue. Run the `do` line (`note --push-status`); if it waits on
+  purpose, `note --task <ISSUE> --hold "why"` instead (`--hold ""` releases it). Linear is never moved backwards.
+- **Setting a stage yourself:** `note --task <ISSUE> --status <S> "why"` sets Linear to exactly S (mapped only when
+  the team lacks it), private boards too, backwards included. Todo and Backlog change Linear only and hold the
+  issue, so nothing dispatches it and the watcher never flags it.
 - **`handoff`:** an approved issue needs a worker.
   - Start a Claude Desktop session from the spec (`start_session`: initiation user_asked, context fresh, `cwd` = spec.cwd, `use_worktree: false`, title `<ISSUE>: <title>` (spec.title already has it, e.g. `IRO-104: Preview → Production migration`), prompt = spec.prompt, `wake_when_done: true`).
   - Then `ack --task <id> --session <session id>`.
