@@ -50,10 +50,7 @@ named scope in `.mstack/stack.json`, under `taskboard.orchestrators.<name>`:
 - **feature:** `{"apps": ["API"], "focus": ["IRO-140"]}`, meaning those root issues and their sub-issues;
 - **repo-level:** its own focus roots on the table-wide link (`"apps": ["*"]`).
 
-Add `--scope <name>` to every board command. Your watcher is `watch --project P --scope <name>`,
-with one lock per scope. Scopes must not claim the same issues; `mstack doctor` reports overlaps.
-While the hub watcher runs and your scope is registered, your watcher leaves Linear to the hub (`left_to_hub`
-in its tick line) and the hub's events wake you. It polls Linear itself only as the fallback when there is no hub.
+Add `--scope <name>` to every board command. Scopes must not claim the same issues; `mstack doctor` reports overlaps.
 `rate_limited` means Linear is throttling the key. Every process waits it out on its own, so don't restart anything.
 `mirror --project P` refreshes the local Postgres table `orchestrator.issues`, which covers every issue
 of the owner's (also refreshed every 5 minutes). It's an overview only and never starts sessions.
@@ -63,13 +60,15 @@ of the owner's (also refreshed every 5 minutes). It's an overview only and never
 ## Start of session
 1. Read the repo's AGENTS.md / CLAUDE.md and `.mstack/stack.json`.
 2. `status --project <slug>` for the current board.
-3. Run `watch --project <slug>` **in the background**. It is a shell loop that polls Linear
-   about every 30 s without model calls, and exits only when it needs you. Restart it after
-   handling what it returns. Only one watcher can run per project.
+3. **Never start a watcher** (`watch`, a `tick` loop or a Monitor loop for one; owner rule, 2026-10-31). The mstack
+   hub chat runs the only watcher (`watch --hub`) and sends you its events as messages; each one is what a watcher
+   used to return (below). `watch` without `--hub` refuses while the hub is configured. Only when the owner says the
+   hub is down: `watch --project <slug> [--scope <name>] --fallback` in the background, and stop it when the hub is back.
+   `status` lists the running watcher processes and flags any that isn't the hub (`watcher_warning`).
 4. Register with the event hub: `/home/developer/workspace/mstack/mstack orchestrators register --project <slug>
    [--scope <name>] --session <your session id>`. Re-run it whenever your session changes (handover).
 
-## What `watch` returns (needs_orchestrator)
+## What the hub sends you (a watcher's needs_orchestrator)
 - **`plan`:** the owner commented `/plan [notes]` on an issue.
   - Read the issue, its comments and the code, and draft a plan: goal, files, steps, tests, done-when.
   - Post it with `propose --task <IRO-123> --agent claude-desktop --plan -`.
@@ -236,7 +235,7 @@ Suggest rotating to the owner when your chat has been compacted or turns are get
 1. Record anything the owner said that isn't on the board yet (`owner …`).
 2. `handover --project <slug> --scope <name>` returns `prompt`, a ready-made brief listing open issues, what waits on
    the owner, workers and related chats, and the latest messages.
-3. Stop your watcher (`watch …` process). Only one watcher can run per scope.
+3. Re-register the route from the new session (`orchestrators register`); there is no watcher of yours to stop.
 4. Move workers *you* started out to top level (`detach_session`). Adopted chats are already top level.
 5. With the owner's OK, start the new session: title `<scope>` (or `<scope> 2`), `cwd` = repo, `use_worktree: false`,
    prompt = `prompt`. The owner files it in the scope's sidebar group.

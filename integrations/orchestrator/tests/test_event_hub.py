@@ -98,6 +98,46 @@ class QueueAndRegistry(unittest.TestCase):
         with patch.object(cli, 'LINEAR_EVERY', 0):
             self.assertEqual(self.cli('watch', '--hub', '--max-ticks', '1'), {'stopped': 'max ticks reached'})
 
+    def test_only_the_hub_watches_once_it_is_configured(self):
+        self.auto()
+        args = lambda **kw: cli.argparse.Namespace(**{'project': 'repo', 'hub': False, 'fallback': False,
+                                                      'interval': 0, 'max_ticks': 1, 'exit_on_start': False, **kw})
+        with patch.object(cli, 'hub_configured', lambda: True), patch.object(cli, 'LINEAR_EVERY', 0):
+            with self.assertRaisesRegex(ValueError, 'only watcher.*--fallback'):
+                cli.cmd_watch(args(), None)
+            self.assertEqual(cli.cmd_watch(args(fallback=True), cli.anyboard.Board(call=None)),
+                             {'stopped': 'max ticks reached'})            # the owner said the hub is down
+            self.assertEqual(self.cli('watch', '--hub', '--max-ticks', '1'), {'stopped': 'max ticks reached'})
+
+    def test_a_second_hub_exits_at_once_naming_the_holder(self):
+        lock = cli.hub_lock()
+        held = open(lock, 'w')
+        self.addCleanup(held.close)
+        cli.fcntl.flock(held, cli.fcntl.LOCK_EX)
+        held.write('4242'); held.flush()
+        self.assertTrue(cli.hub_running())
+        with self.assertRaisesRegex(ValueError, 'hub watcher is already running as PID 4242'):
+            cli.cmd_watch(cli.argparse.Namespace(project=None, hub=True, fallback=False, interval=0, max_ticks=1,
+                                                 exit_on_start=False), None)
+        held.close()
+        self.assertFalse(cli.hub_running())
+
+    def test_status_flags_a_watcher_that_is_not_the_hub(self):
+        ps = ('  11 /usr/bin/python3 /x/integrations/orchestrator/cli.py watch --hub\n'
+              '  12 /usr/bin/python3 /x/integrations/orchestrator/cli.py watch --project repo --scope api\n'
+              '  13 /usr/bin/zsh -c /x/mstack board watch --project repo\n'
+              '  14 gh run watch 1 --interval 30\n')
+        done = subprocess.CompletedProcess([], 0, ps, '')
+        with patch.object(cli.subprocess, 'run', lambda *a, **k: done):
+            found = cli.watcher_processes()
+        self.assertEqual([(w['pid'], w['hub']) for w in found], [(11, True), (12, False)])
+        with patch.object(cli, 'watcher_processes', lambda: found), patch.object(cli, 'hub_configured', lambda: True):
+            out = self.cli('status', '--project', 'repo')
+        self.assertEqual(len(out['watchers']), 2)
+        self.assertIn('stop PID 12', out['watcher_warning'])
+        with patch.object(cli, 'watcher_processes', lambda: found[:1]), patch.object(cli, 'hub_configured', lambda: True):
+            self.assertNotIn('watcher_warning', self.cli('status', '--project', 'repo'))
+
 
 class FakePg:
     """Enough of orchestrator.board_state / queue / journal to drive Store's SQL; `down` makes it fail."""

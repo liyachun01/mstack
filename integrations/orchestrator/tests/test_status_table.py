@@ -1,5 +1,7 @@
 """The owner's "My tasks" status table (design 014): rows from the hub, one-way upsert into a fake Anytype.
 Neither Anytype nor Postgres is reached."""
+import contextlib
+import io
 import json
 from pathlib import Path
 import sys
@@ -536,6 +538,23 @@ class HubStep(unittest.TestCase):
         self.owner_sets(ids['local_o'], 'archive')                                 # its worker is gone now
         self.cli('status-table', 'sync')
         self.assertEqual([c['session'] for c in self.cli('sessions', 'todo')['ctas']], ['local_o'])
+
+    def test_a_complete_observe_never_mass_deletes_by_mistake(self):
+        self.sessions()
+        with cli.state() as s:                           # five more live sessions of ours
+            s[st.STATE_KEY]['sessions'].update({'local_%d' % n: {} for n in range(5)})
+        before = self.cli('sessions', 'list')['states']
+        main = lambda *a: cli.main(['sessions', 'observe', '--complete', *a], cli.anyboard.Board(call=None))
+        with patch.object(sys, 'stdin', io.StringIO('[]')), contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertNotEqual(main(), 0)
+        self.assertIn('empty listing', err.getvalue())
+        partial = json.dumps([{'sessionId': 'local_o'}, {'sessionId': 'local_w'}, {'sessionId': 'local_0'}])
+        with patch.object(sys, 'stdin', io.StringIO(partial)), contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertNotEqual(main(), 0)   # 4 of 7 live sessions missing: a partial listing
+        self.assertIn('would mark 4 of 7', err.getvalue())
+        self.assertEqual(self.cli('sessions', 'list')['states'], before)           # nothing changed
+        out = self.cli('sessions', 'observe', '--complete', '--force', stdin=partial)
+        self.assertEqual(sorted(out['deleted']), ['local_1', 'local_2', 'local_3', 'local_4'])
 
     def test_a_cta_on_an_issue_row_is_reset(self):
         self.wire([issue('repo', 'MST-8')])

@@ -1017,6 +1017,8 @@ def _status_table_pass(full, limit):
     return {**out, 'rows': len(rows), 'full': full, **counts}
 
 
+DELETE_AT_ONCE = 2        # observe --complete marks at most this many live sessions deleted at once …
+DELETE_SHARE = 0.2        # … or this share of them, whichever is more, without --force (a partial listing)
 SESSIONS_EVERY = 900      # seconds between session-state refreshes the hub chat is asked for
 
 
@@ -1107,8 +1109,22 @@ def cmd_sessions(args, b):
         raw = json.loads(sys.stdin.read() or '[]')
         listed = raw if isinstance(raw, list) else raw.get('sessions') or []
         stamp = time.strftime('%Y-%m-%dT%H:%M:%S%z')
+        listed_ids = {row.get('sessionId') or row.get('id') for row in listed}
+        if args.complete and not listed and not args.force:
+            raise ValueError('observe --complete got an empty listing: that would mark every session deleted. '
+                             'Check the list_sessions output; --force only for a real mass deletion.')
         with state() as st:
             seen = st.setdefault('sessions_seen', {})
+            if args.complete:                       # a full listing: our sessions missing from it were deleted
+                # CLI workers (`dsh:<id>`) are never in the app's list; their run says if they live.
+                ours = [i for i in (st.get(key) or {}).get('sessions') or {} if i != args.hub_session and ':' not in i]
+                live = [i for i in ours if (seen.get(i) or {}).get('state') not in ('archived', 'deleted')]
+                gone = [i for i in ours if i not in listed_ids]
+                newly = [i for i in gone if i in live]
+                if len(newly) > max(DELETE_AT_ONCE, DELETE_SHARE * len(live)) and not args.force:
+                    raise ValueError('observe --complete would mark %d of %d live sessions deleted at once (%s…): the '
+                                     'listing is probably partial. Nothing was changed; --force only for a real mass '
+                                     'deletion.' % (len(newly), len(live), ', '.join(newly[:5])))
             for row in listed:
                 ident = row.get('sessionId') or row.get('id')
                 if ident:
@@ -1118,16 +1134,10 @@ def cmd_sessions(args, b):
                     seen[ident] = {'state': 'archived' if row.get('isArchived') else live, 'at': stamp,
                                    'title': (row.get('title') or seen.get(ident, {}).get('title') or '')[:120],
                                    **({'link': link[:300]} if link else {})}
-            listed_ids = {row.get('sessionId') or row.get('id') for row in listed}
-            gone = []
-            if args.complete:                       # a full listing: our sessions missing from it were deleted
-                for ident in (st.get(key) or {}).get('sessions') or {}:
-                    # CLI workers (`dsh:<id>`) are never in the app's list; their run says if they live.
-                    if ident not in listed_ids and ident != args.hub_session and ':' not in ident:
-                        seen[ident] = {**seen.get(ident, {}), 'state': 'deleted', 'at': stamp}
-                        gone.append(ident)
+            for ident in gone if args.complete else []:
+                seen[ident] = {**seen.get(ident, {}), 'state': 'deleted', 'at': stamp}
             st['sessions_observed'] = {'at': time.time(), 'asked': time.time()}
-        return {'observed': len(listed), 'deleted': gone}
+        return {'observed': len(listed), 'deleted': gone if args.complete else []}
     if args.action == 'done':
         if not args.session or not args.result:
             raise ValueError('done needs --session and --result')
@@ -1545,18 +1555,61 @@ def poll_due(name):
 GAPS = {}                 # board → (last poll, now) when this tick follows a gap longer than CATCH_UP_GAP
 
 
-def hub_running():
-    """True while the hub watcher (`watch --hub`) holds its lock."""
-    lock = STATE.with_name('watch.hub.lock')
+def hub_lock():
+    """The hub watcher's lock. One per machine for the real state: it lives in the main checkout's
+    .mstack/evidence (worktrees share it through git's common dir), so a hub started from a worktree or a
+    second chat still meets the first one. Tests (another STATE) keep it beside their state file."""
+    if STATE != DEFAULT_STATE:
+        return STATE.with_name('watch.hub.lock')
+    try:
+        common = subprocess.run(['git', '-C', str(STACK_ROOT), 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+                                capture_output=True, text=True, timeout=10, check=True).stdout.strip()
+        root = Path(common).parent if common.endswith('.git') else STACK_ROOT
+    except (OSError, subprocess.SubprocessError):
+        root = STACK_ROOT
+    return root/'.mstack/evidence/watch.hub.lock'
+
+
+def lock_holder(lock):
+    """The PID a held watcher lock names (written by its holder), or None when nobody holds it."""
     if not lock.exists():
-        return False
-    with open(lock, 'a') as probe:
+        return None
+    with open(lock, 'a+') as probe:
         try:
             fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
             fcntl.flock(probe, fcntl.LOCK_UN)
+            return None
         except BlockingIOError:
-            return True
-    return False
+            probe.seek(0)
+            text = probe.read().strip()
+            return int(text) if text.isdigit() else 0
+
+
+def hub_running():
+    """True while the hub watcher (`watch --hub`) holds its lock."""
+    return lock_holder(hub_lock()) is not None
+
+
+def hub_configured():
+    """mstack's .mstack/stack.json names a hub store: then the hub is the only watcher (owner rule, MST-69)."""
+    return STATE == DEFAULT_STATE and bool(hub_settings().get('store'))
+
+
+def watcher_processes():
+    """Running `board watch` processes on this machine (from ps), each marked hub or not. A per-scope one
+    while the hub is configured breaks the one-watcher rule: status flags it."""
+    try:
+        out = subprocess.run(['ps', '-eo', 'pid=,args='], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    found = []
+    for line in out.splitlines():
+        pid, _, cmd = line.strip().partition(' ')
+        words = cmd.split()                 # `mstack board watch` runs as `python …/orchestrator/cli.py watch …`
+        if len(words) < 3 or not words[1].endswith('orchestrator/cli.py') or words[2] != 'watch' or int(pid) == os.getpid():
+            continue
+        found.append({'pid': int(pid), 'hub': '--hub' in words, 'fallback': '--fallback' in words, 'command': cmd[:300]})
+    return found
 
 
 def left_to_hub(name):
@@ -1686,12 +1739,23 @@ def cmd_watch(args, b):
     Only one watcher may run: a second one refuses to start instead of racing on dispatch."""
     STATE.parent.mkdir(parents=True, exist_ok=True)
     hub = getattr(args, 'hub', False)
-    lock = STATE.with_name('watch.%s.lock' % ('hub' if hub else '.'.join(filter(None, (args.project or 'all', SCOPE)))))
-    guard = open(lock, 'w')
+    if not hub and hub_configured() and not getattr(args, 'fallback', False):
+        raise ValueError('The mstack hub (`board watch --hub`, run by the hub chat) is the only watcher: events reach '
+                         'orchestrators as hub messages. Start a per-scope watcher only when the owner says the hub is '
+                         'down, with --fallback.')
+    lock = hub_lock() if hub else STATE.with_name('watch.%s.lock' % '.'.join(filter(None, (args.project or 'all', SCOPE))))
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    guard = open(lock, 'a+')
     try:
         fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
-        raise ValueError('Another watcher is already running (lock %s)' % lock)
+        holder = lock_holder(lock)
+        raise ValueError('Another %swatcher is already running%s (lock %s)' % (
+            'hub ' if hub else '', ' as PID %d' % holder if holder else '', lock))
+    guard.seek(0)
+    guard.truncate()
+    guard.write(str(os.getpid()))           # exec keeps the PID, so a reload still names the right holder
+    guard.flush()
     failures = 0
     limited = {}                          # board → backoff end already logged (a backoff is logged once)
     started_on = code_fingerprint()
@@ -2238,9 +2302,13 @@ def cmd_handover(args, b):
     if settings.get('private'):
         lines.append('This board is PRIVATE: nothing is written to Linear; the owner gives /plan, 👍, 👎 and feedback '
                      'in your chat and you record them with `owner`.')
-    lines.append('Watcher: %s.' % ('the previous session\'s watcher is still running; ask the owner to stop it there, '
-                                   'or stop that process, before starting yours' if running else
-                                   'none running; start `watch --project %s%s` in the background' % (name, flag)))
+    if hub_configured():
+        lines.append('Watcher: none of your own. The mstack hub is the only watcher; events reach you as hub messages. '
+                     'Never start `watch` or a Monitor loop for one.')
+    else:
+        lines.append('Watcher: %s.' % ('the previous session\'s watcher is still running; ask the owner to stop it there, '
+                                       'or stop that process, before starting yours' if running else
+                                       'none running; start `watch --project %s%s` in the background' % (name, flag)))
     lines.append('Workers are existing sessions: message them with SendMessage by id; never start a second one for an issue.')
     if waiting:
         lines.append('Waiting on the owner: %s.' % ', '.join(waiting))
@@ -2372,6 +2440,14 @@ def cmd_status(args, b):
     rows.sort(key=lambda r: order.index(r['status']) if r['status'] in order else 99)
     links = {code or '*': '%s/%s %s' % (l['workspace'], l['team'], l['mode']) for code, l in links_of(project_settings(entry))}
     out = {'table': name, 'links': links or 'private', 'tasks': rows}
+    watchers = watcher_processes()
+    if watchers or hub_configured():
+        out['watchers'] = watchers
+        extra = [w for w in watchers if not w['hub']] if hub_configured() else []
+        extra += [w for w in watchers if w['hub']][1:]
+        if extra:
+            out['watcher_warning'] = ('only the hub may watch (owner rule): stop PID %s, or keep a non-hub one only if '
+                                      'the owner said the hub is down' % ', '.join(str(w['pid']) for w in extra))
     if forgotten:
         out['merged_not_done'] = [r.get('issue') or r['task'] for r in rows if r.get('merged_not_done')]
     return out
@@ -2482,6 +2558,8 @@ def parser():
                    'exit when the queue has events to deliver')
     s.add_argument('--max-ticks', type=int, default=0, help='stop after N ticks (0 = run until work appears)')
     s.add_argument('--exit-on-start', action='store_true', help='also exit when a CLI worker was started')
+    s.add_argument('--fallback', action='store_true', help='a per-scope watcher although the hub is configured: '
+                   'only when the owner says the hub is down')
     s = sub.add_parser('ack'); s.add_argument('--task', required=True); s.add_argument('--session', required=True)
     s = sub.add_parser('done'); s.add_argument('--task', required=True)
     s.add_argument('--summary', default='', help='text or - for stdin')
@@ -2558,6 +2636,7 @@ def parser():
     s.add_argument('--result', help='done: what happened (shown as Last Action)')
     s.add_argument('--state', choices=['active', 'idle', 'archived', 'deleted'], help='done: the session\'s state now')
     s.add_argument('--complete', action='store_true', help='observe: the list is every session, archived included')
+    s.add_argument('--force', action='store_true', help='observe --complete: allow an empty listing or a mass deletion')
     s.add_argument('--self', dest='hub_session', help='observe: the hub\'s own session id (list_sessions leaves it out)')
     s = sub.add_parser('status-table', help='sync|show|rename: the owner\'s read-only "My tasks" table in Anytype (design 014)')
     s.add_argument('action', choices=['sync', 'show', 'rename'])

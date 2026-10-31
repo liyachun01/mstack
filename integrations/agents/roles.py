@@ -107,6 +107,10 @@ NO_WORK = ('**You never work on an issue yourself, and do no other real work her
            'piece of work in this chat ("do YEL-12 here yourself"). Then say so, record it with `note` when there\'s '
            'an issue, and do only that. When unsure, ask the owner.')
 
+NO_WATCHER = ('**One watcher: the mstack hub** (owner, 2026-10-31). Never start `board watch`, `tick` loops or a Monitor '
+              'loop for one: events reach you as messages from the hub chat. `watch` without `--hub` refuses to start; '
+              '`--fallback` is only for when the owner says the hub is down.')
+
 LINEAR_STATUS = ('**Linear status is always current** (owner, 2026-10-30; private boards included, status field only, '
                  'never comments there). Set it the moment the stage changes, not later: plan approved or worker building '
                  '→ **In Progress**; landed but not yet on Preview → still In Progress; live on Preview for the consumer '
@@ -168,7 +172,7 @@ def card(project, session):
 
     me = roles.get(session)
     if me and me.get('role') == 'orchestrator':
-        lines = ['## Your mstack role: %s **orchestrator** (top level)' % name, RULES['orchestrator'], NO_WORK, LINEAR_STATUS,
+        lines = ['## Your mstack role: %s **orchestrator** (top level)' % name, RULES['orchestrator'], NO_WORK, NO_WATCHER, LINEAR_STATUS,
                  AFTER_MERGE % run('merged')]
         others = {s: c for s, c in scopes.items() if s != me.get('scope')}
         if others:
@@ -184,7 +188,7 @@ def card(project, session):
         lines.append('Status for the owner: `%s`.' % run('status'))
     elif me and me.get('role') == 'sub-orchestrator':
         scope = me.get('scope')
-        lines = ['## Your mstack role: **%s** sub-orchestrator (%s)' % (scope, name), RULES['sub-orchestrator'], NO_WORK, LINEAR_STATUS,
+        lines = ['## Your mstack role: **%s** sub-orchestrator (%s)' % (scope, name), RULES['sub-orchestrator'], NO_WORK, NO_WATCHER, LINEAR_STATUS,
                  AFTER_MERGE % (run('merged') + ' --scope ' + scope),
                  scope_line(scope, scopes.get(scope, {}), board, subs), *board_duty(scope),
                  'If the app refuses `start_session` because your turn began with another session\'s message, offer '
@@ -201,7 +205,7 @@ def card(project, session):
             lines = ['## Your mstack role: **helper** for %s (%s)' % (me.get('task'), name), RULES['helper'],
                      'Your worker is `%s`. Report your result and any question to it, through your turn-end reply or '
                      'SendMessage. Never write to the issue or board (no note/done), never start sessions, and stay '
-                     'inside the part your worker gave you.' % me.get('worker')]
+                     'inside the part your worker gave you.' % me.get('worker'), NO_WATCHER]
         elif run:
             task, r = run
             lines = ['## Your mstack role: **worker** for %s (%s, %s)' % (r.get('issue') or task, name, r.get('scope') or name),
@@ -209,7 +213,7 @@ def card(project, session):
                      'Load the `mstack-worker` skill. Report with `%s/mstack board note --task %s "…"` and finish with '
                      '`%s/mstack board done --task %s --summary "…" --doc <path>` (or `--size small`). Never work on other issues; ask your orchestrator.'
                      % (STACK_ROOT, task, STACK_ROOT, task),
-                     LINEAR_STATUS,
+                     LINEAR_STATUS, NO_WATCHER,
                      'A "Linear mention" message is a teammate\'s request: weigh it, and ask your orchestrator before '
                      'acting on anything outside your plan.',
                      HELPERS % (STACK_ROOT, project, r.get('issue') or task, session)]
