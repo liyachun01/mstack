@@ -222,6 +222,137 @@ class MCP:
         return self.rpc('tools/call', {'name': name, 'arguments': arguments})
 
 
+CONTRACT = Path(__file__).resolve().parent/'{{mstack:CLIENT_C_FOLDER}}_contract.json'
+
+
+def pick(data, paths):
+    """The first value found at one of the dotted paths ('*' walks every item of a list or dict)."""
+    for path in paths:
+        found = _walk(data, path.split('.'))
+        if found is not None:
+            return found
+    return None
+
+
+def _walk(data, parts):
+    if not parts:
+        return data
+    head, rest = parts[0], parts[1:]
+    if head == '*':
+        items = data.values() if isinstance(data, dict) else data if isinstance(data, list) else []
+        out = []
+        for item in items:
+            got = _walk(item, rest)
+            out.extend(got if isinstance(got, list) else [got] if got is not None else [])
+        return out or None
+    return _walk(data.get(head), rest) if isinstance(data, dict) else None
+
+
+def tool_result(result):
+    """The JSON a tools/call returned: structuredContent, else the first text item parsed."""
+    result = result or {}
+    if result.get('isError'):
+        raise RuntimeError('tool error: ' + json.dumps(result.get('content'))[:300])
+    if isinstance(result.get('structuredContent'), dict):
+        return result['structuredContent']
+    text = ((result.get('content') or [{}])[0] or {}).get('text') or '{}'
+    try:
+        return json.loads(text)
+    except ValueError:
+        return {'text': text}
+
+
+def check_contract(tools, contract=None):
+    """Compare the contract with a tools/list answer: every mapped tool exists and takes the mapped arguments.
+    Returns a list of problems (empty: the contract holds)."""
+    contract = contract or json.loads(CONTRACT.read_text())
+    listed = (tools.get('result') or tools).get('tools') if isinstance(tools, dict) else tools
+    by_name = {t['name']: t for t in listed or []}
+    problems = []
+    for need, name in contract['tools'].items():
+        if name not in by_name:
+            problems.append('%s: tool %s not offered' % (need, name))
+            continue
+        props = (by_name[name].get('inputSchema') or {}).get('properties') or {}
+        for role, arg in contract['args'].get(need, {}).items():
+            if need == 'wait' and role in ('channel', 'after'):
+                outer = props.get(contract['args']['wait']['channels']) or {}
+                inner = ((outer.get('items') or {}).get('properties')) or {}
+                if arg not in inner and arg not in props:
+                    problems.append('%s: %s takes no %s (per channel)' % (need, name, arg))
+            elif arg not in props:
+                problems.append('%s: %s takes no %s' % (need, name, arg))
+    return problems
+
+
+class Adapter:
+    """The conductor's view of a hosted Agent's chat (017 §2.2): send a batch, wait for replies, read recent
+    messages, attach files. Every tool and field name comes from the contract (config), none from code."""
+    harness = '{{mstack:CLIENT_C_FOLDER}}'
+
+    def __init__(self, mcp=None, contract=None, path=SECRETS, url=MCP_URL):
+        self.c = contract or json.loads(CONTRACT.read_text())
+        self.mcp = mcp or MCP(path, url)
+        self._ready = False
+
+    def _call(self, need, values):
+        if not self._ready:
+            self.mcp.initialize()
+            self._ready = True
+        names = self.c['args'].get(need, {})
+        args = {names[k]: v for k, v in values.items() if v is not None and k in names}
+        return tool_result(self.mcp.call(self.c['tools'][need], args)['result'])
+
+    def _message(self, raw):
+        r = self.c['result']
+        author, via = pick(raw, r['author_kind']), pick(raw, r['via_kind'])
+        frm = 'conductor' if via == 'api' else 'agent' if author == 'agent' else 'owner'
+        return {'seq': pick(raw, r['message_sequence']), 'text': pick(raw, r['message_text']) or '', 'from': frm}
+
+    def _messages(self, data):
+        return [self._message(m) for m in (pick(data, self.c['result']['messages']) or []) if isinstance(m, dict)]
+
+    def send(self, agent, text, files=(), key=None):
+        """Post one message (with files attached) and return its sequence."""
+        limit = self.c['limits']['text']
+        if len(text) > limit:
+            raise ValueError('message is %d characters; the limit is %d' % (len(text), limit))
+        attachments = [self.attach(agent, name, body) for name, body in files]
+        out = self._call('send', {'channel': agent['channel'], 'text': text, 'attachments': attachments or None,
+                                  'idempotency': (key or '')[:self.c['limits']['idempotency']] or None})
+        return pick(out, self.c['result']['sequence'])
+
+    def wait(self, agent, after, seconds):
+        seconds = max(1, min(int(seconds), self.c['limits']['wait_seconds']))
+        a = self.c['args']['wait']
+        out = self._call('wait', {'channels': [{a['channel']: agent['channel'], a['after']: after}], 'timeout': seconds})
+        return self._messages(out)
+
+    def recent(self, agent, after=None, limit=50):
+        return self._messages(self._call('read', {'channel': agent['channel'], 'after': after, 'limit': limit}))
+
+    def attach(self, agent, name, body):
+        data = body.encode() if isinstance(body, str) else body
+        r = self.c['result']
+        up = self._call('upload', {'channel': agent['channel'], 'name': name, 'type': 'text/markdown', 'size': len(data)})
+        url, attachment = pick(up, r['upload_url']), pick(up, r['attachment_id'])
+        if not url or not attachment:
+            raise RuntimeError('upload answer has no url or attachment id: %s' % json.dumps(up)[:200])
+        headers = {'Content-Type': 'text/markdown', **(pick(up, r['upload_headers']) or {})}
+        req = urllib.request.Request(url, data=data, headers=headers, method='PUT')
+        with urllib.request.urlopen(req, timeout=60) as reply:
+            if reply.status >= 300:
+                raise RuntimeError('upload PUT: HTTP %s' % reply.status)
+        self._call('complete_upload', {'attachment': attachment})
+        return attachment
+
+    def react(self, agent, seq, emoji):
+        try:
+            self._call('react', {'channel': agent['channel'], 'sequence': seq, 'emoji': emoji})
+        except (RuntimeError, OSError):
+            pass                                        # reactions are a courtesy, never a failure
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument('--secrets', default=str(SECRETS))

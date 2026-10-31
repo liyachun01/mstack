@@ -2363,6 +2363,87 @@
                     "null"
                   ]
                 }
+              },
+              "agent": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "harness"
+                ],
+                "description": "Design 016/017: this orchestrator runs as an agent the conductor wakes (`mstack conductor run`), not as a Claude Desktop chat.",
+                "properties": {
+                  "harness": {
+                    "enum": [
+                      "{{mstack:CLIENT_C_FOLDER}}",
+                      "dsh"
+                    ]
+                  },
+                  "team": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "hosted-agent Team id"
+                  },
+                  "agent": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "the Agent's handle in that Team"
+                  },
+                  "channel": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "the chat (channel id) the conductor writes to and reads"
+                  },
+                  "mode": {
+                    "enum": [
+                      "shadow",
+                      "live"
+                    ],
+                    "description": "shadow: actions are logged, not run"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "batch_wait": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 600
+                  },
+                  "batch_cap": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100
+                  },
+                  "max_turn_seconds": {
+                    "type": "integer",
+                    "minimum": 30,
+                    "maximum": 7200
+                  },
+                  "nudge_seconds": {
+                    "type": "integer",
+                    "minimum": 30,
+                    "maximum": 3600
+                  },
+                  "turns_per_day": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000
+                  },
+                  "inline_limit": {
+                    "type": "integer",
+                    "minimum": 1000,
+                    "maximum": 50000
+                  },
+                  "resend_minutes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1440
+                  },
+                  "chat_every": {
+                    "type": "integer",
+                    "minimum": 10,
+                    "maximum": 3600
+                  }
+                }
               }
             }
           }
@@ -2395,6 +2476,87 @@
               "string",
               "null"
             ]
+          }
+        },
+        "agent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "harness"
+          ],
+          "description": "Design 016/017: this orchestrator runs as an agent the conductor wakes (`mstack conductor run`), not as a Claude Desktop chat.",
+          "properties": {
+            "harness": {
+              "enum": [
+                "{{mstack:CLIENT_C_FOLDER}}",
+                "dsh"
+              ]
+            },
+            "team": {
+              "type": "string",
+              "minLength": 1,
+              "description": "hosted-agent Team id"
+            },
+            "agent": {
+              "type": "string",
+              "minLength": 1,
+              "description": "the Agent's handle in that Team"
+            },
+            "channel": {
+              "type": "string",
+              "minLength": 1,
+              "description": "the chat (channel id) the conductor writes to and reads"
+            },
+            "mode": {
+              "enum": [
+                "shadow",
+                "live"
+              ],
+              "description": "shadow: actions are logged, not run"
+            },
+            "model": {
+              "type": "string"
+            },
+            "batch_wait": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 600
+            },
+            "batch_cap": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "max_turn_seconds": {
+              "type": "integer",
+              "minimum": 30,
+              "maximum": 7200
+            },
+            "nudge_seconds": {
+              "type": "integer",
+              "minimum": 30,
+              "maximum": 3600
+            },
+            "turns_per_day": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "inline_limit": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 50000
+            },
+            "resend_minutes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1440
+            },
+            "chat_every": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 3600
+            }
           }
         }
       }

@@ -10,8 +10,8 @@ withdrawn, and nothing from it is used here. Sources are only:
 
 Nothing in {{mstack:CLIENT_C_APP}} was changed or called, and no paid model ran. Steps marked ★ need the owner's OK, and an
 OAuth sign-in or driving the app's UI is one of them. P1 (the MCP sign-in and one test message) ran on
-2026-10-31 with the owner's OK (section 6). {{mstack:CLIENT_C_APP}} product asks go to YEL through the {{mstack:CLIENT_C_SITE}}
-orchestrator.
+2026-10-31 with the owner's OK (section 6). P2 (the conductor core and adapter, against a fake server) is built
+(section 9). {{mstack:CLIENT_C_APP}} product asks go to YEL through the {{mstack:CLIENT_C_SITE}} orchestrator.
 
 Builds on [011](011-EVENT-HUB.md) (Postgres hub queue), [014](014-STATUS-TABLE.md) ("My tasks"),
 [015](015-MULTI-HARNESS.md) (runner plugins) and 016 (DeepSeek orchestrators: mailbox, conductor, action block,
@@ -246,7 +246,7 @@ Filed only once P1 shows which are real.
 |---|---|---|---|
 | P0 | Owner verdict on this doc; section 6 answered | answers in the thread | — |
 | P1 ★ | **Qualify the MCP path**, read-only plus one test message: build M2 + M3; the owner signs in; `tools/list`; send "ping" to a test Agent and wait for the reply; record tool names, limits and timings in a receipt | receipt saved; the adapter's four needs are covered by real tools | revoke under Connected apps |
-| P2 | M1 + M4 in code against a fake MCP server built from the P1 receipt | tests green; `conductor run --dry-run` on the live queue with `--peek` | don't start it |
+| P2 | M1 + M4 in code against a fake MCP server built from the P1 receipt **(built, MST-67, section 9)** | tests green; `conductor run --dry-run` on the live queue with `--peek` | don't start it |
 | P3 ★ | In the existing Team (2.5), hire `@mstack-orch` (model per question 2), send the playbook | the owner sees the Agent in the app | remove the Agent |
 | P4 ★ | **Shadow mode** for `orch:mstack`: real batches, actions logged, not run; the Claude orchestrator keeps acting | 20 events or a week; plan quality and cost per event compared | stop the conductor |
 | P5 ★ | **Live** on mstack's board; workers stay Claude (owner, 2026-10-31); dsh is the fallback (MST-62) | a full `/plan → propose → 👍 → dispatch → done → review` cycle with no Claude orchestrator turn | `agents pause orch:mstack`; re-register the Claude chat |
@@ -312,5 +312,82 @@ Receipt: `runtime/receipts/2026-10-31-mst66-{{mstack:CLIENT_C_FOLDER}}-mcp-p1.js
 
 ## 8. Next
 
-P2: build the conductor core and the adapter against a fake MCP server made from the P1 tool list. Then P3: hire
-`@mstack-orch` in the existing Team (model and instructions to be agreed on the issue), and P4: shadow mode.
+P2 is built (section 9). Before P3: the owner's 👍 on the mailbox migration, then `mstack conductor contract`
+against a fresh `tools/list` (read-only) to pin the argument names. Then P3: hire `@mstack-orch` in the existing Team
+(section 10 recommends a cloud Agent on {{mstack:CLIENT_C_APP}}'s own model), and P4: shadow mode, which first needs M5 (below).
+
+## 9. P2: the conductor core and adapter (MST-67, 2026-10-31)
+
+Built in code against a fake MCP server; nothing called {{mstack:CLIENT_C_APP}} and no Agent exists.
+
+| Piece | Where |
+|---|---|
+| Mailbox (M1): queue rows with recipient and sender, `held`, new kinds; `agents`, `turns`, `actions` tables | `integrations/orchestrator/schema.sql` (additive migration ★, posted with `board ask`; **not applied yet**), `mailbox.py` (`PgMailbox`, plus `MemoryMailbox` for tests) |
+| Turn loop, validator, execute-once log, caps and batching (M1) | `integrations/orchestrator/conductor.py` |
+| Rendering and playbook delivery (M4) | `conductor.render`, `playbook.md` + the orchestrator skill's judgment sections (Claude Desktop tool lines dropped) |
+| Adapter: send / wait / read recent / attach / react | `{{mstack:CLIENT_C_FOLDER}}.Adapter`, names from `{{mstack:CLIENT_C_FOLDER}}_contract.json` |
+| Config | `taskboard.agent` (whole board) or `taskboard.orchestrators.<scope>.agent`: `harness`, `team`, `agent`, `channel`, `mode` (`shadow`/`live`), caps |
+| Tests | `tests/test_conductor.py` with `tests/fake_{{mstack:CLIENT_C_FOLDER}}.py` (the P1 tool list, SSE waits, upload URL); an opt-in Postgres round trip in a throwaway schema (`MSTACK_PG_TESTS=1`) |
+
+**One turn.** Mail for an address waits until the newest item is 30 s old, 20 items are waiting, or one is urgent
+(`stop`, `owner_message`). The message starts `mstack hub · batch <6 hex> · events 412, 413`, then the address,
+mode and playbook hash, any actions refused last turn, and per event its line plus the issue's last three thread
+messages (`board thread`, prefetched). Over `inline_limit` (12,000 characters), the events and context move to
+`CONTEXT-<batch>.md`, attached. `PLAYBOOK.md` is attached on the first turn and whenever its hash changes. The
+send uses the idempotency key `mstack:<address>:<sha256(address, event ids)>`, so a retried batch never posts
+twice. The conductor loops `wait_message` (≤ 240 s per call) up to `max_turn_seconds` (900) for an Agent
+message holding the block, nudges once (`nudge_seconds`, 300), and otherwise requeues the batch. Three failed
+turns in a row pause the agent and mail `owner` a `wake_failed`.
+
+**Actions.** `propose`, `ask`, `note`, `verdict`, `owner`, `dispatch`, `forward`, `stop` become `mstack board`
+commands; `send` and `say` become mailbox rows; `fetch` runs `thread`/`tree`/`status` and mails the answer back
+(one extra turn); `resolve` only resolves events waiting for that agent. Every action is checked (known fields,
+text ≤ 20,000, the issue's team key is one of the board's links, sizes, verdicts, addresses). `owner` (private
+boards) runs only when its text is in the owner's recent messages in that chat, so an Agent can't invent a
+verdict. Each action's key, `sha256(address, event ids, index, action)`, is recorded before it runs: a retry
+skips it. In `shadow` mode, actions are recorded as `shadow` with the command they would run. Refusals reach the
+Agent at the top of its next batch, without waking it for them.
+
+**Owner chat.** Every `chat_every` (60 s) the conductor reads the Agent's chat after its cursor. Owner messages
+are kept for the `owner` check, and actions blocks the Agent wrote in answer to the owner run the same way (turn
+`chat-<sequence>`).
+
+**Dry run (exit check, 2026-10-31).** `mstack conductor run --dry-run --peek --root /home/developer/workspace/mstack`
+read the live queue (pre-mailbox schema: recipients derived from board and scope) and printed nothing to send: no
+agent is configured and no mstack mail waits. With `--assume orch:mstack={{mstack:CLIENT_C_FOLDER}} --reply <sample>`, it printed the
+`board propose …` it would run and refused an out-of-board issue and a foreign event id. A checksum of
+`orchestrator.queue` was the same before and after.
+
+**Provisional until P3.** The P1 receipt kept tool names and some argument names, not full input schemas. The
+argument and result field names in `{{mstack:CLIENT_C_FOLDER}}_contract.json` (e.g. `channelId`, `messages[].author.kind`,
+`uploadUrl`) are best guesses; `mstack conductor contract --tools <tools/list JSON>` checks them, and only the
+contract file changes if they differ.
+
+**Left for later steps:**
+- apply the migration (owner's 👍), before any non-dry run;
+- M5 (P4): shadow turns must read events without taking or resolving them, so the Claude orchestrator keeps
+  acting. Until then `conductor run` refuses shadow agents;
+- live mode (P5): `events next` must skip recipients the conductor hosts, and worker mail (`send` to
+  `worker:…`) needs a delivery path (CLI workers via `forward`, Claude workers via the dock or hub chat);
+- the dsh adapter for 016's path, on the same `Adapter` interface (send, wait, recent, react);
+- the owner inbox for `say` and `wake_failed` mail (M6: `mstack agents`, "My tasks");
+- design 016 is still on the MST-64 branch; its M1 section should point here when it lands.
+
+## 10. Recommended path (2026-10-31, for the owner's verdict)
+
+New facts from the owner: {{mstack:CLIENT_C_APP}} Teams run **locally (the Mac app) or in the cloud**, and an Agent can use
+**BYOK** (e.g. DeepSeek) **or {{mstack:CLIENT_C_APP}}'s own models**.
+
+| Choice | Recommendation | Why |
+|---|---|---|
+| Where the orchestrator runs | **Cloud Team** (the existing Team, 2.5) | It answers while the Mac sleeps or the app is closed, which is the point of leaving Claude Desktop chats. P1 already ran on the cloud Team. A local Team's only gain, calling `mstack board` directly from the Mac, isn't needed: the conductor runs every action here, with the keys, git and Postgres. |
+| Model for `@mstack-orch` (P3–P4) | **{{mstack:CLIENT_C_APP}}'s own model** (the host Agent ran Claude Sonnet 5.5 in P1) | Plans are the owner's main touchpoint, so start with the strongest planner, with no extra key to manage. Cost is not a concern (answer 6). |
+| BYOK DeepSeek | **A second shadow Agent** in P4 (`@mstack-orch-ds`), fed the same batches | It measures plan quality and cost per event side by side before any scope moves to it. Then pick a model per scope (cheap scopes on BYOK). The conductor needs one addition: fan a batch to two shadow addresses. |
+| Executor and channel | **Unchanged:** conductor + Postgres mailbox here; action blocks only | One audited, idempotent path for every harness; nothing on the VM is exposed. |
+| Workers | **Claude on this machine** for mstack and repos that need local git and secrets (answer 9). Later (P6): **local-Team** Agents for Mac-bound work (Xcode, Simulator, App Store), **cloud** Agents for GitHub-only repos (they have `git` and `gh`). | Put each worker where its tools are. |
+| Fallback | **dsh** (MST-62) behind the same adapter interface; rollback to the Claude chat per scope | No single product dependency. |
+
+**Order:** 👍 the migration → merge P2 → refresh the contract from a read-only `tools/list` → P3: hire a cloud
+`@mstack-orch` on {{mstack:CLIENT_C_APP}}'s model, `rolePrompt` = the playbook's role card, with `PLAYBOOK.md` sent by the
+conductor → M5 + P4: shadow, optionally with the BYOK twin → P5: live on mstack's board → P6: a second scope and
+the first {{mstack:CLIENT_C_APP}} workers.

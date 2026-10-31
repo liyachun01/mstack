@@ -1,0 +1,32 @@
+{
+  "about": "How the conductor's four needs map onto the hosted-agent MCP tools (design 017 §2.1, §6). Tool names are from the P1 receipt; argument and result field names are provisional until `mstack conductor contract --tools <tools/list JSON>` passes against the real inputSchemas (P3).",
+  "receipt": "runtime/receipts/2026-10-31-mst66-{{mstack:CLIENT_C_FOLDER}}-mcp-p1.json",
+  "tools": {
+    "send": "send_message",
+    "wait": "wait_message",
+    "read": "read_messages",
+    "upload": "create_attachment_upload",
+    "complete_upload": "complete_attachment_upload",
+    "react": "react_message"
+  },
+  "args": {
+    "send": {"channel": "channelId", "text": "text", "idempotency": "idempotencyKey", "attachments": "attachmentIds"},
+    "wait": {"channels": "channels", "channel": "channelId", "after": "afterSequence", "timeout": "timeoutSeconds"},
+    "read": {"channel": "channelId", "after": "afterSequence", "limit": "limit"},
+    "upload": {"channel": "channelId", "name": "fileName", "type": "contentType", "size": "size"},
+    "complete_upload": {"attachment": "attachmentId"},
+    "react": {"channel": "channelId", "sequence": "sequence", "emoji": "emoji"}
+  },
+  "result": {
+    "sequence": ["sequence", "message.sequence"],
+    "messages": ["messages", "channels.*.messages"],
+    "message_sequence": ["sequence"],
+    "message_text": ["text", "body"],
+    "author_kind": ["author.kind", "sender.kind"],
+    "via_kind": ["via.kind"],
+    "attachment_id": ["attachmentId", "attachment.id", "id"],
+    "upload_url": ["uploadUrl", "upload.url"],
+    "upload_headers": ["uploadHeaders", "upload.headers"]
+  },
+  "limits": {"text": 50000, "idempotency": 200, "wait_seconds": 240, "wait_channels": 20}
+}

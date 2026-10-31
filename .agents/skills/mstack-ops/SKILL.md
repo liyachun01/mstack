@@ -51,6 +51,19 @@ the owner asked for run there (`mstack-orchestrator` skill).
 - Queue: `mstack events list [--status new|sent|resolved]`; routes: `mstack orchestrators list`. The hub chat
   follows `.agents/skills/mstack-hub` and runs the only `watch --hub`.
 
+## Conductor (hosted orchestrator agents, designs 016/017)
+- `mstack conductor run --dry-run --peek [--assume orch:mstack={{mstack:CLIENT_C_FOLDER}}] [--replay N] [--reply FILE]` shows what
+  it would send to each hosted agent and which `mstack board` commands an Agent reply would run. It reads Postgres
+  (and `board thread` for context unless `--no-prefetch`), and writes, sends and runs nothing. From a worktree, add
+  `--root /home/developer/workspace/mstack` for the real state and secrets.
+- `mstack conductor run` (no dry run) needs the mailbox migration (owner-approved `mstack events schema --apply`)
+  and an agent in `taskboard.agent` / `taskboard.orchestrators.<scope>.agent` with `mode: live`; shadow agents
+  wait for M5. It holds `.mstack/evidence/conductor.lock` and is the only process that refreshes the hosted-agent
+  OAuth token.
+- `mstack conductor contract --tools <saved tools/list JSON>` checks the adapter's tool and argument names
+  (`integrations/orchestrator/{{mstack:CLIENT_C_FOLDER}}_contract.json`); `mstack conductor playbook --address A` prints the
+  PLAYBOOK.md an agent gets, with its hash.
+
 ## Services and tenants
 - `mstack services status|start|stop <tool>` and `mstack tenant add --project P --tool T`.
 - Stopping a shared service affects every tenant.
