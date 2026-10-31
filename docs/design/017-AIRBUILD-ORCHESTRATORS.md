@@ -389,8 +389,29 @@ watchers are stopped for now because of memory use. This supersedes answer 9 ("w
 | Worker lifecycle | `board dispatch` gets an `{{mstack:CLIENT_C_FOLDER}}` worker host: hire (or reuse from a small pool) a worker Agent, DM it the brief, register `worker:<ISSUE>` in `orchestrator.agents`. Owner comments reach it as `forward` mail, closing the issue as `stop` (`remove_agent` or retire it). | The same mailbox and conductor wake workers and orchestrators. |
 | Fallback | **dsh** (MST-62) and Claude Code here, behind the same adapter interface; rollback per scope | No single product dependency. Claude Code stays the owner's console for review and merges. |
 
+**Every hosted worker keeps a linked Claude chat** (owner, 2026-10-31: "Moving workers to {{mstack:CLIENT_C_FOLDER}}, means, still
+link the workers to claude"). A worker is a pair: the {{mstack:CLIENT_C_APP}} Agent `worker:<ISSUE>` does the work, and a Claude
+Code chat titled `<ISSUE>: <title>` in the task worktree is the owner's place to see it, talk to it and get answers.
+
+| Concern | How the pair works |
+|---|---|
+| Start | `dispatch` creates the task worktree and the Claude chat as today (handoff), then gives the Agent the brief. `orchestrator.agents` gets `worker:<ISSUE>` (harness `{{mstack:CLIENT_C_FOLDER}}`) with the Claude session as its link; the Claude chat is registered with `role set --role worker` and told it is paired. |
+| Who does the work | The Agent: it clones the repo, works in its sandbox, and ends each turn with an actions block (`note`, or `done` with a `git format-patch` attachment). |
+| Who reports | **The Claude chat** writes the issue's record, as workers do today. The conductor applies the Agent's patch in the task worktree (not committed), runs the leak check, and mails `worker_report` to the chat. The chat reviews the diff, runs the suites, commits, and runs `board note` / `board done`. An Agent `note` becomes a `worker_report` for the chat to pass on (or not), never a direct Linear post. |
+| Messages, owner → worker | The owner types in the Claude chat; Linear comments arrive there as today (hub `forward`). The chat relays what the Agent needs with `mstack conductor send worker:<ISSUE> "…"` (mail; the conductor wakes the Agent with it). |
+| Messages, worker → owner | The Agent's turn ends reach the chat as `worker_report` mail, delivered like hub events (the hub or dock chat's `SendMessage`). The chat answers the owner in its own words. |
+| "My tasks" and links | One row per issue, as today: `session_agent: claude-desktop`, the Source link is the Claude chat. A column or note shows the paired Agent (`{{mstack:CLIENT_C_FOLDER}}:<team>/<agent>`, plus an `{{mstack:CLIENT_C_FOLDER}}://` link once A7 exists). Issue notes link the Claude chat. |
+| If the Agent stops (3 failed turns, removed, budget) | The conductor pauses `worker:<ISSUE>` and mails `wake_failed` to the Claude chat and the owner. The chat may finish the work itself (today's Claude worker, the fallback), or the orchestrator re-dispatches a new Agent and links it to the same chat. |
+| If the Claude chat stops (archived, closed) | The conductor holds the worker's mail (`held`) and stops waking the Agent, so no work runs unseen. `board adopt` links a new Claude chat and releases the mail. Closing the issue (`stop`) ends both: the Agent is retired (`remove_agent`), the chat archived by the usual rule. |
+
+This needs, beyond the list below: a `linked` field on `orchestrator.agents` (a small migration ★), `mstack conductor
+send`, worker-mail delivery to Claude chats through the hub or dock (they are stopped for now with the watchers),
+and the pairing in `dispatch` and "My tasks". Cost: the Claude side stays thin (relay, review, report); the code
+work runs in the Agent.
+
 **What the worker move adds (beyond phase 1):**
-- the conductor's worker role: allowlist `note`, `done` (with a patch attachment), `send` to its orchestrator;
+- the conductor's worker role: allowlist `note`, `done` (with a patch attachment), `send` to its orchestrator or
+  its Claude chat;
   `get_attachment` in the adapter contract;
 - patch apply + test + leak check + commit in the task worktree (new code, small);
 - the `{{mstack:CLIENT_C_FOLDER}}` worker host in `runners.py` and `dispatch` (today it refuses `{{mstack:CLIENT_C_FOLDER}}` as a worker host);
@@ -399,9 +420,9 @@ watchers are stopped for now because of memory use. This supersedes answer 9 ("w
 
 **Order:** 👍 the migration → merge P2 → refresh the contract from a read-only `tools/list` → P3: hire a cloud
 `@mstack-orch` ({{mstack:CLIENT_C_APP}}'s model) → M5 + P4: shadow, with the optional BYOK twin → P5: orchestrator live on
-mstack's board → **W1**: one small mstack issue by a cloud worker Agent with patch handoff, reviewed by the owner →
-**W2**: cloud workers by default on mstack → **W3**: other boards, each after its data-placement decision; local-Team
-workers for Mac-bound work.
+mstack's board → **W1**: one small mstack issue by a cloud worker Agent paired with its Claude chat (patch handoff), reviewed by the
+owner → **W2**: paired cloud workers by default on mstack → **W3**: other boards, each after its data-placement
+decision; local-Team workers for Mac-bound work, paired the same way.
 
 **Watchers (2026-10-31):** the two scope watchers that were running ({{mstack:CLIENT_C_SITE}}, {{mstack:CLIENT_REPO}} customer-api) were stopped
 by PID at the owner's request; no hub watcher was running. They used about 45 MB each; the VM's memory goes mostly
