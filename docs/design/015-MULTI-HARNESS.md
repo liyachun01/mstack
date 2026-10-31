@@ -248,6 +248,7 @@ orchestrator itself on DeepSeek, and any UI install.
 ## Phase-1 step 4: real launcher (MST-62, 2026-10-30)
 
 Code and tests only; **no model call**. The first real issue run waits for the owner's 👍 on MST-62's ask.
+Owner runbook with diagrams and sample outputs: [DSH-WORKER-RUNBOOK](../guides/DSH-WORKER-RUNBOOK.md).
 
 ### Launcher
 
