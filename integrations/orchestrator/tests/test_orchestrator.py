@@ -642,14 +642,24 @@ class OrchestratorTests(unittest.TestCase):
 
     # ---- CLI workers: DeepSeek Harness (`dsh`) through a fake binary, like `echo` (MST-57) ----------------------
     def fake_dsh(self, **env):
-        """Put a fake `dsh` first on PATH; returns the file its argv lines go to."""
+        """A fake `dsh` on PATH (availability) that the real launcher (integrations/agents/dsh_launch.py) runs in place
+        of node + dsh, with a synthetic worker key and DSH_HOME; returns the file its argv lines go to."""
         bin_dir = self.repo.parent / 'bin'
         bin_dir.mkdir(exist_ok=True)
         fake = bin_dir / 'dsh'
         fake.write_text('#!/bin/sh\nexec "%s" "%s" "$@"\n' % (sys.executable, Path(__file__).with_name('fake_dsh.py')))
         fake.chmod(0o755)
+        root = self.repo.parent / 'dsh-state'
+        (root / 'infra/harnesses/deepseek/state/worker-home').mkdir(parents=True, exist_ok=True)
+        (root / '.secrets').mkdir(exist_ok=True)
+        key = root / '.secrets/deepseek-worker.key'
+        key.write_text('sk-synthetic0000000000000000\n')
+        key.chmod(0o600)
         argv_log = self.repo.parent / 'dsh-argv.jsonl'
-        values = {'PATH': '%s:%s' % (bin_dir, os.environ['PATH']), 'FAKE_DSH_ARGV': str(argv_log), **env}
+        self.dsh_env_log = self.repo.parent / 'dsh-env.jsonl'
+        values = {'PATH': '%s:%s' % (bin_dir, os.environ['PATH']), 'FAKE_DSH_ARGV': str(argv_log),
+                  'FAKE_DSH_ENV': str(self.dsh_env_log), 'MSTACK_DSH_FAKE': str(fake),
+                  'MSTACK_DSH_STATE_ROOT': str(root), **env}
         patcher = patch.dict(os.environ, values)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -691,7 +701,16 @@ class OrchestratorTests(unittest.TestCase):
         first = self.calls(argv_log)[0]
         self.assertEqual((first[:2], first[-2]), (['--profile', 'headless'], '--json'))   # argv[0] is not logged
         self.assertNotIn('--session-id', first)
-        patch_file = Path(first[first.index('--patch') + 1])
+        patches = [first[i + 1] for i, arg in enumerate(first) if arg == '--patch']
+        self.assertEqual(patches[0], str(cli.STACK_ROOT / 'infra/harnesses/deepseek/worker/worker.cordis.yml'))
+        env = json.loads(self.dsh_env_log.read_text().splitlines()[0])        # the launcher's clean environment
+        self.assertEqual((env['DSH_HOME'], env['DSH_TELEMETRY_DISABLED'], env['DSH_TELEMETRY_MODE'], env['MSTACK_TASK']),
+                         (str(self.repo.parent / 'dsh-state/infra/harnesses/deepseek/state/worker-home'), '1',
+                          'DISABLED', a))
+        self.assertEqual({k for k in env if not k.startswith(('MSTACK_', 'FAKE_DSH_')) and k != 'PWD'},   # sh adds PWD
+                         {'PATH', 'HOME', 'LANG', 'DSH_HOME', 'DSH_TELEMETRY_DISABLED', 'DSH_TELEMETRY_MODE',
+                          'NODE_DISABLE_COMPILE_CACHE'})             # nothing else of the caller's (key not logged)
+        patch_file = Path(patches[-1])
         self.assertEqual(patch_file.parent, tree / '.mstack/cache')
         self.assertIn('"serverName": "mstack_headroom"', patch_file.read_text())
         self.assertTrue(Path(run['log']).with_suffix('.stream.log').read_text().count('"type": "session"'))

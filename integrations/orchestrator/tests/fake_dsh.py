@@ -4,7 +4,8 @@ qualification (MST-56; doc 015): a `session` line with `sessionId`, `status` pha
 behaves like the sandbox: it edits files but never commits or calls `mstack board`. On SIGTERM it does what the real
 one does: an empty `final`, no `turn_end`, exit 0.
 
-Env knobs: FAKE_DSH_ARGV (append each argv as a JSON line), FAKE_DSH_BLOCKED (try an action the sandbox refuses),
+Env knobs: FAKE_DSH_ARGV (append each argv as a JSON line), FAKE_DSH_ENV (append the environment it got, the key
+left out), FAKE_DSH_BLOCKED (try an action the sandbox refuses),
 FAKE_DSH_TERM (state file: mark the run stopped, as `board stop` would, then SIGTERM itself), FAKE_DSH_DONE (state
 file: record a `board done` report for MSTACK_TASK, as an unsandboxed worker that reported itself would),
 FAKE_DSH_QUEUE (state file: queue an owner comment on the run during the first turn, as a forward would)."""
@@ -17,6 +18,9 @@ import time
 import uuid
 
 args = sys.argv[1:]
+if os.environ.get('FAKE_DSH_ENV'):
+    with open(os.environ['FAKE_DSH_ENV'], 'a') as log:
+        log.write(json.dumps({k: v for k, v in sorted(os.environ.items()) if k != 'DEEPSEEK_API_KEY'}) + '\n')
 if os.environ.get('FAKE_DSH_ARGV'):
     with open(os.environ['FAKE_DSH_ARGV'], 'a') as log:
         log.write(json.dumps(args) + '\n')
