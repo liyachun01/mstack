@@ -31,6 +31,8 @@ carry messages. Commands: `/home/developer/workspace/mstack/mstack …`, run fro
     `sessionId`, `title`, `link`, `isArchived` and `isRunning` on every row: titles give rows to sessions started outside
     dispatch, links fill the Source Link column) to
     `mstack sessions observe --complete --self <your session id>` (use `--complete` only if fewer than 200 came back).
+    `--complete` refuses an empty listing, or one that would mark more than 20% (and more than 2) of the live
+    sessions deleted at once: re-list instead. `--force` only when the owner confirms a real mass deletion.
   - each item in `ctas` is the owner's request from the table. `continue`: SendMessage "Continue: the owner asked
     from My tasks." to that session. `archive`: archive_session. `delete`: delete_session (the app asks the owner;
     if they decline, say so in the result). Then `mstack sessions done --session <id> --result "<what happened>"`,
