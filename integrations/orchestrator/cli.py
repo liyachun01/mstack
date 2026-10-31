@@ -1370,10 +1370,11 @@ def status_lags(name, lb, tasks, seen, fresh):
         if not task.get('managed') or phase not in LAG_PHASES or not target or task.get('linear_state_type') in linear_board.CLOSED:
             continue
         link = lb.owner_of[task['id']]
-        want = link.state_for(target)
-        have = lb.cache[task['id']]['state']
+        want = link.state_for(target)                    # after mapping (a team without the state: its nearest)
+        have = link.full_state(lb.cache[task['id']]['state'])
         key = 'lag:%s:%s:%s' % (task['id'], phase, have.get('id'))
-        if key in seen or linear_board.rank(want) <= linear_board.rank(have):
+        if key in seen or want['id'] == have.get('id') or (want.get('name') or '').lower() == (have.get('name') or '').lower() \
+                or linear_board.rank(want) <= linear_board.rank(have):
             continue                                      # in step, or Linear is already further along
         fresh.append(key)
         out.append({'kind': 'status_lag', 'table': name, 'task': task['id'], 'issue': task['linear_identifier'],
