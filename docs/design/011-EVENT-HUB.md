@@ -183,6 +183,25 @@ the stacked linear updates".
 - Comments are read from each issue's last 50, as before, so an issue with more than 50 new comments while offline
   shows only the latest 50.
 
+### One watcher: the hub (2026-10-31, MST-69)
+
+Owner: "I need only one conductor process (the hub, no more multi watchers!)". Orchestrator chats kept restarting
+their per-scope watchers after they were stopped.
+- **Per-scope `watch` refuses** while `hub.store` is set in mstack's `.mstack/stack.json`, naming the hub as the one
+  watcher. `--fallback` starts one anyway, only when the owner says the hub is down. Per-scope ticks still leave
+  Linear to a running hub (`left_to_hub`), as before.
+- **Machine-wide hub lock:** `watch --hub` locks `.mstack/evidence/watch.hub.lock` in the main checkout (found
+  through git's common dir, so a hub started from a worktree meets it too) and writes its PID into it. A second
+  hub exits at once: "Another hub watcher is already running as PID N". A reload re-execs with the same PID.
+- **`status`** lists the running `board watch` processes (`watchers`, from `ps`) and sets `watcher_warning` for any
+  non-hub one, or a second hub. It never stops them; the owner or the chat that started one does.
+- **Roles and skills:** the orchestrator, sub-orchestrator, worker and helper role cards and the
+  `mstack-orchestrator`, `mstack-worker` and `mstack-hub` skills say only the hub chat runs `watch --hub`; nobody
+  else starts a watcher, a `tick` loop or a Monitor loop for one. `handover` prompts no longer tell a new
+  orchestrator to start a watcher while the hub is configured.
+- **Conductor:** the conductor (design 017, `conductor*.py`) is meant to run inside this same hub process, under the
+  same lock, never as a second loop.
+
 ### Not done in phase 1
 - The schema is not applied to the live database, and `hub.store` stays `file`, until the owner approves.
 - The hub session isn't started; the owner decides after review.

@@ -17,7 +17,11 @@ carry messages. Commands: `/home/developer/workspace/mstack/mstack …`, run fro
 1. `mstack orchestrators list`: the (project, scope) → session routes. Tell the owner if one they expect is missing.
 2. Run `mstack board watch --hub` **in the background**. It ticks every registered orchestrator's board (one
    watcher for all of them), writes what needs an orchestrator into the queue, and exits when events wait.
-   Only one hub watcher can run.
+   It is the **only** watcher on this machine (owner rule, 2026-10-31): it holds the machine-wide lock
+   (`.mstack/evidence/watch.hub.lock` in the main checkout, worktrees included), and a second `watch --hub` exits at
+   once naming the PID that holds it. Orchestrators and workers never start one, nor a Monitor loop for one; per-scope
+   `watch` refuses without `--fallback`. If `status` shows a `watcher_warning`, tell the owner; don't kill it yourself.
+   The conductor (design 017) will later run inside this same process, not as a second loop.
 
 ## When the watcher exits
 - **`events_waiting`:** run `mstack events next`. For each group in `deliver`, SendMessage `message` to `session`,

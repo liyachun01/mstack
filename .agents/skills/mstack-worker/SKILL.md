@@ -16,6 +16,8 @@ description: Behave as a worker session dispatched by the mstack orchestrator fo
   private boards included (status field only, MST-60); never edit it in Linear yourself.
 - **Your worktree:** you are on its own branch, named after the Linear issue. Work and commit only here.
   Never touch the main checkout or other worktrees. Never merge, push, or change global settings or team files.
+- **No watchers:** never start `board watch`, a `tick` loop or a Monitor loop for one. The mstack hub is the only
+  watcher (owner rule, 2026-10-31); owner comments reach you as messages.
 - **Conventions:** follow the repo's AGENTS.md / CLAUDE.md, and use its own tools (e.g. Serena, Graphify)
   when they help.
 - **Tell the owner on the issue** when scope or the plan changes:
