@@ -25,7 +25,8 @@ class FakeLinear:
 
     def node(self, i):
         return {**i, 'labels': {'nodes': [l for l in self.labels if l['id'] in i.get('labelIds', [])]},
-                'state': next(s for s in self.states if s['id'] == i['stateId']),
+                'state': {k: v for k, v in next(s for s in self.states if s['id'] == i['stateId']).items()
+                          if k in ('id', 'type', 'name')},                 # like Linear's issue read: no position
                 'inverseRelations': {'nodes': i.get('blockedBy', [])}, 'comments': {'nodes': i['comments']}}
 
     def post(self, query, v):
@@ -806,6 +807,27 @@ class LinearBoardFlow(unittest.TestCase):
         summary = [n for n in need if n['kind'] == 'catch_up'][0]
         self.assertTrue(summary['cut'])
         self.assertIn('cut: only the last 7 days', summary['text'])
+
+    def test_no_lag_when_linear_already_shows_the_wanted_state(self):         # hub event 57 (a team without In Review)
+        cfg = json.loads((self.repo / '.mstack/stack.json').read_text()); cfg['taskboard']['private'] = True
+        (self.repo / '.mstack/stack.json').write_text(json.dumps(cfg))
+        self.auto()
+        self.fake.states = [{'id': 's-' + k, 'type': t, 'name': n, 'position': i} for i, (k, t, n) in enumerate(
+            [('backlog', 'backlog', 'Backlog'), ('unstarted', 'unstarted', 'Todo'), ('started', 'started', 'In Progress'),
+             ('completed', 'completed', 'Done'), ('canceled', 'canceled', 'Canceled')])]
+        old = self.old_issue(n=191)
+        self.cli('adopt', '--project', 'repo', '--task', 'MST-191', '--session', 's191', '--stage', 'building')
+        self.fake.issues[old]['stateId'] = 's-unstarted'                              # event 56: Linear behind
+        with patch.object(cli, 'LINEAR_EVERY', 0), patch.object(cli, 'MIRROR_EVERY', 10 ** 9):
+            lag = [n for n in self.cli('tick')['needs_orchestrator'] if n['kind'] == 'status_lag']
+            self.assertEqual([(n['linear'], n['want']) for n in lag], [('Todo', 'In Progress')])
+            self.cli('note', '--task', 'MST-191', '--push-status', 'status sync')       # applied
+            self.assertEqual(self.fake.state_of(old), 'started')
+            for _ in range(2):                                                         # event 57 must not follow
+                self.assertEqual([n for n in self.cli('tick')['needs_orchestrator'] if n['kind'] == 'status_lag'], [])
+        self.cli('done', '--task', 'MST-191', '--size', 'small', '--summary', 'x')       # In Review maps to In Progress
+        with patch.object(cli, 'LINEAR_EVERY', 0), patch.object(cli, 'MIRROR_EVERY', 10 ** 9):
+            self.assertEqual([n for n in self.cli('tick')['needs_orchestrator'] if n['kind'] == 'status_lag'], [])
 
     def test_team_without_in_review_maps_to_its_nearest_state(self):                          # MST-53
         old = self.old_issue(n=930, state='s-started')

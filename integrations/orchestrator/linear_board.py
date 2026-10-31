@@ -253,6 +253,11 @@ class Link:
             typed = [s for s in typed if 'review' in (s.get('name') or '').lower()] or typed[::-1]
         return typed[0]
 
+    def full_state(self, state):
+        """An issue's state with the team's own fields (position): issue reads carry only id, type and name, and
+        ranking those against a team state put every issue at position 0 (a false lag for an equal state)."""
+        return next((s for s in self.team()['states']['nodes'] if s['id'] == (state or {}).get('id')), state or {})
+
     def state_id(self, status):
         return self.state_for(status)['id']
 
@@ -532,7 +537,7 @@ class LinearBoard:
         state = link.state_for(target)
         if (state.get('name') or '').lower() != target.lower():
             self.mapped[(link.conf['team'], target)] = state.get('name') or state['type']
-        current = issue.get('state') or {}
+        current = link.full_state(issue.get('state'))
         if state['id'] == current.get('id') or (current.get('type') in CLOSED and state['type'] not in CLOSED):
             return None
         if self.never_done and state['type'] == 'completed' and not explicit:
