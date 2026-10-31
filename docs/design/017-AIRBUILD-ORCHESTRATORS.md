@@ -376,18 +376,34 @@ contract file changes if they differ.
 ## 10. Recommended path (2026-10-31, for the owner's verdict)
 
 New facts from the owner: {{mstack:CLIENT_C_APP}} Teams run **locally (the Mac app) or in the cloud**, and an Agent can use
-**BYOK** (e.g. DeepSeek) **or {{mstack:CLIENT_C_APP}}'s own models**.
+**BYOK** (e.g. DeepSeek) **or {{mstack:CLIENT_C_APP}}'s own models**. Then the owner's direction: **move both orchestrators and
+workers to {{mstack:CLIENT_C_APP}}**. mstack keeps its own tooling (Graphify, Headroom, the Anytype "My tasks" table), and the
+watchers are stopped for now because of memory use. This supersedes answer 9 ("workers stay Claude for now").
 
 | Choice | Recommendation | Why |
 |---|---|---|
-| Where the orchestrator runs | **Cloud Team** (the existing Team, 2.5) | It answers while the Mac sleeps or the app is closed, which is the point of leaving Claude Desktop chats. P1 already ran on the cloud Team. A local Team's only gain, calling `mstack board` directly from the Mac, isn't needed: the conductor runs every action here, with the keys, git and Postgres. |
-| Model for `@mstack-orch` (P3–P4) | **{{mstack:CLIENT_C_APP}}'s own model** (the host Agent ran Claude Sonnet 5.5 in P1) | Plans are the owner's main touchpoint, so start with the strongest planner, with no extra key to manage. Cost is not a concern (answer 6). |
-| BYOK DeepSeek | **A second shadow Agent** in P4 (`@mstack-orch-ds`), fed the same batches | It measures plan quality and cost per event side by side before any scope moves to it. Then pick a model per scope (cheap scopes on BYOK). The conductor needs one addition: fan a batch to two shadow addresses. |
-| Executor and channel | **Unchanged:** conductor + Postgres mailbox here; action blocks only | One audited, idempotent path for every harness; nothing on the VM is exposed. |
-| Workers | **Claude on this machine** for mstack and repos that need local git and secrets (answer 9). Later (P6): **local-Team** Agents for Mac-bound work (Xcode, Simulator, App Store), **cloud** Agents for GitHub-only repos (they have `git` and `gh`). | Put each worker where its tools are. |
-| Fallback | **dsh** (MST-62) behind the same adapter interface; rollback to the Claude chat per scope | No single product dependency. |
+| Where agents run | **Cloud Team** (the existing Team, 2.5) for orchestrators and for workers on GitHub repos; a **local Team** only for Mac-bound work (Xcode, Simulator, App Store) | Cloud Agents answer while the Mac sleeps, which is the point of leaving Claude Desktop chats. P1 already ran on the cloud Team. A local Team only runs while the app is open. |
+| Model | **{{mstack:CLIENT_C_APP}}'s own model** first (the host Agent ran Claude Sonnet 5.5 in P1); a **BYOK DeepSeek twin in shadow** to compare | Plans and code quality decide the move; cost is not a concern (answer 6). Then pick a model per scope or per worker kind. |
+| Executor | **Unchanged:** the conductor here runs every board action from action blocks; Linear keys, Postgres and the leak check stay on this machine | One audited, idempotent path for orchestrators and workers. Nothing on the VM is exposed. |
+| How a worker's code lands | **Phase A: patch handoff.** The worker clones the repo with its own `git`/`gh` (read-only use), works on a branch in its sandbox, runs what tests it can, and ends its turn with `done` plus a `git format-patch` file attached. The conductor fetches the attachment, applies it in the task worktree here, runs the suites, runs the leak check, commits, and posts `board done`. **Phase B (later):** workers push branches themselves once the leak check runs as a required GitHub check. | Pushing straight from the app bypasses today's leak-check gate and needs a write token in the app. Patches keep git, secrets and the gate here. |
+| Worker lifecycle | `board dispatch` gets an `{{mstack:CLIENT_C_FOLDER}}` worker host: hire (or reuse from a small pool) a worker Agent, DM it the brief, register `worker:<ISSUE>` in `orchestrator.agents`. Owner comments reach it as `forward` mail, closing the issue as `stop` (`remove_agent` or retire it). | The same mailbox and conductor wake workers and orchestrators. |
+| Fallback | **dsh** (MST-62) and Claude Code here, behind the same adapter interface; rollback per scope | No single product dependency. Claude Code stays the owner's console for review and merges. |
+
+**What the worker move adds (beyond phase 1):**
+- the conductor's worker role: allowlist `note`, `done` (with a patch attachment), `send` to its orchestrator;
+  `get_attachment` in the adapter contract;
+- patch apply + test + leak check + commit in the task worktree (new code, small);
+- the `{{mstack:CLIENT_C_FOLDER}}` worker host in `runners.py` and `dispatch` (today it refuses `{{mstack:CLIENT_C_FOLDER}}` as a worker host);
+- a data-placement decision per client board before its code goes into {{mstack:CLIENT_C_APP}}'s cloud (risk 5);
+- Mac-bound workers on a local Team need the app open; keep those on Claude/dsh until that is acceptable.
 
 **Order:** 👍 the migration → merge P2 → refresh the contract from a read-only `tools/list` → P3: hire a cloud
-`@mstack-orch` on {{mstack:CLIENT_C_APP}}'s model, `rolePrompt` = the playbook's role card, with `PLAYBOOK.md` sent by the
-conductor → M5 + P4: shadow, optionally with the BYOK twin → P5: live on mstack's board → P6: a second scope and
-the first {{mstack:CLIENT_C_APP}} workers.
+`@mstack-orch` ({{mstack:CLIENT_C_APP}}'s model) → M5 + P4: shadow, with the optional BYOK twin → P5: orchestrator live on
+mstack's board → **W1**: one small mstack issue by a cloud worker Agent with patch handoff, reviewed by the owner →
+**W2**: cloud workers by default on mstack → **W3**: other boards, each after its data-placement decision; local-Team
+workers for Mac-bound work.
+
+**Watchers (2026-10-31):** the two scope watchers that were running ({{mstack:CLIENT_C_SITE}}, {{mstack:CLIENT_REPO}} customer-api) were stopped
+by PID at the owner's request; no hub watcher was running. They used about 45 MB each; the VM's memory goes mostly
+to the many open Claude sessions and test runs. The orchestrator chats that started them may restart them when
+next woken. With the conductor live, one conductor process replaces the per-scope watchers.
