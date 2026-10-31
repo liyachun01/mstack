@@ -406,6 +406,8 @@ def main(argv=None):
         os.execv(sys.executable, [sys.executable, str(STACK_ROOT/'integrations/orchestrator/cli.py'), *arguments[1:]])
     if arguments[:1] in (['events'], ['orchestrators'], ['status-table'], ['sessions']):   # the event hub (011, 014): board subcommands
         os.execv(sys.executable, [sys.executable, str(STACK_ROOT/'integrations/orchestrator/cli.py'), *arguments])
+    if arguments[:1] == ['conductor']:                     # hosted orchestrator agents (016, 017)
+        os.execv(sys.executable, [sys.executable, str(STACK_ROOT/'integrations/orchestrator/conductor.py'), *arguments[1:]])
     if arguments[:1] == ['connections']:
         return subprocess.call([sys.executable, str(STACK_ROOT/'integrations/gateway/projects.py'), *arguments[1:]])
     parser = argparse.ArgumentParser(description=__doc__)
@@ -414,6 +416,7 @@ def main(argv=None):
     sub.add_parser('board', help='Orchestrator toolbelt for the shared Anytype task board')
     sub.add_parser('events', help='Event hub queue: next|resolve|list|schema (design 011)')
     sub.add_parser('orchestrators', help='Event hub registry: register|list|remove orchestrator sessions')
+    sub.add_parser('conductor', help='Wake hosted orchestrator agents with their mail: run|contract|playbook (016, 017)')
     sub.add_parser('sessions', help='Hub chat: My tasks CTAs and session states: todo|observe|done|list (design 014)')
     sub.add_parser('status-table', help='The owner\'s read-only "My tasks" table in Anytype: sync|show (design 014)')
     sub.add_parser('plugin', help='List/validate joint plugins (agent, board, link, memory, compress, gateway, docs)')
